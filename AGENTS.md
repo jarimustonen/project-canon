@@ -15,7 +15,7 @@ decision that created this repo.
 
 ## CLI Design Principles
 
-This project follows the AI-first CLI conventions in [`AGENTS-AI-FIRST-CLI.md`](AGENTS-AI-FIRST-CLI.md) — strict input validation, `--json` output, JSONL logs, no interactive prompts, informative errors, composable commands. Read that file before designing or changing CLI surface. The file is a verbatim copy from `homebase`; treat it as shared canon, not a project-local doc to edit. (Note: making this repo the *maintained home* of that canon — so homebase copies from here rather than the reverse — is part of the planned extraction, per ADR 0009; until that lands, homebase remains the source.)
+This project follows the AI-first CLI conventions in [`AGENTS-AI-FIRST-CLI.md`](AGENTS-AI-FIRST-CLI.md) — strict input validation, `--json` output, JSONL logs, no interactive prompts, informative errors, composable commands. Read that file before designing or changing CLI surface. **This repo is now the maintained home of that canon** (per ADR 0009 §2/§6): edit it *here*, and homebase / other consumers copy it FROM here. The companion `cli-canon` skill is likewise maintained here under [`skills/cli-canon/`](skills/) (see [`skills/AGENTS.md`](skills/AGENTS.md)). **Follow-up (out of scope for this repo):** the homebase-side cutover — making homebase actually copy from here and retiring its own master copy of the canon + skill — is not yet done and must be done in the homebase repo; until it lands, do not edit the homebase copies, so the two do not diverge.
 
 ## Gitignored directories
 
@@ -74,5 +74,8 @@ the `TODO.md` Execution-DAG block is a hand-maintained dual-run snapshot.
 
 Until this repo has code + a release pipeline, a stint round here is: pull → merge the DAG →
 spawn worktree(s) for the ready head(s) → green-gate + review-gate before merge → **skip deploy**
-→ report. The canon/skill live in homebase until `extract-canon-and-skill` lands (then this repo
-becomes the maintained home and homebase copies from here).
+→ report. The canon (`AGENTS-AI-FIRST-CLI.md`) and the companion `cli-canon` skill
+(`skills/cli-canon/`) are now maintained **here** — `extract-canon-and-skill` has landed, so
+this repo is the source and homebase copies from here. The homebase-side cutover (homebase
+actually pulling from here and retiring its own master copies) remains a documented follow-up
+in the homebase repo.

@@ -1,5 +1,14 @@
 # AI-First CLI Design Principles
 
+<!-- PROVENANCE / MAINTENANCE (project-canon).
+Maintained home: this canon lives here, in `project-canon`, as the canonical `cli`-profile
+canon. Per homebase ADR 0009 §2/§6, `project-canon` is now the maintained home of this
+document; homebase and other consumers are to copy this file FROM here rather than the reverse.
+Edit the canon here. The homebase-side cutover (making homebase copy from here and retiring its
+own master copy) is a documented FOLLOW-UP, tracked separately — until it lands, avoid editing
+the homebase copy so the two do not diverge. §1–§22 are a stable citation surface (never
+renumbered); this note is the ONLY addition to the lifted content. -->
+
 **Canon version: 2** (2026-08-10). These principles apply to all CLI tools in
 this repo unless otherwise mentioned. The primary caller is often an AI agent
 (Claude Code), not a human typing in a terminal. Some conventions differ from
