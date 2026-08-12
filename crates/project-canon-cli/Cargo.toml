@@ -1,0 +1,17 @@
+[package]
+name = "project-canon-cli"
+description = "The project-canon binary (thin CLI over project-canon-core). Verbs land in later issues."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "project-canon"
+path = "src/main.rs"
+
+[dependencies]
+project-canon-core = { path = "../project-canon-core" }
+
+[lints]
+workspace = true

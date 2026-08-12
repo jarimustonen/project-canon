@@ -1,0 +1,17 @@
+# project-canon workspace — §22 core/cli split (the AI-first CLI family's canonical shape).
+# `project-canon-core` holds the two-layer conformance model (base canon + archetype
+# profiles); `project-canon-cli` is the thin binary. The `new`/`doctor`/`review` verbs are
+# separate, blocked issues — not built here.
+[workspace]
+resolver = "2"
+members = ["crates/project-canon-core", "crates/project-canon-cli"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/jarimustonen/project-canon"
+
+[workspace.lints.clippy]
+# Keep the model legible; the downstream verbs copy this keel.
+all = "warn"
