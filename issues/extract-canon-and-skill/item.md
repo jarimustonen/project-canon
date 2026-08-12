@@ -2,11 +2,15 @@
 created: 2026-08-12
 updated: 2026-08-12
 type: task
-status: in-progress
+status: done
 priority: normal
 epic: project-canon-v0
 labels: [tooling]
 lane: build
+commits:
+- hash: cef5c90
+  summary: extract canon + cli-canon skill into project-canon; flip provenance
+closed: 2026-08-12
 ---
 
 # Lift AGENTS-AI-FIRST-CLI.md + cli-canon skill into project-canon (become the maintained home)
