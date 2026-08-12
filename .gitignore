@@ -1,0 +1,5 @@
+# agent scratchpad and ephemeral planning docs
+history/
+
+# Rust build artifacts
+/target
