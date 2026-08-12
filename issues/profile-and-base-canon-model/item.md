@@ -2,7 +2,7 @@
 created: 2026-08-12
 updated: 2026-08-12
 type: feature
-status: in-progress
+status: done
 priority: normal
 epic: project-canon-v0
 labels: [design]
@@ -11,6 +11,9 @@ lane: build
 commits:
 - hash: 8f1fe63
   summary: 'core: two-layer model + cli profile lift + crate/workspace'
+- hash: 53f5816
+  summary: apply 8 review FIXes; defer 5 architectural findings as spinoffs
+closed: 2026-08-12
 ---
 
 # Base-canon + archetype-profile model (author only the cli profile at v0)
