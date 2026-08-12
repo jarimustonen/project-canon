@@ -128,11 +128,17 @@ jobs:
 of base+profile members and stamps each with a status:
 
 ```rust
-enum AppStatus { Applies, NotApplicable }   // an out-of-scope conditional is n/a, never a fail
+enum AppStatus {
+    Applies,                              // in scope for evaluation (severity decides gating)
+    NotApplicable { gated_by: Question }, // out of scope — records the question that gated it off
+}
 ```
 
 - `Always` → `Applies`.
-- `Conditional(q)` → `Applies` iff the questionnaire answered `q = true`, else `NotApplicable`.
+- `Conditional(q)` → `Applies` iff the questionnaire answered `q = true`, else
+  `NotApplicable { gated_by: q }`. Carrying the gating question lets a downstream `doctor`/
+  `review` report "§20 n/a: Q6 = no" without re-deriving applicability. Note `Applies` is the
+  *evaluation-scope* axis, not readiness: a `Should` dimension applies yet never gates.
 
 So the **section-set** (membership) is the union; **applicability** is a per-section status on
 top. `resolved(cli, all-conditionals-yes)` marks all §1–§22 `Applies`. With some conditionals
@@ -143,8 +149,10 @@ failure."
 **§6 note (reconciliation).** The cli-canon questionnaire table maps Q1→§6, but the probe
 table says "§6 Applies: **always** (shape of the whole surface)". We follow the probe table:
 §6 is `Always`; Q1 selects its *shape* (noun-verb for multi-resource, flat verb for
-single-resource) rather than switching it on/off. `resolve` records the chosen shape as a
-note on §6; it never marks §6 `NotApplicable`.
+single-resource) rather than switching it on/off. `resolve` records the chosen shape on the
+`Resolution` as `Option<SurfaceShape>` — `Some` only when an applicable §6 is present, so a
+non-CLI (base-only) resolution reports `None` rather than a meaningless `FlatVerb`. §6 is never
+marked `NotApplicable`.
 
 ## 5. Routing dimension-discovery candidates to base vs. profile
 
@@ -197,7 +205,29 @@ layer. This model hardcodes **no** filesystem path, account, or host. The `Probe
 strings are illustrative `$TOOL`-shaped hints (as in conformance-probes.md), not executed
 here.
 
-## 8. What this issue does NOT build
+## 8. Post-review refinements & deferred model work
+
+A multi-model review (`history/review-profile-base-canon-model.md`) and its triage
+(`history/assessment-profile-base-canon-model.{json,md}`) ran on the first cut. The mechanical
+fixes landed in this commit (canon-id zero-padding + out-of-range panic, duplicate-id guard,
+§15 `SandboxWrite` reclassification, `Option<SurfaceShape>`, `NotApplicable { gated_by }`,
+disjointness assert). Five architectural findings were confirmed but deliberately deferred as
+spin-offs — they are the model's v1 hardening, each needing its own design:
+
+1. **Base-membership re-routing** — §10/§15–§17/§22 in base make non-CLI archetypes inherit
+   CLI obligations. Split "ships a skill" from "exposes a `skill` subcommand", or admit
+   archetype-gated conditional base dims. **Gates the first non-CLI profile** (see §1's note).
+2. **Escalating severity** — the three-tier `Severity` can't express §13's "SHOULD in general,
+   MUST when large" (audit §14 too).
+3. **Sub-requirement / probe-case granularity** — §2/§8/§22 bundle several obligations under
+   one severity/probe; the skill's own deferred Phase-4 machine-registry work.
+4. **Tri-state characterization** — unanswered questions fail open to `false`; a conformance
+   gate needs `Unknown` + `AppStatus::Undetermined` before `doctor`/`review` rely on it.
+5. **Extensibility + provenance** — validated `ModelBuilder`, owned/namespaced ids,
+   `model_version` on `Resolution`, a `Discovered` authoring path, and
+   `routing::suggested_layer → (Layer, Applicability)`.
+
+## 9. What this issue does NOT build
 
 - The `new` / `doctor` / `review` verbs (separate issues, blocked on this).
 - JSON output, clap surface, the §2/§10 plumbing (arrive with the first verb).

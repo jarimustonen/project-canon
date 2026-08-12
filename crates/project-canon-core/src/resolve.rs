@@ -9,15 +9,21 @@ use std::collections::BTreeSet;
 
 use crate::dimension::{Applicability, Archetype, Dimension, Layer};
 use crate::profile::Model;
-use crate::questionnaire::Questionnaire;
+use crate::questionnaire::{Question, Questionnaire};
 
 /// Whether a dimension is in scope for a resolved repo.
+///
+/// This is the *evaluation-scope* axis, distinct from severity: an `Applies` dimension is in
+/// scope to be checked, but whether a failure blocks readiness is decided by its
+/// [`Severity`](crate::dimension::Severity) (a `Should` dimension applies yet never gates).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppStatus {
-    /// In scope — the repo must satisfy it.
+    /// In scope for evaluation. (Whether a violation blocks readiness depends on severity.)
     Applies,
-    /// Out of scope for this repo (a conditional whose trigger did not hold). Never a failure.
-    NotApplicable,
+    /// Out of scope for this repo — a conditional whose gating question was not answered `true`.
+    /// Never a failure. Carries the question that gated it off so a downstream `doctor`/`review`
+    /// can report "§20 n/a: Q6 = no" without re-deriving applicability.
+    NotApplicable { gated_by: Question },
 }
 
 /// The chosen surface shape for §6, selected by Q1. §6 always applies; Q1 only picks its shape.
@@ -44,7 +50,7 @@ pub struct ResolvedDimension {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Resolution {
     archetype: Archetype,
-    surface_shape: SurfaceShape,
+    surface_shape: Option<SurfaceShape>,
     entries: Vec<ResolvedDimension>,
 }
 
@@ -54,8 +60,10 @@ impl Resolution {
         self.archetype
     }
 
-    /// The §6 surface shape selected by Q1.
-    pub fn surface_shape(&self) -> SurfaceShape {
+    /// The §6 surface shape selected by Q1, or `None` when §6 is not in this resolution's
+    /// section-set (a non-CLI archetype has no CLI surface shape — reporting `FlatVerb` for a
+    /// `service`/`library` would be a lie).
+    pub fn surface_shape(&self) -> Option<SurfaceShape> {
         self.surface_shape
     }
 
@@ -108,9 +116,11 @@ impl Model {
         let mut seen: BTreeSet<&'static str> = BTreeSet::new();
         let mut entries: Vec<ResolvedDimension> = Vec::new();
 
-        for &id in self.member_ids_for(archetype) {
+        for id in self.member_ids_for(archetype) {
+            // Defensive: base and profile membership are disjoint by construction (see the
+            // `debug_assert` in `Model::standard`), so this never fires today. It guards a future
+            // author who lets a profile cite a base dimension from double-counting it.
             if !seen.insert(id) {
-                // Overlap: a base section also cited by the profile. Keep the first (base).
                 continue;
             }
             let dim = self
@@ -122,7 +132,7 @@ impl Model {
                     if questionnaire.answer(q) {
                         AppStatus::Applies
                     } else {
-                        AppStatus::NotApplicable
+                        AppStatus::NotApplicable { gated_by: q }
                     }
                 }
             };
@@ -134,12 +144,18 @@ impl Model {
         }
         entries.sort_by_key(|e| e.id);
 
-        let surface_shape = if questionnaire.answer(crate::questionnaire::Question::Q1MultiResource)
-        {
-            SurfaceShape::NounVerb
-        } else {
-            SurfaceShape::FlatVerb
-        };
+        // §6 shape (noun-verb vs. flat, from Q1) is meaningful only when §6 is actually in the
+        // resolved set. Non-CLI archetypes have no §6 and thus no surface shape.
+        let surface_shape = entries
+            .iter()
+            .any(|e| self.dimension(e.id).and_then(Dimension::canon_section) == Some(6))
+            .then(|| {
+                if questionnaire.answer(Question::Q1MultiResource) {
+                    SurfaceShape::NounVerb
+                } else {
+                    SurfaceShape::FlatVerb
+                }
+            });
 
         Resolution {
             archetype,
@@ -230,7 +246,7 @@ mod tests {
     fn q1_selects_surface_shape_without_toggling_section_6() {
         let model = Model::standard();
         let flat = model.resolve(&Questionnaire::builder(Archetype::Cli).build());
-        assert_eq!(flat.surface_shape(), SurfaceShape::FlatVerb);
+        assert_eq!(flat.surface_shape(), Some(SurfaceShape::FlatVerb));
         assert!(flat.applicable_canon_sections(&model).contains(&6));
 
         let noun = model.resolve(
@@ -238,12 +254,40 @@ mod tests {
                 .answer(Question::Q1MultiResource, true)
                 .build(),
         );
-        assert_eq!(noun.surface_shape(), SurfaceShape::NounVerb);
+        assert_eq!(noun.surface_shape(), Some(SurfaceShape::NounVerb));
         assert!(noun.applicable_canon_sections(&model).contains(&6));
     }
 
     #[test]
-    fn no_duplicate_entries_despite_base_profile_overlap() {
+    fn non_cli_archetype_has_no_surface_shape() {
+        let model = Model::standard();
+        // §6 is not in a base-only resolution, so there is no CLI surface shape to report.
+        for archetype in [Archetype::Service, Archetype::Library, Archetype::Release] {
+            let resolution = model.resolve(&Questionnaire::builder(archetype).build());
+            assert_eq!(resolution.surface_shape(), None, "{}", archetype.slug());
+        }
+    }
+
+    #[test]
+    fn not_applicable_carries_its_gating_question() {
+        let model = Model::standard();
+        // Q6 off → §20 is n/a, gated by Q6; the resolution records which question gated it.
+        let resolution = model.resolve(&Questionnaire::builder(Archetype::Cli).build());
+        let s20 = resolution
+            .entries()
+            .iter()
+            .find(|e| e.id == crate::canon::canon_id(20))
+            .expect("§20 is a member of the cli section-set");
+        assert_eq!(
+            s20.status,
+            AppStatus::NotApplicable {
+                gated_by: Question::Q6Records
+            }
+        );
+    }
+
+    #[test]
+    fn resolution_entries_are_unique() {
         let model = Model::standard();
         let resolution = model.resolve(&Questionnaire::builder(Archetype::Cli).build());
         let mut ids: Vec<_> = resolution.entries().iter().map(|e| e.id).collect();

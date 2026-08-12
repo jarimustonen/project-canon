@@ -60,7 +60,13 @@ impl Model {
     pub fn standard() -> Self {
         let mut registry: BTreeMap<&'static str, Dimension> = BTreeMap::new();
         for dim in canon_dimensions().into_iter().chain(scaffold_dimensions()) {
-            registry.insert(dim.id, dim);
+            // The id is the stable citation surface; a duplicate would silently drop a
+            // dimension. Fail construction loudly instead.
+            assert!(
+                registry.insert(dim.id, dim).is_none(),
+                "duplicate dimension id: {}",
+                dim.id
+            );
         }
 
         // Base = every dimension rooted in Layer::Base (both the base canon sections and the
@@ -80,6 +86,16 @@ impl Model {
             .map(|d| d.id)
             .collect();
         cli_members.sort_unstable();
+
+        // Base and profile membership are derived from mutually-exclusive `Layer` filters, so a
+        // dimension can be rooted in exactly one layer — base ∩ profile is empty by
+        // construction. Assert it so a future author who reworks the layering (e.g. to let a
+        // profile cite a base dimension) is forced to revisit the dedup in `resolve` rather than
+        // silently double-counting.
+        debug_assert!(
+            cli_members.iter().all(|id| !base.contains(id)),
+            "base and cli-profile membership must be disjoint"
+        );
 
         let mut profiles = BTreeMap::new();
         profiles.insert(
@@ -141,14 +157,18 @@ impl Model {
         sections
     }
 
-    /// The deduplicated union of base + profile member ids for `archetype`, ordered.
+    /// The base member ids chained with `archetype`'s profile members — base first, then
+    /// profile, each already ordered. Not itself deduplicated: dedup (harmless today, since the
+    /// two sets are disjoint by construction) is applied by the callers that need a set
+    /// ([`canon_sections_for`](Self::canon_sections_for) and `resolve`).
     pub(crate) fn member_ids_for(
         &self,
         archetype: Archetype,
-    ) -> impl Iterator<Item = &&'static str> {
-        // BTreeMap iteration is ordered; chaining base then profile and letting resolve.rs
-        // dedup keeps overlaps (a base section also cited by a profile) harmless.
-        self.base.iter().chain(self.profile(archetype).members())
+    ) -> impl Iterator<Item = &'static str> + '_ {
+        self.base
+            .iter()
+            .copied()
+            .chain(self.profile(archetype).members().iter().copied())
     }
 }
 

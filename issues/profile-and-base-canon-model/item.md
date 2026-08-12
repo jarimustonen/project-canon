@@ -8,6 +8,9 @@ epic: project-canon-v0
 labels: [design]
 blocked_by: ['@extract-canon-and-skill']
 lane: build
+commits:
+- hash: 8f1fe63
+  summary: 'core: two-layer model + cli profile lift + crate/workspace'
 ---
 
 # Base-canon + archetype-profile model (author only the cli profile at v0)

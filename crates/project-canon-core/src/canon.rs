@@ -26,18 +26,23 @@ pub(crate) fn is_base_section(section: u8) -> bool {
 }
 
 /// The stable registry id for canon §N, e.g. `"canon.s10"`.
+///
+/// Section numbers are **zero-padded** (`canon.s01`..`canon.s22`) so that lexicographic id
+/// order — the order the `BTreeMap` registry and every sorted id list use — equals canon
+/// section order. Without the pad, `canon.s10` sorts before `canon.s2`, scrambling downstream
+/// doctor/review listings.
 pub(crate) const fn canon_id(section: u8) -> &'static str {
     // A small const lookup keeps the ids `&'static str` without allocation.
     match section {
-        1 => "canon.s1",
-        2 => "canon.s2",
-        3 => "canon.s3",
-        4 => "canon.s4",
-        5 => "canon.s5",
-        6 => "canon.s6",
-        7 => "canon.s7",
-        8 => "canon.s8",
-        9 => "canon.s9",
+        1 => "canon.s01",
+        2 => "canon.s02",
+        3 => "canon.s03",
+        4 => "canon.s04",
+        5 => "canon.s05",
+        6 => "canon.s06",
+        7 => "canon.s07",
+        8 => "canon.s08",
+        9 => "canon.s09",
         10 => "canon.s10",
         11 => "canon.s11",
         12 => "canon.s12",
@@ -51,7 +56,10 @@ pub(crate) const fn canon_id(section: u8) -> &'static str {
         20 => "canon.s20",
         21 => "canon.s21",
         22 => "canon.s22",
-        _ => "canon.s0",
+        // §N is 1..=22 (a closed citation surface). A section outside that range is a
+        // programming error at edit time, not a runtime input — fail loudly rather than
+        // aliasing to a bogus shared id that would collide in the registry.
+        _ => panic!("canon section out of the 1..=22 range"),
     }
 }
 
@@ -268,7 +276,10 @@ pub(crate) fn canon_dimensions() -> Vec<Dimension> {
             Must,
             Always,
             Probe {
-                effect: ExecRo,
+                // `skill install` mutates state (writes skill files) — conformance-probes.md
+                // tags it [sandbox-write]. The coarse single effect-class per section takes the
+                // most-dangerous member, so a review runner sandboxes the whole §15 probe.
+                effect: SandboxWrite,
                 signal: "skill list; skill install [<name>] into ~/.claude/skills by default, --target <dir>; skills live in-repo",
                 command_hint: "$TOOL skill list  ·  (sandbox) $TOOL skill install --target \"$sandbox/skills\"",
                 fail: "no skill door; a skill list referencing a removed flag",
