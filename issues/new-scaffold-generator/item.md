@@ -7,6 +7,7 @@ priority: normal
 epic: project-canon-v0
 labels: [tooling]
 blocked_by: ['@profile-and-base-canon-model']
+lane: build
 ---
 
 # new verb: scaffold a conformant repo (subsumes create-project generator)

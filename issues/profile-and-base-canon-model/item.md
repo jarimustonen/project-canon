@@ -7,6 +7,7 @@ priority: normal
 epic: project-canon-v0
 labels: [design]
 blocked_by: ['@extract-canon-and-skill']
+lane: build
 ---
 
 # Base-canon + archetype-profile model (author only the cli profile at v0)

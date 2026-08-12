@@ -7,6 +7,7 @@ priority: normal
 epic: project-canon-v0
 labels: [tooling]
 blocked_by: ['@extract-canon-and-skill']
+lane: build
 ---
 
 # Externalize homebase env specifics to a config/hook layer (keep the tool portable)

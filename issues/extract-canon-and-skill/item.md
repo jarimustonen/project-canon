@@ -6,6 +6,7 @@ status: open
 priority: normal
 epic: project-canon-v0
 labels: [tooling]
+lane: build
 ---
 
 # Lift AGENTS-AI-FIRST-CLI.md + cli-canon skill into project-canon (become the maintained home)

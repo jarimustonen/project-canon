@@ -46,3 +46,33 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
 - `issues/<slug>/design.md` — design documents
 - `issues/<slug>/breakdown.md` — epic → child-issue breakdown with dependencies and critical path
 - `issues/<slug>/todo.md` — task checklists
+
+## Operating policy (for `/stint-start` and `/stint-handoff`)
+
+This repo supports the stint work-session skills. `/stint-start` (round engine) and
+`/stint-handoff` (terminal wrap) read the facts below plus the `TODO.md` handoff block +
+Execution-DAG section. Live scheduling is **`issuectl dag`** (frontmatter `lane:` + `blocked_by`);
+the `TODO.md` Execution-DAG block is a hand-maintained dual-run snapshot.
+
+- **Green gate** (must pass before anything lands): `cargo build`, `cargo test`,
+  `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`. (Standard for the AI-first
+  CLI family. No code exists yet — the gate applies from the first Rust code that lands.)
+- **Deploy command + target:** **none — this is a distributable CLI, not a hosted service.**
+  There is no deploy-to-server step. Changes land on `main`; releases are cut later via the OSS
+  release pipeline (Homebrew tap + release installer, per the family's `never-source-build`
+  policy). So `/stint-start` **Phase 3 (Deploy) is skipped** for this repo — say so and move to
+  the report. (Revisit this section once a release pipeline exists here.)
+- **Deploy autonomy:** N/A while there is no deploy step.
+- **Live-version check:** `project-canon --version` once the binary exists; N/A until then.
+- **Hot files (define the DAG's lanes):** **none identified yet** — the repo has no code. v0 is
+  one serial `build` lane (the verbs share the canon/profile-registry substrate). As code lands,
+  add the real hot files here (likely candidates: the canon/profile section files, the profile
+  registry, the probe table, `Cargo.toml`) and split `doctor`/`new`/`review` into parallel lanes
+  only once their modules are provably disjoint.
+- **Migration rules:** N/A (no schema/DB).
+- **Test-account reset preference:** none.
+
+Until this repo has code + a release pipeline, a stint round here is: pull → merge the DAG →
+spawn worktree(s) for the ready head(s) → green-gate + review-gate before merge → **skip deploy**
+→ report. The canon/skill live in homebase until `extract-canon-and-skill` lands (then this repo
+becomes the maintained home and homebase copies from here).
