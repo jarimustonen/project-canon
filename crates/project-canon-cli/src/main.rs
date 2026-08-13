@@ -6,9 +6,11 @@
 //! (blocked) issues. Half-implementing the CLI canon here would be worse than an honest stub,
 //! so `main` only reports status and a one-line smoke summary proving the core is wired.
 
-use project_canon_core::{Archetype, Model, Questionnaire};
+use std::process::ExitCode;
 
-fn main() {
+use project_canon_core::{Archetype, EnvConfig, EnvConfigLayer, Model, Questionnaire};
+
+fn main() -> ExitCode {
     // Smoke summary from core: resolve the widest `cli` characterization and report the size of
     // its section-set. This keeps the core dependency real and gives an at-a-glance sanity line.
     let model = Model::standard();
@@ -21,6 +23,19 @@ fn main() {
         .canon_section_set(&model)
         .len();
 
+    // Exercise the env config/hook layer at the I/O edge (the only place I/O belongs): read the
+    // process env into an override layer over the built-in defaults. The config-file layer is a
+    // deferred `config` surface, so it is empty here. A malformed `PROJECT_CANON_*` value is a
+    // §1/§4 strict-validation error, not a silent coerce.
+    let env_layer = match EnvConfigLayer::from_env_vars(&std::env::vars().collect()) {
+        Ok(layer) => layer,
+        Err(err) => {
+            eprintln!("project-canon: {err}");
+            return ExitCode::from(2); // §2: caller-actionable bad input.
+        }
+    };
+    let cfg = EnvConfig::resolve(&EnvConfigLayer::empty(), &env_layer);
+
     eprintln!(
         "project-canon {}: model loaded ({} base dimensions; cli profile covers {} canon sections).",
         env!("CARGO_PKG_VERSION"),
@@ -28,6 +43,13 @@ fn main() {
         cli_sections,
     );
     eprintln!(
+        "env layer resolved (gh: {}; repo root: {}; {} family repos).",
+        cfg.gh_account,
+        cfg.repo_root,
+        cfg.family_repos().len(),
+    );
+    eprintln!(
         "No verbs yet — `new`, `doctor`, and `review` are tracked as separate issues in this repo."
     );
+    ExitCode::SUCCESS
 }

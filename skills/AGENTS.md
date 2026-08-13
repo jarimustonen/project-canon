@@ -24,4 +24,6 @@ than the reverse.
   the homebase copy, so the two do not diverge.
 - The skill was lifted **verbatim** from its homebase origin (issue `extract-canon-and-skill`).
   It still carries homebase-environment specifics (e.g. the `~/Sources/...` family repo map in
-  `SKILL.md`); externalizing those to config is future work, not part of the lift.
+  `SKILL.md`). Those specifics are now externalized in `project-canon-core`'s `env` config/hook
+  layer (`EnvConfig` — the single source); the skill reading the map *from* that layer is the
+  remaining homebase-side cutover, not part of the lift.

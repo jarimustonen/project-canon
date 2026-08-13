@@ -76,8 +76,10 @@ repo — findings and canon-candidates are staged there, per the file-tooling ru
 `issuectl`→`~/Sources/issuectl`, `orchestratectl`→`~/Sources/orchestratectl`,
 `crmctl`→`~/Sources/crmctl`, `tilictl`→`~/Sources/tilictl`; `ossctl`/`intakectl`/`glasspad`
 under their own repos likewise. Confirm the path exists **and** `git -C <repo> remote -v`
-identifies the expected repo before staging anything against it. (A Phase-4 extraction should
-externalize this map to config — see the epic note.)
+identifies the expected repo before staging anything against it. (This map is now duplicated:
+`project-canon-core`'s `env` config/hook layer — `EnvConfig::family_repos()` — is the intended
+**single source**; this skill should read it from there once the homebase-side cutover lands.
+See the epic note.)
 
 ## Resolve the canon & templates (both modes, first thing)
 
