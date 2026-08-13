@@ -64,11 +64,12 @@ the `TODO.md` Execution-DAG block is a hand-maintained dual-run snapshot.
   the report. (Revisit this section once a release pipeline exists here.)
 - **Deploy autonomy:** N/A while there is no deploy step.
 - **Live-version check:** `project-canon --version` once the binary exists; N/A until then.
-- **Hot files (define the DAG's lanes):** **none identified yet** — the repo has no code. v0 is
-  one serial `build` lane (the verbs share the canon/profile-registry substrate). As code lands,
-  add the real hot files here (likely candidates: the canon/profile section files, the profile
-  registry, the probe table, `Cargo.toml`) and split `doctor`/`new`/`review` into parallel lanes
-  only once their modules are provably disjoint.
+- **Hot files (define the DAG's lanes):** the `crates/project-canon-core` model/resolution
+  substrate (`profile.rs`, `resolve.rs`, `canon.rs`, `questionnaire.rs`, `dimension.rs`,
+  `routing.rs`, `scaffold.rs`, `lib.rs`) + the workspace `Cargo.toml`. This is the single serial
+  `build` lane at v0 — every verb (`doctor`/`new`/`review`) reads the core model, so they collide
+  here. `crates/project-canon-cli/src/main.rs` is the thin binary. Split `doctor`/`new`/`review`
+  into parallel lanes only once their modules are provably disjoint (re-assess after each lands).
 - **Migration rules:** N/A (no schema/DB).
 - **Test-account reset preference:** none.
 
