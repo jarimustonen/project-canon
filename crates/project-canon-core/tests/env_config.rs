@@ -25,7 +25,7 @@ fn resolution_order_defaults_then_file_then_env() {
     )]))
     .expect("valid env vars");
 
-    let cfg = EnvConfig::resolve(&file, &env);
+    let cfg = EnvConfig::resolve(&[&file, &env]);
 
     assert_eq!(cfg.gh_account, "env-acct", "env > file");
     assert_eq!(cfg.repo_root, "/file/root", "file > default");
@@ -37,7 +37,7 @@ fn resolution_order_defaults_then_file_then_env() {
 
 #[test]
 fn enumerated_specifics_resolve_through_the_layer_with_defaults() {
-    let cfg = EnvConfig::resolve(&EnvConfigLayer::empty(), &EnvConfigLayer::empty());
+    let cfg = EnvConfig::resolve(&[&EnvConfigLayer::empty(), &EnvConfigLayer::empty()]);
 
     // gh account + ~/Sources/<name> convention + family-repo map.
     assert_eq!(cfg.gh_account, "jarimustonen");
@@ -76,21 +76,52 @@ fn a_portable_override_replaces_every_homebase_specific() {
             "onectl,twoctl".to_string(),
         ),
         ("PROJECT_CANON_TW_ENABLED".to_string(), "false".to_string()),
+        (
+            "PROJECT_CANON_TW_PROJECTS_CONF".to_string(),
+            "/w/tw.conf".to_string(),
+        ),
     ]))
     .expect("valid env vars");
-    let cfg = EnvConfig::resolve(&EnvConfigLayer::empty(), &env);
+    let cfg = EnvConfig::resolve(&[&EnvConfigLayer::empty(), &env]);
 
     assert_eq!(cfg.gh_account, "octo-org");
     assert_eq!(cfg.family_repo("onectl").as_deref(), Some("/w/onectl"));
     assert_eq!(cfg.family_repo("issuectl"), None, "homebase tools gone");
     assert!(!cfg.tw.enabled);
+    assert_eq!(cfg.tw.projects_conf, "/w/tw.conf", "registry repointed too");
+}
+
+#[test]
+fn strict_validation_happens_at_the_parse_edge() {
+    // The seam rejects malformed env input up front (§1) — a blank override is an error, not a
+    // silently-accepted value that would later resolve repos under `/`.
+    assert!(EnvConfigLayer::from_env_vars(&BTreeMap::from([(
+        "PROJECT_CANON_REPO_ROOT".to_string(),
+        String::new(),
+    )]))
+    .is_err());
+}
+
+#[test]
+fn convention_paths_are_tilde_expanded_at_the_edge() {
+    // A verb turns a `~`-relative config path into a usable filesystem path via the pure helper,
+    // supplying the home dir from its own I/O edge (core stays I/O-free).
+    let cfg = EnvConfig::resolve(&[]);
+    assert_eq!(
+        EnvConfig::expand_home(&cfg.repo_location("issuectl"), "/home/dev"),
+        "/home/dev/Sources/issuectl"
+    );
+    assert_eq!(
+        EnvConfig::expand_home(&cfg.tw.projects_conf, "/home/dev"),
+        "/home/dev/.config/tw/projects.conf"
+    );
 }
 
 #[test]
 fn env_config_is_orthogonal_to_the_conformance_model() {
     // Resolving the env layer touches nothing in the two-layer model: a cli resolution still
     // covers §1–§22 regardless of the env config.
-    let _cfg = EnvConfig::resolve(&EnvConfigLayer::empty(), &EnvConfigLayer::empty());
+    let _cfg = EnvConfig::resolve(&[&EnvConfigLayer::empty(), &EnvConfigLayer::empty()]);
     let model = Model::standard();
     let resolution = model.resolve(
         &Questionnaire::builder(Archetype::Cli)

@@ -34,7 +34,10 @@ fn main() -> ExitCode {
             return ExitCode::from(2); // §2: caller-actionable bad input.
         }
     };
-    let cfg = EnvConfig::resolve(&EnvConfigLayer::empty(), &env_layer);
+    let cfg = EnvConfig::resolve(&[&EnvConfigLayer::empty(), &env_layer]);
+    // `~`-relative config paths become usable filesystem paths only after edge expansion; the
+    // home dir comes from the environment (an I/O-edge concern, never core's).
+    let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_string());
 
     eprintln!(
         "project-canon {}: model loaded ({} base dimensions; cli profile covers {} canon sections).",
@@ -45,7 +48,7 @@ fn main() -> ExitCode {
     eprintln!(
         "env layer resolved (gh: {}; repo root: {}; {} family repos).",
         cfg.gh_account,
-        cfg.repo_root,
+        EnvConfig::expand_home(&cfg.repo_root, &home),
         cfg.family_repos().len(),
     );
     eprintln!(

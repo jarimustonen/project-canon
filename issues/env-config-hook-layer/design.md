@@ -13,15 +13,18 @@ both a `Model` (what conformance means) and an `EnvConfig` (where *this* environ
 account, and registration live). They never fold into each other.
 
 ```text
-EnvConfig::resolve(file_layer, env_layer)
+EnvConfig::resolve(&[&file_layer, &env_layer])
   = builtin_defaults()          // step 1 — the single source of the homebase values, one place
       .apply(file_layer)        // step 2 — a parsed config file (lowest override)
       .apply(env_layer)         // step 3 — process env vars (highest precedence)
 ```
 
 Precedence is the AI-first CLI §8 order **flag > env > file > default** minus the flag rung
-(no CLI surface exists yet — a future verb adds `--gh-account`-style flags on top as a fourth,
-highest layer without changing this module).
+(no CLI surface exists yet). `resolve` takes an **ordered slice** of layers, so a future verb
+adds the flag rung by appending it — `resolve(&[&file, &env, &flags])` — with no change to the
+module. Strict validation (§1/§4) lives at each source's *parse edge* (`from_env_vars` rejects a
+malformed bool, a blank scalar, or an empty list element, echoing the offending variable), so the
+merge itself is infallible.
 
 ## Types (all in `env.rs`, `Layer`-pure — zero I/O in core)
 
@@ -68,10 +71,28 @@ core operation that needs an environment specific:
 ```rust
 let env_layer = EnvConfigLayer::from_env_vars(&std::env::vars().collect())?;
 let file_layer = /* future: parse --config / default path; empty today */ EnvConfigLayer::empty();
-let cfg = EnvConfig::resolve(&file_layer, &env_layer);
-// new:    scaffold repo at cfg.repo_location(name); register in cfg.tw.projects_conf; gh cfg.gh_account
-// doctor: probe the family repo at cfg.family_repo("issuectl"); check .workmux prefix
+let cfg = EnvConfig::resolve(&[&file_layer, &env_layer]);
+let home = std::env::var("HOME")?; // the ~ expansion needs the home dir → stays at the edge
+// new:    scaffold at EnvConfig::expand_home(&cfg.repo_location(name), &home); gh cfg.gh_account
+// doctor: probe EnvConfig::expand_home(&cfg.family_repo("issuectl")?, &home); check .workmux prefix
 ```
 
-Scaffold dimensions (`scaffold.rs`) stay **abstract** ("has an `AGENTS.md`", never a path) — the
-*concrete* values now come from `EnvConfig`, keeping core free of hardcoded paths/accounts/hosts.
+Config paths are `~`-relative **config strings**; `EnvConfig::expand_home(path, home)` is the
+pure half of tilde resolution (the edge supplies `$HOME`, core stays I/O-free) so every verb
+inherits one expansion. Scaffold dimensions (`scaffold.rs`) stay **abstract** ("has an
+`AGENTS.md`", never a path) — the *concrete* values now come from `EnvConfig`, keeping core free
+of hardcoded paths/accounts/hosts.
+
+## Deferred (not this issue)
+
+- **Tri-state patches** — a sparse layer cannot yet *clear* an optional value or *remove* a
+  lower layer's override. Env (the only wired source) cannot express a clear anyway; the need
+  first bites when the config-**file** layer lands, so an `Override<T>` / `Option<Option<T>>`
+  patch belongs to that issue.
+- **`repo_overrides` via env** — per-tool overrides are file/flag-only (no fragile
+  `TOOL=path,…` env grammar); `FAMILY_TOOLS` covers the env case (replace the known set).
+- **Homebase-value defaults** — the defaults intentionally *preserve today's homebase behavior*
+  (single-source, nothing breaks for Jari); portability = every value overridable + core
+  hardcoding none. `workmux_emoji_prefix`/`ci_release` default to `None` only because there is
+  no homebase value to carry. A future `EnvConfig::portable_defaults()` preset could invert this
+  if a second environment adopts the tool.

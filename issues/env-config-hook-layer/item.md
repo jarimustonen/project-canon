@@ -1,13 +1,16 @@
 ---
 created: 2026-08-12
-updated: 2026-08-12
+updated: 2026-08-13
 type: task
-status: open
+status: in-progress
 priority: normal
 epic: project-canon-v0
 labels: [tooling]
 blocked_by: ['@extract-canon-and-skill']
 lane: build
+commits:
+- hash: 2d9f8ab
+  summary: env config/hook layer externalizing homebase specifics
 ---
 
 # Externalize homebase env specifics to a config/hook layer (keep the tool portable)

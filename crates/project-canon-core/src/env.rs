@@ -13,15 +13,16 @@
 //! ## Resolution order
 //!
 //! ```text
-//! EnvConfig::resolve(file_layer, env_layer)
+//! EnvConfig::resolve(&[&file_layer, &env_layer])
 //!   = builtin_defaults()      // step 1 — the single source of the defaults, in ONE place
 //!       .apply(file_layer)    // step 2 — a parsed config file (lowest override)
 //!       .apply(env_layer)     // step 3 — process env vars (highest precedence)
 //! ```
 //!
-//! This is the AI-first CLI §8 precedence **flag > env > file > default** minus the flag rung —
-//! a future verb layers `--gh-account`-style flags on top as a fourth, highest layer without
-//! changing this module.
+//! This is the AI-first CLI §8 precedence **flag > env > file > default** minus the flag rung.
+//! [`resolve`](EnvConfig::resolve) takes an *ordered slice* of layers, so a future verb adds the
+//! flag rung by appending it (`&[&file, &env, &flags]`) — the fourth, highest layer needs no
+//! change to this module.
 //!
 //! ## I/O stays at the edge
 //!
@@ -51,20 +52,26 @@ const DEFAULT_FAMILY_TOOLS: [&str; 7] = [
 ];
 
 /// tw / `projects.conf` registration settings.
+///
+/// `#[non_exhaustive]`: a future registration knob (e.g. a `tw` binary path) must not break
+/// downstream `match`/read sites — this is a foundational seam three verbs inherit.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct TwRegistration {
     /// Whether new repos are registered with `tw` at all.
     pub enabled: bool,
-    /// Path to the `tw` `projects.conf` registry.
+    /// Path to the `tw` `projects.conf` registry (may be `~`-relative — see
+    /// [`EnvConfig::expand_home`]).
     pub projects_conf: String,
 }
 
 /// **Documented extension point** for the future `hauis` CI release pattern (ADR 0009).
 ///
 /// Unpopulated at v0 (`pattern == None`). The field exists so the seam is stable when `hauis`
-/// lands — a verb can branch on `ci_release.pattern` without a later breaking change to the
-/// config shape.
+/// lands. `#[non_exhaustive]` so `hauis` can add fields (workflow, channel, …) without breaking
+/// construction/read sites in the inheriting verbs.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct CiReleaseHook {
     /// The CI release pattern name (e.g. `Some("hauis")` in the future), or `None` when no CI
     /// release pattern is configured — the portable default.
@@ -77,7 +84,12 @@ pub struct CiReleaseHook {
 /// homebase behavior, but they now live in **one** place ([`EnvConfig::builtin_defaults`]) and
 /// every value is overridable — that, plus core no longer hardcoding any of them, is the
 /// portability win.
+///
+/// `#[non_exhaustive]`: verbs read this resolved type but never construct it (they call
+/// [`resolve`](Self::resolve)); marking it lets new environment specifics land without breaking
+/// downstream read sites.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct EnvConfig {
     /// The gh account family repos live under.
     pub gh_account: String,
@@ -113,19 +125,27 @@ impl EnvConfig {
         }
     }
 
-    /// Resolve the config: [`builtin_defaults`](Self::builtin_defaults), then the file layer,
-    /// then the env layer (highest precedence). See the module docs for the precedence rationale.
-    pub fn resolve(file: &EnvConfigLayer, env: &EnvConfigLayer) -> Self {
+    /// Resolve the config: [`builtin_defaults`](Self::builtin_defaults) with `layers` applied in
+    /// order, each overriding the previous. The canonical call is
+    /// `resolve(&[&file_layer, &env_layer])` (defaults → file → env); a future verb adds a flag
+    /// layer simply by appending it (`&[&file, &env, &flags]`) — the promised fourth rung needs
+    /// no change to this module. Applying an already-validated layer never fails, so the merge is
+    /// infallible; validation lives at each source's parse edge (see
+    /// [`EnvConfigLayer::from_env_vars`]).
+    pub fn resolve(layers: &[&EnvConfigLayer]) -> Self {
         let mut cfg = Self::builtin_defaults();
-        cfg.apply(file);
-        cfg.apply(env);
+        for layer in layers {
+            cfg.apply(layer);
+        }
         cfg
     }
 
     /// Merge one override layer in place. Present fields win; absent (`None`) fields are left
     /// untouched. The family-repo override map *extends* (add/repoint one tool without
-    /// redeclaring the whole set).
-    fn apply(&mut self, layer: &EnvConfigLayer) {
+    /// redeclaring the whole set). Note: a sparse layer cannot yet *clear* an optional value or
+    /// *remove* an override a lower layer set — a tri-state patch is a deferred seam for when the
+    /// config-file layer lands (env, the only wired source, cannot express a clear anyway).
+    pub(crate) fn apply(&mut self, layer: &EnvConfigLayer) {
         if let Some(v) = &layer.gh_account {
             self.gh_account = v.clone();
         }
@@ -154,8 +174,29 @@ impl EnvConfig {
 
     /// The `~/Sources/<name>` location convention, computed in one place. Applying a `repo_root`
     /// override re-derives every convention path through here.
+    ///
+    /// The result is a **config string**, still `~`-relative when `repo_root` is — pass it
+    /// through [`expand_home`](Self::expand_home) at the I/O edge before touching the filesystem.
+    /// A trailing slash on `repo_root` is trimmed so the join never doubles the separator.
     pub fn repo_location(&self, name: &str) -> String {
-        format!("{}/{}", self.repo_root, name)
+        format!("{}/{}", self.repo_root.trim_end_matches('/'), name)
+    }
+
+    /// Expand a leading `~` / `~/` against `home` — the **pure** half of tilde resolution, so the
+    /// whole family inherits one expansion behavior. Core stays I/O-free: the CLI edge supplies
+    /// `home` (e.g. from `$HOME`); a path that is not `~`-prefixed is returned unchanged.
+    ///
+    /// Verbs must call this before handing a config path (`repo_location(..)`, `tw.projects_conf`)
+    /// to `std::fs`/`git` — a literal `~` is not a filesystem path on any OS.
+    pub fn expand_home(path: &str, home: &str) -> String {
+        let home = home.trim_end_matches('/');
+        if path == "~" {
+            home.to_string()
+        } else if let Some(rest) = path.strip_prefix("~/") {
+            format!("{home}/{rest}")
+        } else {
+            path.to_string()
+        }
     }
 
     /// Resolve one family tool to its repo path: an explicit override if present, else the
@@ -227,30 +268,62 @@ impl EnvConfigLayer {
     /// - `PROJECT_CANON_WORKMUX_EMOJI_PREFIX`
     /// - `PROJECT_CANON_CI_RELEASE_PATTERN`
     ///
-    /// A malformed `_ENABLED` value is an [`EnvConfigError`], never a silent coerce (§1/§4).
+    /// **Strict (§1/§4), consistently:** a malformed `_ENABLED` value, an empty/whitespace-only
+    /// scalar value, or a `FAMILY_TOOLS` list with an empty element are all [`EnvConfigError`]s
+    /// echoing the offending variable — never a silent coerce or a silent drop. To *keep* a
+    /// default, omit the variable; setting it to empty is an error, not an "unset". (Surrounding
+    /// whitespace around each `FAMILY_TOOLS` element is trimmed as list syntax.)
     pub fn from_env_vars(vars: &BTreeMap<String, String>) -> Result<Self, EnvConfigError> {
         let get = |key: &str| vars.get(&format!("{ENV_PREFIX}{key}")).map(String::as_str);
-        let mut layer = EnvConfigLayer::empty();
 
-        layer.gh_account = get("GH_ACCOUNT").map(str::to_string);
-        layer.repo_root = get("REPO_ROOT").map(str::to_string);
-        layer.family_tools = get("FAMILY_TOOLS").map(|v| {
-            v.split(',')
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(str::to_string)
-                .collect()
-        });
-        layer.tw_enabled = match get("TW_ENABLED") {
-            None => None,
-            Some(raw) => Some(parse_bool("TW_ENABLED", raw)?),
-        };
-        layer.tw_projects_conf = get("TW_PROJECTS_CONF").map(str::to_string);
-        layer.workmux_emoji_prefix = get("WORKMUX_EMOJI_PREFIX").map(str::to_string);
-        layer.ci_release_pattern = get("CI_RELEASE_PATTERN").map(str::to_string);
-
-        Ok(layer)
+        Ok(EnvConfigLayer {
+            gh_account: non_empty("GH_ACCOUNT", get("GH_ACCOUNT"))?,
+            repo_root: non_empty("REPO_ROOT", get("REPO_ROOT"))?,
+            family_tools: match get("FAMILY_TOOLS") {
+                None => None,
+                Some(raw) => Some(parse_family_tools(raw)?),
+            },
+            repo_overrides: BTreeMap::new(),
+            tw_enabled: match get("TW_ENABLED") {
+                None => None,
+                Some(raw) => Some(parse_bool("TW_ENABLED", raw)?),
+            },
+            tw_projects_conf: non_empty("TW_PROJECTS_CONF", get("TW_PROJECTS_CONF"))?,
+            workmux_emoji_prefix: non_empty("WORKMUX_EMOJI_PREFIX", get("WORKMUX_EMOJI_PREFIX"))?,
+            ci_release_pattern: non_empty("CI_RELEASE_PATTERN", get("CI_RELEASE_PATTERN"))?,
+        })
     }
+}
+
+/// Accept an optional scalar env value, rejecting an empty/whitespace-only one (§1: no silent
+/// coerce of a blank override into "unset"). Absent (`None`) stays absent; a present value is
+/// kept verbatim (no trimming — that would be a silent fixup).
+fn non_empty(suffix: &str, raw: Option<&str>) -> Result<Option<String>, EnvConfigError> {
+    match raw {
+        None => Ok(None),
+        Some(v) if v.trim().is_empty() => Err(EnvConfigError::EmptyValue {
+            var: format!("{ENV_PREFIX}{suffix}"),
+        }),
+        Some(v) => Ok(Some(v.to_string())),
+    }
+}
+
+/// Parse the comma-separated `FAMILY_TOOLS` list. Surrounding whitespace per element is trimmed
+/// as list syntax; an empty element (`foo,,bar`, a bare `,`, or an empty string) is an error, not
+/// a silent drop (§1).
+fn parse_family_tools(raw: &str) -> Result<BTreeSet<String>, EnvConfigError> {
+    let mut set = BTreeSet::new();
+    for part in raw.split(',') {
+        let tool = part.trim();
+        if tool.is_empty() {
+            return Err(EnvConfigError::InvalidList {
+                var: format!("{ENV_PREFIX}FAMILY_TOOLS"),
+                value: raw.to_string(),
+            });
+        }
+        set.insert(tool.to_string());
+    }
+    Ok(set)
 }
 
 /// Parse a strict boolean env value, echoing the offending value on failure (§1/§4).
@@ -265,12 +338,18 @@ fn parse_bool(key: &str, raw: &str) -> Result<bool, EnvConfigError> {
     }
 }
 
-/// An error resolving the env config layer.
+/// An error resolving the env config layer. `#[non_exhaustive]`: strictness will grow (tool-name
+/// grammar, path validation), and a new variant must not break downstream `match` arms.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum EnvConfigError {
     /// A boolean env var held a value outside `{true, false}`. Carries the variable name and the
     /// actual bad value so the message can echo both (§4 informative errors).
     InvalidBool { var: String, value: String },
+    /// A scalar env var was set to an empty/whitespace-only value (to keep the default, omit it).
+    EmptyValue { var: String },
+    /// A list-valued env var had an empty element. Carries the variable and the raw value.
+    InvalidList { var: String, value: String },
 }
 
 impl fmt::Display for EnvConfigError {
@@ -279,6 +358,16 @@ impl fmt::Display for EnvConfigError {
             EnvConfigError::InvalidBool { var, value } => write!(
                 f,
                 "{var}: invalid boolean {value:?} (expected \"true\" or \"false\")"
+            ),
+            EnvConfigError::EmptyValue { var } => {
+                write!(
+                    f,
+                    "{var}: empty value (omit the variable to keep the default)"
+                )
+            }
+            EnvConfigError::InvalidList { var, value } => write!(
+                f,
+                "{var}: invalid list {value:?} (empty element; use non-empty comma-separated items)"
             ),
         }
     }
@@ -330,7 +419,7 @@ mod tests {
             gh_account: Some("env-acct".to_string()),
             ..EnvConfigLayer::empty()
         };
-        let cfg = EnvConfig::resolve(&file, &env);
+        let cfg = EnvConfig::resolve(&[&file, &env]);
         assert_eq!(cfg.gh_account, "env-acct", "env wins over file");
         assert_eq!(cfg.repo_root, "/file/root", "file wins over default");
         assert_eq!(
@@ -341,7 +430,7 @@ mod tests {
 
     #[test]
     fn empty_layers_resolve_to_the_defaults() {
-        let cfg = EnvConfig::resolve(&EnvConfigLayer::empty(), &EnvConfigLayer::empty());
+        let cfg = EnvConfig::resolve(&[&EnvConfigLayer::empty(), &EnvConfigLayer::empty()]);
         assert_eq!(cfg, EnvConfig::builtin_defaults());
     }
 
@@ -351,7 +440,7 @@ mod tests {
             repo_root: Some("/work".to_string()),
             ..EnvConfigLayer::empty()
         };
-        let cfg = EnvConfig::resolve(&EnvConfigLayer::empty(), &env);
+        let cfg = EnvConfig::resolve(&[&EnvConfigLayer::empty(), &env]);
         // No stale absolute paths baked at default-time: the map re-derives from the new root.
         assert_eq!(cfg.repo_location("issuectl"), "/work/issuectl");
         assert_eq!(
@@ -370,7 +459,7 @@ mod tests {
             )]),
             ..EnvConfigLayer::empty()
         };
-        let cfg = EnvConfig::resolve(&file, &EnvConfigLayer::empty());
+        let cfg = EnvConfig::resolve(&[&file, &EnvConfigLayer::empty()]);
         // The override wins over the convention for that one tool.
         assert_eq!(
             cfg.family_repo("issuectl").as_deref(),
@@ -392,7 +481,7 @@ mod tests {
             )]),
             ..EnvConfigLayer::empty()
         };
-        let cfg = EnvConfig::resolve(&file, &EnvConfigLayer::empty());
+        let cfg = EnvConfig::resolve(&[&file, &EnvConfigLayer::empty()]);
         assert_eq!(
             cfg.family_repo("customctl").as_deref(),
             Some("/opt/customctl")
@@ -425,7 +514,7 @@ mod tests {
             ("HOME".to_string(), "/home/x".to_string()),
         ]);
         let layer = EnvConfigLayer::from_env_vars(&vars).expect("valid vars");
-        let cfg = EnvConfig::resolve(&EnvConfigLayer::empty(), &layer);
+        let cfg = EnvConfig::resolve(&[&EnvConfigLayer::empty(), &layer]);
 
         assert_eq!(cfg.gh_account, "octocat");
         assert_eq!(cfg.repo_root, "/src");
@@ -460,5 +549,100 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("PROJECT_CANON_TW_ENABLED"));
         assert!(msg.contains("yes"));
+    }
+
+    #[test]
+    fn empty_scalar_env_value_is_rejected_not_silently_accepted() {
+        // §1: a blank REPO_ROOT is an error (which would otherwise resolve repos under `/`), not
+        // a silent "unset". To keep the default you omit the variable.
+        for var in [
+            "PROJECT_CANON_REPO_ROOT",
+            "PROJECT_CANON_GH_ACCOUNT",
+            "PROJECT_CANON_TW_PROJECTS_CONF",
+        ] {
+            let vars = BTreeMap::from([(var.to_string(), "   ".to_string())]);
+            let err = EnvConfigLayer::from_env_vars(&vars).expect_err("empty rejected");
+            assert_eq!(
+                err,
+                EnvConfigError::EmptyValue {
+                    var: var.to_string()
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn family_tools_with_an_empty_element_is_rejected() {
+        // `foo,,bar` is a malformed list — an error, not a silent drop of the empty element (§1).
+        let vars = BTreeMap::from([(
+            "PROJECT_CANON_FAMILY_TOOLS".to_string(),
+            "foo,,bar".to_string(),
+        )]);
+        let err = EnvConfigLayer::from_env_vars(&vars).expect_err("strict list");
+        assert_eq!(
+            err,
+            EnvConfigError::InvalidList {
+                var: "PROJECT_CANON_FAMILY_TOOLS".to_string(),
+                value: "foo,,bar".to_string(),
+            }
+        );
+        // An empty FAMILY_TOOLS is likewise rejected (omit it to keep the default set).
+        let empty = BTreeMap::from([("PROJECT_CANON_FAMILY_TOOLS".to_string(), String::new())]);
+        assert!(EnvConfigLayer::from_env_vars(&empty).is_err());
+    }
+
+    #[test]
+    fn resolve_applies_an_arbitrary_number_of_ordered_layers() {
+        // Demonstrates the flag-rung claim: a third (highest) layer overrides the env layer with
+        // no change to this module.
+        let file = EnvConfigLayer {
+            gh_account: Some("file".to_string()),
+            ..EnvConfigLayer::empty()
+        };
+        let env = EnvConfigLayer {
+            gh_account: Some("env".to_string()),
+            ..EnvConfigLayer::empty()
+        };
+        let flags = EnvConfigLayer {
+            gh_account: Some("flag".to_string()),
+            ..EnvConfigLayer::empty()
+        };
+        let cfg = EnvConfig::resolve(&[&file, &env, &flags]);
+        assert_eq!(cfg.gh_account, "flag", "last layer wins");
+        // Zero layers resolves to the built-in defaults.
+        assert_eq!(EnvConfig::resolve(&[]), EnvConfig::builtin_defaults());
+    }
+
+    #[test]
+    fn expand_home_resolves_only_a_leading_tilde() {
+        assert_eq!(
+            EnvConfig::expand_home("~/Sources/x", "/home/j"),
+            "/home/j/Sources/x"
+        );
+        assert_eq!(EnvConfig::expand_home("~", "/home/j"), "/home/j");
+        // A trailing slash on home does not double the separator.
+        assert_eq!(
+            EnvConfig::expand_home("~/Sources", "/home/j/"),
+            "/home/j/Sources"
+        );
+        // Non-tilde paths pass through untouched; a mid-string `~` is not expanded.
+        assert_eq!(EnvConfig::expand_home("/abs/path", "/home/j"), "/abs/path");
+        assert_eq!(EnvConfig::expand_home("a/~/b", "/home/j"), "a/~/b");
+        // The default config path becomes a usable filesystem path only after expansion.
+        let cfg = EnvConfig::builtin_defaults();
+        assert_eq!(
+            EnvConfig::expand_home(&cfg.repo_location("issuectl"), "/home/j"),
+            "/home/j/Sources/issuectl"
+        );
+    }
+
+    #[test]
+    fn repo_location_does_not_double_a_trailing_separator() {
+        let env = EnvConfigLayer {
+            repo_root: Some("/work/".to_string()),
+            ..EnvConfigLayer::empty()
+        };
+        let cfg = EnvConfig::resolve(&[&env]);
+        assert_eq!(cfg.repo_location("x"), "/work/x");
     }
 }
