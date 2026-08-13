@@ -2,7 +2,7 @@
 created: 2026-08-12
 updated: 2026-08-13
 type: task
-status: in-progress
+status: done
 priority: normal
 epic: project-canon-v0
 labels: [tooling]
@@ -11,6 +11,9 @@ lane: build
 commits:
 - hash: 2d9f8ab
   summary: env config/hook layer externalizing homebase specifics
+- hash: 20bd613
+  summary: apply mechanical review FIXes (N-layer resolve, strict validation, expand_home, non_exhaustive)
+closed: 2026-08-13
 ---
 
 # Externalize homebase env specifics to a config/hook layer (keep the tool portable)
