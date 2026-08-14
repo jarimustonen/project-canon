@@ -61,18 +61,19 @@ this block is a hand-maintained snapshot that the `/stint-*` skills parse. Merge
 
 <!-- execution-dag:begin -->
 ```
-GLOBAL HEAD-OF-LINE: new-scaffold-generator   ← start here on resume
+GLOBAL HEAD-OF-LINE: review-audit-verb   ← start here on resume
 LANE build — the project-canon workspace: crates/project-canon-{core,cli} (epic: project-canon-v0)
   # one serial lane at v0: the model landed but the verbs share the core model/resolution
   # substrate (crates/project-canon-core). doctor/new/review MAY split into parallel lanes
   # once code lands and their modules are provably disjoint — re-assess after each lands.
   # DONE (dropped): extract-canon-and-skill (2026-08-12) · profile-and-base-canon-model (2026-08-13)
   #                 · env-config-hook-layer (2026-08-14, the shared config/hook seam the verbs inherit)
-  #                 · doctor-conformance-gate (2026-08-14, the mechanical CI gate; reads the model → verdict).
+  #                 · doctor-conformance-gate (2026-08-14, the mechanical CI gate; reads the model → verdict)
+  #                 · new-scaffold-generator (2026-08-14, generate-only scaffold; external steps printed via EnvConfig hooks).
   # WONTFIX (owner call 2026-08-14, dropped): osstring-argv-env (one-in-a-blue-moon non-UTF-8 argv/env)
   #                 · typed-dimension-id (already guarded by every_mechanical_probe_id_exists_in_the_model test).
-  ▶ new-scaffold-generator         after profile-and-base-canon-model (delivered; needs the profile model) — generates a repo from the model; builds on doctor's resolution
-    review-audit-verb              after profile-and-base-canon-model (delivered; needs the profile model) — leans on doctor's gate logic; last
+  ▶ review-audit-verb              after profile-and-base-canon-model (delivered; needs the profile model) — advisory audit (LLM judgment); last of the three verbs; leans on doctor's gate logic
+    canon-installable-skill       distribution: turn AGENTS-AI-FIRST-CLI.md into a skill project-canon installs (reshapes homebase-canon-cutover). CLI surface + skill packaging — sequence after the verbs unless reprioritized
 UNLANED — confirmed no project-canon hot files (executed in a DIFFERENT repo):
     homebase-canon-cutover         after extract-canon-and-skill (delivered) — EXECUTED IN HOMEBASE repo, tracked here
 ```
