@@ -8,6 +8,9 @@ epic: project-canon-v0
 labels: [tooling]
 blocked_by: ['@profile-and-base-canon-model']
 lane: build
+commits:
+- hash: 50f55e9
+  summary: doctor verb — mechanical conformance gate + design note + tests
 ---
 
 # doctor verb: mechanical conformance gate (CI, non-zero on MUST gap)
