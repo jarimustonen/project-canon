@@ -49,7 +49,7 @@ The mechanical-probe registry (`doctor::probes`) maps a dimension id → a decid
 
 | dimension | severity | check | on miss |
 |---|---|---|---|
-| `base.doc-pattern` | MUST | `AGENTS.md` exists at root **and** `CLAUDE.md` exists | FAIL |
+| `base.doc-pattern` | MUST | `AGENTS.md` **and** `CLAUDE.md` both resolve (following symlinks) to a regular file at root | FAIL |
 | `base.issue-tracking` | MUST | `issues/` directory exists | FAIL |
 | `base.git-hygiene` | MUST | `.git` exists (dir or gitfile) | FAIL |
 | `base.readme` | SHOULD | `README.md` exists | WARN |
@@ -139,14 +139,19 @@ for "gate tripped", distinct from a non-zero for "couldn't evaluate":
 |---|---|
 | `0` | conformant — every mechanically-decided MUST passed |
 | `1` | non-conformant — ≥1 mechanically-decided MUST gap (the gate's designed non-zero; §18 "fail → 1") |
-| `2` | usage / operational error — unknown flag, bad `--profile`, missing/unreadable target repo, malformed `PROJECT_CANON_*` env |
+| `2` | usage / operational error — unknown flag, bad `--profile`, missing/unreadable target repo, an **I/O fault while probing** (permission denied, transient error, target vanished mid-run), or malformed `PROJECT_CANON_*` env |
 
 This deliberately reserves `1` for the gate result and folds *all* invocation/operational
 errors (both §2's caller-actionable and system buckets) into `2`, so CI can branch cleanly on
 "repo is non-conformant" (`1`, actionable: fix the repo) vs. "doctor could not run" (`2`,
 actionable: fix the invocation). This is a conscious reconciliation of the §2 (1 = caller
 error) / §18 (1 = fail) tension in favour of the gate use-case; recorded as a discussion item.
-`--help` is exit `0` (§2).
+`--help` is exit `0` (§2) — it short-circuits before env validation, so a malformed environment
+never blocks help. Probes distinguish `NotFound` (a genuine conformance miss) from any other I/O
+error (an operational fault that routes to `2`), so a `chmod 000` target is never mis-reported as
+a MUST gap. Because doctor is a mechanical gate, the pass verdict reads **"mechanically
+conformant"** (human) / `conformant: true` scoped to mechanical MUSTs (JSON) — behavioral sections
+stay deferred to `review`.
 
 ## Placement
 

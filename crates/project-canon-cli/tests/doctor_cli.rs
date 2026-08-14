@@ -54,10 +54,22 @@ impl Drop for Fixture {
     }
 }
 
-/// Run the built `project-canon` binary with `args`.
+/// A `project-canon` command with every `PROJECT_CANON_*` variable scrubbed, so a stray override
+/// on the dev/CI machine can't perturb these hermetic fixtures (the env layer is validated
+/// strictly and would otherwise fail the run with exit 2).
+fn base_command() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_project-canon"));
+    for (key, _) in std::env::vars_os() {
+        if key.to_string_lossy().starts_with("PROJECT_CANON_") {
+            cmd.env_remove(key);
+        }
+    }
+    cmd
+}
+
+/// Run the built `project-canon` binary with `doctor` + `args`.
 fn run_doctor(args: &[&str]) -> Output {
-    let bin = env!("CARGO_BIN_EXE_project-canon");
-    Command::new(bin)
+    base_command()
         .arg("doctor")
         .args(args)
         .output()
@@ -174,8 +186,7 @@ fn profile_cli_resolves_all_22_canon_sections() {
 fn default_target_is_cwd() {
     // With no positional, doctor probes the current directory. Run it in a conformant fixture.
     let f = Fixture::conformant("cwd");
-    let bin = env!("CARGO_BIN_EXE_project-canon");
-    let out = Command::new(bin)
+    let out = base_command()
         .arg("doctor")
         .current_dir(&f.path)
         .output()
@@ -186,6 +197,48 @@ fn default_target_is_cwd() {
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+}
+
+#[test]
+fn inline_value_on_a_valueless_flag_is_a_usage_error() {
+    // §1: `--json=false` must not silently emit JSON. Exit 2, echoing the offending flag.
+    let f = Fixture::conformant("inline");
+    let out = run_doctor(&["--json=false", f.path.to_str().unwrap()]);
+    assert_eq!(code(&out), 2);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--json"));
+}
+
+#[test]
+fn double_dash_lets_a_dashy_repo_path_through() {
+    // A conformant fixture reached via `--` still exits 0 (path parsing stopped at `--`).
+    let f = Fixture::conformant("dashy");
+    let out = run_doctor(&["--", f.path.to_str().unwrap()]);
+    assert_eq!(
+        code(&out),
+        0,
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn help_exits_zero_even_with_a_malformed_env() {
+    // §2: help is an exit-0 event, independent of a broken PROJECT_CANON_* override.
+    let out = base_command()
+        .arg("doctor")
+        .arg("--help")
+        .env("PROJECT_CANON_TW_ENABLED", "not-a-bool")
+        .output()
+        .unwrap();
+    assert_eq!(code(&out), 0);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("USAGE"));
+}
+
+#[test]
+fn top_level_unknown_flag_is_a_usage_error() {
+    // `project-canon --bogus` must not run the smoke stub and exit 0.
+    let out = base_command().arg("--bogus").output().unwrap();
+    assert_eq!(code(&out), 2);
 }
 
 /// Sanity: the fixture helpers point at a real directory (guards the temp-dir plumbing).

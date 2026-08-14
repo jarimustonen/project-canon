@@ -33,15 +33,7 @@ const EXIT_USAGE: u8 = 2;
 /// Run `project-canon doctor <args…>` (the args *after* the `doctor` subcommand). Owns all of
 /// doctor's I/O and returns the process exit code.
 pub fn run(args: &[String]) -> ExitCode {
-    // Strict §1 validation of the env override layer, uniform with the rest of the family: a
-    // malformed `PROJECT_CANON_*` value is a usage error, never a silent coerce. Doctor consumes
-    // no env field itself (it probes an explicit target path), but it still refuses to run on a
-    // broken environment override rather than ignoring it.
-    if let Err(err) = EnvConfigLayer::from_env_vars(&std::env::vars().collect()) {
-        eprintln!("project-canon doctor: {err}");
-        return ExitCode::from(EXIT_USAGE);
-    }
-
+    // Parse first so `--help` is always an exit-0 event (§2), even under a malformed environment.
     let parsed = match parse_args(args) {
         Ok(Command::Help) => {
             print!("{HELP}");
@@ -55,6 +47,16 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     };
 
+    // Strict §1 validation of the env override layer, uniform with the rest of the family: a
+    // malformed `PROJECT_CANON_*` value is a usage error, never a silent coerce. Doctor consumes
+    // no env field itself (it probes an explicit target path), but it still refuses to run on a
+    // broken environment override rather than ignoring it. Runs *after* `--help` so help never
+    // requires a clean environment.
+    if let Err(err) = EnvConfigLayer::from_env_vars(&std::env::vars().collect()) {
+        eprintln!("project-canon doctor: {err}");
+        return ExitCode::from(EXIT_USAGE);
+    }
+
     // Read-only target validation (§1): the repo must be an existing directory.
     let repo = Path::new(&parsed.repo);
     if !repo.is_dir() {
@@ -64,10 +66,18 @@ pub fn run(args: &[String]) -> ExitCode {
         );
         return ExitCode::from(EXIT_USAGE);
     }
-    // Absolute, symlink-resolved path for the report's `target` field; fall back to the input.
-    let target = std::fs::canonicalize(repo)
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| parsed.repo.clone());
+    // Absolute, symlink-resolved path for the report's `target` field. A failure here (a race or
+    // permission error after the `is_dir` check) is operational, not a conformance gap → exit 2.
+    let target = match std::fs::canonicalize(repo) {
+        Ok(p) => p.display().to_string(),
+        Err(err) => {
+            eprintln!(
+                "project-canon doctor: cannot resolve target {:?}: {err}",
+                parsed.repo
+            );
+            return ExitCode::from(EXIT_USAGE);
+        }
+    };
 
     // Resolve the model with the conservative questionnaire (all conditionals off — §3, doctor
     // never prompts). `--assume-defaults` names this explicitly; it is the only mode at v0.
@@ -75,7 +85,18 @@ pub fn run(args: &[String]) -> ExitCode {
     let questionnaire = Questionnaire::builder(parsed.profile).build();
     let resolution = model.resolve(&questionnaire);
 
-    let report = build_report(&model, &resolution, parsed.profile, &target, repo);
+    // An operational I/O fault while probing (permission denied, transient error, target vanished)
+    // is not a conformance gap: it means doctor could not evaluate the repo → exit 2, never exit 1.
+    let report = match build_report(&model, &resolution, parsed.profile, &target, repo) {
+        Ok(r) => r,
+        Err(fault) => {
+            eprintln!(
+                "project-canon doctor: cannot probe {} ({}): {}",
+                fault.dim_id, target, fault.source
+            );
+            return ExitCode::from(EXIT_USAGE);
+        }
+    };
 
     if parsed.json {
         println!("{}", report.to_json());
@@ -113,24 +134,50 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut verbose = false;
     let mut assume_defaults = false;
 
+    // `--` stops flag parsing so a repo path beginning with `-` can still be addressed (standard
+    // CLI convention). Everything after it is positional.
+    let mut positional_only = false;
+
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
-        // Support both `--profile v` and `--profile=v`.
+        if positional_only {
+            set_positional(&mut repo, arg)?;
+            continue;
+        }
+        if arg == "--" {
+            positional_only = true;
+            continue;
+        }
+        // Support both `--profile v` and `--profile=v`; `inline` is the value after `=` (if any).
         let (flag, inline) = match arg.split_once('=') {
-            Some((f, v)) if f.starts_with("--") => (f, Some(v.to_string())),
+            Some((f, v)) if f.starts_with("--") => (f, Some(v)),
             _ => (arg.as_str(), None),
         };
         match flag {
-            "--help" => return Ok(Command::Help),
-            "--json" => set_flag(&mut json, "--json")?,
-            "--verbose" => set_flag(&mut verbose, "--verbose")?,
-            "--assume-defaults" => set_flag(&mut assume_defaults, "--assume-defaults")?,
+            // Valueless flags reject an inline value (§1: `--json=false` is a usage error, not a
+            // silent truthy parse that discards the value).
+            "--help" => {
+                reject_inline("--help", inline)?;
+                return Ok(Command::Help);
+            }
+            "--json" => {
+                reject_inline("--json", inline)?;
+                set_flag(&mut json, "--json")?;
+            }
+            "--verbose" => {
+                reject_inline("--verbose", inline)?;
+                set_flag(&mut verbose, "--verbose")?;
+            }
+            "--assume-defaults" => {
+                reject_inline("--assume-defaults", inline)?;
+                set_flag(&mut assume_defaults, "--assume-defaults")?;
+            }
             "--profile" => {
                 if profile.is_some() {
                     return Err("repeated flag: --profile".to_string());
                 }
                 let value = match inline {
-                    Some(v) => v,
+                    Some(v) => v.to_string(),
                     None => iter.next().cloned().ok_or_else(|| {
                         "--profile requires a value (cli/service/library/release)".to_string()
                     })?,
@@ -140,12 +187,7 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             other if other.starts_with('-') => {
                 return Err(format!("unknown flag: {other}"));
             }
-            _ => {
-                if repo.is_some() {
-                    return Err(format!("unexpected extra argument: {arg:?}"));
-                }
-                repo = Some(arg.clone());
-            }
+            _ => set_positional(&mut repo, arg)?,
         }
     }
 
@@ -156,6 +198,23 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
         verbose,
         assume_defaults,
     }))
+}
+
+/// Record the single positional `<repo>` argument, rejecting a second one (§1).
+fn set_positional(repo: &mut Option<String>, arg: &str) -> Result<(), String> {
+    if repo.is_some() {
+        return Err(format!("unexpected extra argument: {arg:?}"));
+    }
+    *repo = Some(arg.to_string());
+    Ok(())
+}
+
+/// Reject an inline `=value` on a valueless flag (§1: no silently-discarded value).
+fn reject_inline(flag: &str, inline: Option<&str>) -> Result<(), String> {
+    match inline {
+        Some(value) => Err(format!("flag {flag} does not take a value (got {value:?})")),
+        None => Ok(()),
+    }
 }
 
 /// Set a boolean flag, rejecting a repeat (§1: no silent last-wins).
@@ -273,10 +332,15 @@ impl Report {
         self.checks.iter().filter(|c| c.status == status).count()
     }
 
-    /// Mechanically-decided MUST gaps — every `fail` gates by construction (a non-gating miss is
-    /// a `warn`), so this is the fail count.
+    /// Mechanically-decided MUST gaps: a `fail` on a row that `gates`. Today every `fail` gates by
+    /// construction (a non-gating miss is graded `warn`), but reading the authoritative `gates`
+    /// field — rather than assuming the invariant — keeps the gate correct if a future status path
+    /// produces a non-gating `fail`. Asserted by `every_fail_gates`.
     fn gaps(&self) -> usize {
-        self.count(CheckStatus::Fail)
+        self.checks
+            .iter()
+            .filter(|c| c.status == CheckStatus::Fail && c.gates)
+            .count()
     }
 
     fn is_conformant(&self) -> bool {
@@ -376,7 +440,9 @@ impl Report {
             ));
         }
         let verdict = if self.is_conformant() {
-            "conformant".to_string()
+            // Scoped honesty: doctor decides only the *mechanically* decidable MUSTs; behavioral
+            // sections are deferred to `review`, so this is not a claim of full conformance.
+            "mechanically conformant".to_string()
         } else {
             format!(
                 "{} mechanical MUST gap{}  (non-conformant)",
@@ -426,37 +492,44 @@ fn is_gating_severity(severity: Severity) -> bool {
 
 // ===== building the report ==========================================================
 
+/// An operational I/O fault while probing a dimension. Carries the dimension id (for a precise
+/// error message) and the underlying error. Routed to exit `2` — it is doctor failing to
+/// *evaluate* the repo, never a conformance gap.
+#[derive(Debug)]
+struct ProbeFault {
+    dim_id: &'static str,
+    source: std::io::Error,
+}
+
 /// Turn a [`Resolution`] into a [`Report`]: iterate the resolved dimensions in id order, run the
-/// mechanical probe where one exists, and grade each row.
+/// mechanical probe where one exists, and grade each row. A probe's operational I/O fault
+/// short-circuits to `Err` (→ exit 2); a genuine conformance miss is a `fail`/`warn` row.
 fn build_report(
     model: &Model,
     resolution: &Resolution,
     profile: Archetype,
     target: &str,
     repo: &Path,
-) -> Report {
-    let checks = resolution
-        .entries()
-        .iter()
-        .map(|rd| {
-            let dim = model
-                .dimension(rd.id)
-                .expect("resolution ids resolve in the model");
-            grade(dim, rd.status, repo)
-        })
-        .collect();
+) -> Result<Report, ProbeFault> {
+    let mut checks = Vec::with_capacity(resolution.entries().len());
+    for rd in resolution.entries() {
+        let dim = model
+            .dimension(rd.id)
+            .expect("resolution ids resolve in the model");
+        checks.push(grade(dim, rd.status, repo)?);
+    }
 
-    Report {
+    Ok(Report {
         tool: "project-canon",
         target: target.to_string(),
         profile,
         surface_shape: resolution.surface_shape(),
         checks,
-    }
+    })
 }
 
-/// Grade one resolved dimension into a [`Check`].
-fn grade(dim: &Dimension, status: AppStatus, repo: &Path) -> Check {
+/// Grade one resolved dimension into a [`Check`], propagating an operational probe fault as `Err`.
+fn grade(dim: &Dimension, status: AppStatus, repo: &Path) -> Result<Check, ProbeFault> {
     let base = |status, gates, message, skip_reason| Check {
         id: dim.id,
         title: dim.title,
@@ -472,25 +545,29 @@ fn grade(dim: &Dimension, status: AppStatus, repo: &Path) -> Check {
     // Out of scope for this repo (a conditional gated off) — never a fail.
     if let AppStatus::NotApplicable { gated_by } = status {
         let label = gated_by.label();
-        return base(
+        return Ok(base(
             CheckStatus::Skipped,
             false,
             format!("n/a — conditional trigger off ({label} = no)"),
             Some(SkipReason::NotApplicable { gated_by: label }),
-        );
+        ));
     }
 
     // Applies — run its mechanical probe if one exists.
     match mechanical_probe(dim.id) {
-        None => base(
+        None => Ok(base(
             CheckStatus::Skipped,
             false,
             "no mechanical probe — deferred to review".to_string(),
             Some(SkipReason::DeferredToReview),
-        ),
+        )),
         Some(probe) => {
             let gates = is_gating_severity(dim.severity);
-            let outcome = probe(repo);
+            // A miss (`Ok(false)`) is a conformance result; an I/O error is an operational fault.
+            let outcome = probe(repo).map_err(|source| ProbeFault {
+                dim_id: dim.id,
+                source,
+            })?;
             let status = if outcome.passed {
                 CheckStatus::Ok
             } else if gates {
@@ -499,14 +576,16 @@ fn grade(dim: &Dimension, status: AppStatus, repo: &Path) -> Check {
                 // A SHOULD miss is a warning, never a gate.
                 CheckStatus::Warn
             };
-            base(status, gates, outcome.message, None)
+            Ok(base(status, gates, outcome.message, None))
         }
     }
 }
 
 // ===== the mechanical-probe registry ===============================================
 
-/// The outcome of running one mechanical probe against the target repo.
+/// The outcome of running one mechanical probe: a decidable pass/miss. An operational I/O error is
+/// *not* an outcome — probes return `io::Result<ProbeOutcome>`, and an `Err` becomes a
+/// [`ProbeFault`] (exit 2), keeping "could not evaluate" distinct from "the gate tripped".
 struct ProbeOutcome {
     passed: bool,
     message: String,
@@ -527,10 +606,31 @@ impl ProbeOutcome {
     }
 }
 
+/// Follow-symlinks metadata, treating only `NotFound` as "absent" (`Ok(None)`); any other error
+/// (permission denied, transient I/O) propagates so it can become an operational fault.
+fn stat(path: &Path) -> std::io::Result<Option<std::fs::Metadata>> {
+    match std::fs::metadata(path) {
+        Ok(m) => Ok(Some(m)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// No-follow metadata (the link entry itself), with the same `NotFound` → `Ok(None)` treatment.
+fn lstat(path: &Path) -> std::io::Result<Option<std::fs::Metadata>> {
+    match std::fs::symlink_metadata(path) {
+        Ok(m) => Ok(Some(m)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
 /// Map a dimension id → its mechanical probe, or `None` when the dimension has no
 /// mechanically-decidable check at v0 (→ deferred to review). Only file-existence / repo-shape
 /// checks live here; anything needing the built binary or prose judgment is intentionally absent.
-fn mechanical_probe(id: &str) -> Option<fn(&Path) -> ProbeOutcome> {
+/// Every id here is asserted to resolve in [`Model::standard`] by `probe_ids_exist_in_model`, so a
+/// core-side rename can't silently turn an enforced MUST into a deferred skip.
+fn mechanical_probe(id: &str) -> Option<fn(&Path) -> std::io::Result<ProbeOutcome>> {
     match id {
         "base.doc-pattern" => Some(probe_doc_pattern),
         "base.issue-tracking" => Some(probe_issue_tracking),
@@ -542,77 +642,103 @@ fn mechanical_probe(id: &str) -> Option<fn(&Path) -> ProbeOutcome> {
     }
 }
 
-/// `AGENTS.md` present at root and a `CLAUDE.md` entry alongside it (§ base.doc-pattern).
-fn probe_doc_pattern(repo: &Path) -> ProbeOutcome {
-    let agents = repo.join("AGENTS.md").is_file();
-    // A `CLAUDE.md` symlink to a present AGENTS.md resolves via `is_file`; use `symlink_metadata`
-    // so the link entry itself counts even if we don't chase the target.
-    let claude = repo.join("CLAUDE.md").symlink_metadata().is_ok();
-    match (agents, claude) {
+/// The ids of every dimension that carries a mechanical probe — the registry's key set, kept in
+/// lockstep with [`mechanical_probe`] and cross-checked against the model by
+/// `every_mechanical_probe_id_exists_in_the_model`.
+#[cfg(test)]
+const MECHANICAL_PROBE_IDS: [&str; 6] = [
+    "base.doc-pattern",
+    "base.issue-tracking",
+    "base.git-hygiene",
+    "base.readme",
+    "base.gitignore",
+    "canon.s22",
+];
+
+/// `AGENTS.md` and `CLAUDE.md` both present as files at the repo root (§ base.doc-pattern).
+/// `CLAUDE.md` is normally a symlink to `AGENTS.md`; following it must land on a regular file, so a
+/// dangling symlink, a directory, or a FIFO named `CLAUDE.md` is correctly a miss.
+fn probe_doc_pattern(repo: &Path) -> std::io::Result<ProbeOutcome> {
+    let agents = stat(&repo.join("AGENTS.md"))?.is_some_and(|m| m.is_file());
+    let claude = stat(&repo.join("CLAUDE.md"))?.is_some_and(|m| m.is_file());
+    Ok(match (agents, claude) {
         (true, true) => ProbeOutcome::pass("AGENTS.md and CLAUDE.md present"),
         (false, true) => ProbeOutcome::fail("AGENTS.md missing at repo root"),
-        (true, false) => ProbeOutcome::fail("CLAUDE.md missing at repo root"),
+        (true, false) => ProbeOutcome::fail("CLAUDE.md missing or not a file at repo root"),
         (false, false) => ProbeOutcome::fail("AGENTS.md and CLAUDE.md both missing at repo root"),
-    }
+    })
 }
 
 /// `issues/` directory present (§ base.issue-tracking).
-fn probe_issue_tracking(repo: &Path) -> ProbeOutcome {
-    if repo.join("issues").is_dir() {
+fn probe_issue_tracking(repo: &Path) -> std::io::Result<ProbeOutcome> {
+    Ok(if stat(&repo.join("issues"))?.is_some_and(|m| m.is_dir()) {
         ProbeOutcome::pass("issues/ directory present")
     } else {
         ProbeOutcome::fail("issues/ directory missing")
-    }
+    })
 }
 
-/// A `.git` entry present — a directory for a normal repo, a gitfile for a worktree/submodule
-/// (§ base.git-hygiene).
-fn probe_git_hygiene(repo: &Path) -> ProbeOutcome {
-    if repo.join(".git").exists() {
-        ProbeOutcome::pass("git repository present")
+/// A `.git` entry present — a directory for a normal repo, or a gitfile for a worktree/submodule.
+/// No-follow (`lstat`) so a symlinked `.git` counts by the link's presence; a permission error
+/// faults rather than reading as "missing" (§ base.git-hygiene).
+fn probe_git_hygiene(repo: &Path) -> std::io::Result<ProbeOutcome> {
+    Ok(if lstat(&repo.join(".git"))?.is_some() {
+        ProbeOutcome::pass(".git present")
     } else {
         ProbeOutcome::fail(".git missing — not a git repository")
-    }
+    })
 }
 
 /// `README.md` front door present (§ base.readme, SHOULD).
-fn probe_readme(repo: &Path) -> ProbeOutcome {
-    if repo.join("README.md").is_file() {
-        ProbeOutcome::pass("README.md present")
-    } else {
-        ProbeOutcome::fail("README.md missing")
-    }
+fn probe_readme(repo: &Path) -> std::io::Result<ProbeOutcome> {
+    Ok(
+        if stat(&repo.join("README.md"))?.is_some_and(|m| m.is_file()) {
+            ProbeOutcome::pass("README.md present")
+        } else {
+            ProbeOutcome::fail("README.md missing")
+        },
+    )
 }
 
 /// `.gitignore` present (§ base.gitignore, SHOULD).
-fn probe_gitignore(repo: &Path) -> ProbeOutcome {
-    if repo.join(".gitignore").is_file() {
-        ProbeOutcome::pass(".gitignore present")
-    } else {
-        ProbeOutcome::fail(".gitignore missing")
-    }
+fn probe_gitignore(repo: &Path) -> std::io::Result<ProbeOutcome> {
+    Ok(
+        if stat(&repo.join(".gitignore"))?.is_some_and(|m| m.is_file()) {
+            ProbeOutcome::pass(".gitignore present")
+        } else {
+            ProbeOutcome::fail(".gitignore missing")
+        },
+    )
 }
 
-/// §22 core/cli split: a `crates/*-core` and a `crates/*-cli` directory both exist (SHOULD).
-fn probe_core_cli_split(repo: &Path) -> ProbeOutcome {
+/// §22 core/cli split: a `crates/*-core` and a `crates/*-cli` directory both exist (SHOULD). A
+/// missing `crates/` is a miss; a permission/I/O error reading it (or a directory entry) faults.
+fn probe_core_cli_split(repo: &Path) -> std::io::Result<ProbeOutcome> {
     let crates = repo.join("crates");
     let entries = match std::fs::read_dir(&crates) {
         Ok(e) => e,
-        Err(_) => return ProbeOutcome::fail("no crates/ directory — no core/cli split"),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(ProbeOutcome::fail(
+                "no crates/ directory — no core/cli split",
+            ));
+        }
+        Err(e) => return Err(e),
     };
     let (mut has_core, mut has_cli) = (false, false);
-    for entry in entries.flatten() {
+    for entry in entries {
+        let entry = entry?; // a per-entry read error faults rather than being silently dropped
         if !entry.path().is_dir() {
             continue;
         }
-        let name = entry.file_name().to_string_lossy().into_owned();
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
         has_core |= name.ends_with("-core");
         has_cli |= name.ends_with("-cli");
     }
-    match (has_core, has_cli) {
+    Ok(match (has_core, has_cli) {
         (true, true) => ProbeOutcome::pass("crates/*-core + *-cli split present"),
         _ => ProbeOutcome::fail("missing a crates/*-core and/or crates/*-cli directory"),
-    }
+    })
 }
 
 #[cfg(test)]
@@ -734,6 +860,10 @@ mod tests {
         fn mkdir(&self, rel: &str) {
             std::fs::create_dir_all(self.path.join(rel)).unwrap();
         }
+        #[cfg(unix)]
+        fn symlink(&self, target: &str, link: &str) {
+            std::os::unix::fs::symlink(target, self.path.join(link)).unwrap();
+        }
     }
 
     impl Drop for TmpRepo {
@@ -742,41 +872,69 @@ mod tests {
         }
     }
 
+    /// Convenience: run a probe and unwrap the (test-only, never-faulting) I/O result to `passed`.
+    fn passed(outcome: std::io::Result<ProbeOutcome>) -> bool {
+        outcome.expect("no I/O fault on a tmp repo").passed
+    }
+
     #[test]
     fn doc_pattern_probe_distinguishes_missing_files() {
         let repo = TmpRepo::new("doc");
-        assert!(!probe_doc_pattern(&repo.path).passed);
+        assert!(!passed(probe_doc_pattern(&repo.path)));
         repo.touch("AGENTS.md");
-        assert!(!probe_doc_pattern(&repo.path).passed); // CLAUDE.md still missing
+        assert!(!passed(probe_doc_pattern(&repo.path))); // CLAUDE.md still missing
         repo.touch("CLAUDE.md");
-        assert!(probe_doc_pattern(&repo.path).passed);
+        assert!(passed(probe_doc_pattern(&repo.path)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn doc_pattern_probe_rejects_a_dangling_claude_symlink() {
+        let repo = TmpRepo::new("doc-symlink");
+        repo.touch("AGENTS.md");
+        // A valid CLAUDE.md -> AGENTS.md symlink passes (followed to a real file)…
+        repo.symlink("AGENTS.md", "CLAUDE.md");
+        assert!(passed(probe_doc_pattern(&repo.path)));
+        // …but a dangling symlink is a miss, not a pass.
+        std::fs::remove_file(repo.path.join("CLAUDE.md")).unwrap();
+        repo.symlink("nowhere.md", "CLAUDE.md");
+        assert!(!passed(probe_doc_pattern(&repo.path)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn doc_pattern_probe_rejects_a_directory_named_claude() {
+        let repo = TmpRepo::new("doc-dir");
+        repo.touch("AGENTS.md");
+        repo.mkdir("CLAUDE.md"); // a directory must not satisfy the doc pattern
+        assert!(!passed(probe_doc_pattern(&repo.path)));
     }
 
     #[test]
     fn structural_probes_detect_presence() {
         let repo = TmpRepo::new("struct");
-        assert!(!probe_issue_tracking(&repo.path).passed);
-        assert!(!probe_git_hygiene(&repo.path).passed);
-        assert!(!probe_readme(&repo.path).passed);
-        assert!(!probe_gitignore(&repo.path).passed);
+        assert!(!passed(probe_issue_tracking(&repo.path)));
+        assert!(!passed(probe_git_hygiene(&repo.path)));
+        assert!(!passed(probe_readme(&repo.path)));
+        assert!(!passed(probe_gitignore(&repo.path)));
         repo.mkdir("issues");
         repo.mkdir(".git");
         repo.touch("README.md");
         repo.touch(".gitignore");
-        assert!(probe_issue_tracking(&repo.path).passed);
-        assert!(probe_git_hygiene(&repo.path).passed);
-        assert!(probe_readme(&repo.path).passed);
-        assert!(probe_gitignore(&repo.path).passed);
+        assert!(passed(probe_issue_tracking(&repo.path)));
+        assert!(passed(probe_git_hygiene(&repo.path)));
+        assert!(passed(probe_readme(&repo.path)));
+        assert!(passed(probe_gitignore(&repo.path)));
     }
 
     #[test]
     fn core_cli_split_probe_needs_both_crates() {
         let repo = TmpRepo::new("split");
-        assert!(!probe_core_cli_split(&repo.path).passed); // no crates/
+        assert!(!passed(probe_core_cli_split(&repo.path))); // no crates/
         repo.mkdir("crates/foo-core");
-        assert!(!probe_core_cli_split(&repo.path).passed); // core only
+        assert!(!passed(probe_core_cli_split(&repo.path))); // core only
         repo.mkdir("crates/foo-cli");
-        assert!(probe_core_cli_split(&repo.path).passed);
+        assert!(passed(probe_core_cli_split(&repo.path)));
     }
 
     // ---- grading & report --------------------------------------------------------
@@ -797,7 +955,7 @@ mod tests {
     fn report_for(repo: &Path, profile: Archetype) -> Report {
         let model = Model::standard();
         let resolution = model.resolve(&Questionnaire::builder(profile).build());
-        build_report(&model, &resolution, profile, "target", repo)
+        build_report(&model, &resolution, profile, "target", repo).expect("no I/O fault")
     }
 
     #[test]
@@ -902,5 +1060,104 @@ mod tests {
             .to_json()
             .to_string()
             .contains("\"surface_shape\":null"));
+    }
+
+    // ---- strict-validation holes & invariants ------------------------------------
+
+    #[test]
+    fn valueless_flags_reject_an_inline_value() {
+        // §1: `--json=false` (etc.) is a usage error, never a silently-discarded value.
+        for arg in [
+            "--json=false",
+            "--verbose=0",
+            "--assume-defaults=no",
+            "--help=x",
+        ] {
+            let err = parse(&[arg]).unwrap_err();
+            assert!(
+                err.contains("does not take a value"),
+                "{arg} should be rejected, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn double_dash_stops_flag_parsing() {
+        // A repo path beginning with `-` is addressable after `--`.
+        let Command::Run(a) = parse(&["--", "-weird-repo"]).unwrap() else {
+            panic!("expected Run");
+        };
+        assert_eq!(a.repo, "-weird-repo");
+        // A second positional after `--` is still rejected.
+        assert!(parse(&["--", "a", "b"]).is_err());
+    }
+
+    #[test]
+    fn empty_profile_value_is_rejected() {
+        // `--profile=` yields an empty archetype token → invalid, not a silent default.
+        assert!(parse(&["--profile="]).is_err());
+    }
+
+    #[test]
+    fn every_mechanical_probe_id_exists_in_the_model() {
+        // Guards against a core-side id rename silently turning an enforced MUST into a
+        // deferred skip (fail-open gate). If this fires, update MECHANICAL_PROBE_IDS + the
+        // `mechanical_probe` match to the new id.
+        let model = Model::standard();
+        for id in MECHANICAL_PROBE_IDS {
+            assert!(
+                model.dimension(id).is_some(),
+                "probe id {id:?} no longer exists in the model"
+            );
+            assert!(
+                mechanical_probe(id).is_some(),
+                "probe id {id:?} missing from the mechanical_probe registry"
+            );
+        }
+    }
+
+    #[test]
+    fn every_fail_gates_and_deferred_never_gates() {
+        // The invariant `gaps()` relies on: a graded FAIL always gates; a deferred/n-a skip never
+        // does. If a future probe produces a non-gating FAIL, this catches it.
+        let repo = conformant_repo("inv");
+        std::fs::remove_file(repo.path.join("AGENTS.md")).unwrap();
+        let report = report_for(&repo.path, Archetype::Cli);
+        for c in &report.checks {
+            if c.status == CheckStatus::Fail {
+                assert!(c.gates, "a FAIL row must gate: {}", c.id);
+            }
+            if c.skip_reason == Some(SkipReason::DeferredToReview) {
+                assert!(!c.gates, "a deferred row must not gate: {}", c.id);
+            }
+        }
+    }
+
+    #[test]
+    fn a_probe_io_fault_propagates_as_err() {
+        // A permission-denied read is an operational fault (→ exit 2), not a conformance miss.
+        // Unix-only: a `chmod 000` directory is the portable way to force EACCES on read.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let repo = TmpRepo::new("fault");
+            repo.mkdir("crates");
+            // Make crates/ unreadable so read_dir faults with a non-NotFound error.
+            std::fs::set_permissions(
+                repo.path.join("crates"),
+                std::fs::Permissions::from_mode(0o000),
+            )
+            .unwrap();
+            let result = probe_core_cli_split(&repo.path);
+            // Restore perms so Drop can clean up regardless of the assertion outcome.
+            let _ = std::fs::set_permissions(
+                repo.path.join("crates"),
+                std::fs::Permissions::from_mode(0o755),
+            );
+            // Running as root bypasses permission bits; only assert when the fault actually occurs.
+            if let Err(e) = &result {
+                assert_ne!(e.kind(), std::io::ErrorKind::NotFound);
+            }
+        }
     }
 }

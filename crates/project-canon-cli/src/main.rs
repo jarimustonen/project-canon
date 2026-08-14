@@ -15,13 +15,15 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("doctor") => doctor::run(&args[1..]),
-        Some(other) if !other.starts_with('-') => {
-            eprintln!("project-canon: unknown subcommand: {other:?}");
+        // Only the bare invocation (and the not-yet-parsed top-level status flags) hit the stub;
+        // an unknown subcommand OR an unknown leading flag is a strict usage error (§1), not a
+        // silent exit-0 — a typo like `project-canon --doctr` must not look like success.
+        None | Some("--help") | Some("--version") => smoke_summary(),
+        Some(other) => {
+            eprintln!("project-canon: unknown subcommand or flag: {other:?}");
             eprintln!("known verbs: doctor  (new/review are not built yet)");
             ExitCode::from(2)
         }
-        // No subcommand (or a leading flag like `--version` we don't yet parse): the smoke stub.
-        _ => smoke_summary(),
     }
 }
 
