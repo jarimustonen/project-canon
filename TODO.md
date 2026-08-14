@@ -50,7 +50,7 @@ leave the other repos' copies untouched (avoid drift)._
 `new`/`doctor`/`review` end-to-end for the `cli` profile; externalize homebase env specifics to the
 config/hook layer (`env-config-hook-layer`, next).
 
-## Execution DAG (2026-08-13, updated)
+## Execution DAG (2026-08-14, updated)
 
 Scheduling PLAN — source of truth for lane + order; issuectl is authoritative for STATUS
 (never copied here). Live scheduling is `issuectl dag` (frontmatter `lane:` + `blocked_by`);
@@ -61,14 +61,14 @@ this block is a hand-maintained snapshot that the `/stint-*` skills parse. Merge
 
 <!-- execution-dag:begin -->
 ```
-GLOBAL HEAD-OF-LINE: env-config-hook-layer   ← start here on resume
+GLOBAL HEAD-OF-LINE: doctor-conformance-gate   ← start here on resume
 LANE build — the project-canon workspace: crates/project-canon-{core,cli} (epic: project-canon-v0)
   # one serial lane at v0: the model landed but the verbs share the core model/resolution
   # substrate (crates/project-canon-core). doctor/new/review MAY split into parallel lanes
   # once code lands and their modules are provably disjoint — re-assess after each lands.
-  # DONE (dropped): extract-canon-and-skill (2026-08-12) · profile-and-base-canon-model (2026-08-13).
-  ▶ env-config-hook-layer          (unblocked; chosen FIRST — give the verbs a clean config/hook seam before they hardcode homebase defaults)
-    doctor-conformance-gate        after profile-and-base-canon-model (delivered; needs the profile model) — smallest surface, reads the model → verdict
+  # DONE (dropped): extract-canon-and-skill (2026-08-12) · profile-and-base-canon-model (2026-08-13)
+  #                 · env-config-hook-layer (2026-08-14, the shared config/hook seam the verbs inherit).
+  ▶ doctor-conformance-gate        after profile-and-base-canon-model (delivered; needs the profile model) — smallest surface, reads the model → verdict
     new-scaffold-generator         after profile-and-base-canon-model (delivered; needs the profile model) — builds on doctor's resolution
     review-audit-verb              after profile-and-base-canon-model (delivered; needs the profile model) — leans on doctor's gate logic; last
 UNLANED — confirmed no project-canon hot files (executed in a DIFFERENT repo):
