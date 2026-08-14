@@ -144,8 +144,13 @@ extension points.
 }
 ```
 
-- `kind` ∈ `confirmed-gap | manual-verify`; `fix_class` ∈ `must-fix | should-fix`;
-  `effect` ∈ `static | exec-ro | sandbox-write`; `staged_command` is `null` for manual-verify.
+- `findings[]` carries only the **actionable** rows — `kind ∈ {confirmed-gap, manual-verify}`.
+  `pass` and `n/a` are **not findings**: they appear only in the `summary` counts
+  (`pass` / `not_applicable`) and, for a human, under `--verbose`. So a JSON consumer never sees
+  a `pass`/`not-applicable` `kind`. (`--verbose` is a **human-only** flag; the JSON payload does
+  not change with it — a consumer wanting the full pass/n-a matrix uses `doctor`.)
+- `fix_class` ∈ `must-fix | should-fix`; `effect` ∈ `static | exec-ro | sandbox-write`;
+  `staged_command` is `null` for manual-verify (only confirmed gaps stage a command).
 - `staged_commands` is the flat, ordered list of the confirmed-gap commands (a convenience
   mirror of the per-finding `staged_command`s) — the "would-run list" the human approves.
 - `advisory: true` and `exit_code: 0` are invariant (see below). Data → stdout, diagnostics →
@@ -189,3 +194,8 @@ dispatch.
   review's own output, so the staged title/slug suffice at v0.
 - A minor-robustness note (fold into wrap-up, not a filed issue): the staged command assumes the
   target has an `issues/` tree; review could pre-note when `issues/` is absent.
+- Family-wide I/O-edge hardening (shared with the landed `doctor`/`new`, so a *cross-verb* pass,
+  not a review-only fix): `std::env::vars()` panics on a non-UTF-8 env var (→ exit 101, not the
+  documented 2); `p.display().to_string()` is lossy for a non-UTF-8 target path; `print!`/
+  `println!` panic on a broken pipe. All three are exotic and identical across the three verbs;
+  the right locus is the env layer + the I/O edge, uniformly. Noted for a follow-up, not filed.

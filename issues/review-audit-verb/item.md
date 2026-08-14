@@ -8,6 +8,9 @@ epic: project-canon-v0
 labels: [tooling]
 blocked_by: ['@profile-and-base-canon-model']
 lane: build
+commits:
+- hash: 12c91ed
+  summary: 'feat(review): advisory audit verb — severity-triaged findings, staged (printed) issue commands, never acts'
 ---
 
 # review verb: recommending audit (severity-triaged findings, staged issues, never auto-fix)

@@ -49,19 +49,27 @@ impl Fixture {
         f
     }
 
-    /// A recursively-sorted snapshot of every path under the fixture (relative), for a
-    /// before/after equality check that review mutated nothing.
-    fn snapshot(&self) -> Vec<String> {
-        fn walk(dir: &std::path::Path, base: &std::path::Path, out: &mut Vec<String>) {
+    /// A recursively-sorted snapshot of every path under the fixture **and every file's bytes**,
+    /// for a before/after equality check that review mutated nothing. Capturing contents (not just
+    /// path names) catches an in-place overwrite that leaves the tree shape unchanged.
+    fn snapshot(&self) -> Vec<(String, Option<Vec<u8>>)> {
+        fn walk(
+            dir: &std::path::Path,
+            base: &std::path::Path,
+            out: &mut Vec<(String, Option<Vec<u8>>)>,
+        ) {
             let mut entries: Vec<_> = std::fs::read_dir(dir)
                 .unwrap()
                 .map(|e| e.unwrap().path())
                 .collect();
             entries.sort();
             for p in entries {
-                out.push(p.strip_prefix(base).unwrap().display().to_string());
+                let rel = p.strip_prefix(base).unwrap().display().to_string();
                 if p.is_dir() {
+                    out.push((rel, None));
                     walk(&p, base, out);
+                } else {
+                    out.push((rel, Some(std::fs::read(&p).unwrap())));
                 }
             }
         }
@@ -178,23 +186,78 @@ fn staged_issuectl_command_is_printed_scoped_and_not_executed() {
     assert!(stdout.contains("NOT executed"), "{stdout}");
     let canon = std::fs::canonicalize(&f.path).unwrap();
     assert!(
-        stdout.contains(&format!("cd '{}'", canon.display())),
+        stdout.contains(&format!("cd -- '{}'", canon.display())),
         "staged command must cd into the target repo: {stdout}"
     );
     // review filed NOTHING: no issues/<slug>/ tree was created for the staged command.
-    assert!(!f.path.join("issues").join("canon-doc-pattern").exists());
+    assert!(!f
+        .path
+        .join("issues")
+        .join("canon-base-doc-pattern")
+        .exists());
 }
 
 #[test]
 fn review_writes_nothing_to_the_target_repo() {
-    // Snapshot before/after a full review (with gaps that produce staged commands): identical.
+    // Snapshot before/after a full review (with gaps that produce staged commands): identical,
+    // down to file *contents* (the snapshot hashes bytes, not just path names).
     let f = Fixture::conformant("nowrite");
     std::fs::remove_file(f.path.join("AGENTS.md")).unwrap();
+    // Give an existing file distinctive bytes so an in-place overwrite would be caught.
+    std::fs::write(f.path.join("README.md"), b"ORIGINAL-CONTENT-DO-NOT-TOUCH").unwrap();
     let before = f.snapshot();
     let out = run_review(&["--json", f.path.to_str().unwrap()]);
     assert_eq!(code(&out), 0);
     let after = f.snapshot();
-    assert_eq!(before, after, "review must not mutate the target repo");
+    assert_eq!(
+        before, after,
+        "review must not mutate the target repo (paths OR contents)"
+    );
+}
+
+/// The structural proof of the never-act contract: even with a runnable `issuectl` first on
+/// `PATH`, review must NOT execute it. A poisoned `issuectl` touches a sentinel when run; after a
+/// review that stages several commands, the sentinel must be absent. Unix-only (shell shim).
+#[cfg(unix)]
+#[test]
+fn review_never_executes_issuectl_even_when_it_is_on_path() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let f = Fixture::conformant("nopexec");
+    std::fs::remove_file(f.path.join("AGENTS.md")).unwrap(); // force confirmed gaps → staged cmds
+    std::fs::remove_dir_all(f.path.join("issues")).unwrap();
+
+    // A scratch bin dir with a poisoned `issuectl` that records the fact it ran, then a sentinel
+    // path the shim will create. Both live OUTSIDE the target repo.
+    let bin = Fixture::new("nopexec-bin");
+    let sentinel = bin.path.join("issuectl-was-executed");
+    let shim = bin.path.join("issuectl");
+    std::fs::write(
+        &shim,
+        format!(
+            "#!/bin/sh\ntouch {:?}\nexit 0\n",
+            sentinel.to_str().unwrap()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let orig_path = std::env::var("PATH").unwrap_or_default();
+    let out = base_command()
+        .arg("review")
+        .arg(f.path.to_str().unwrap())
+        .env("PATH", format!("{}:{}", bin.path.display(), orig_path))
+        .output()
+        .expect("run project-canon review");
+
+    assert_eq!(code(&out), 0);
+    // Review printed the staged issuectl commands…
+    assert!(String::from_utf8_lossy(&out.stdout).contains("issuectl new"));
+    // …but NEVER executed one: the poisoned shim was not run.
+    assert!(
+        !sentinel.exists(),
+        "review executed issuectl — the never-act contract is violated"
+    );
 }
 
 // ===== --json envelope ==============================================================

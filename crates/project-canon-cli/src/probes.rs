@@ -145,14 +145,24 @@ fn probe_gitignore(repo: &Path) -> std::io::Result<ProbeOutcome> {
 }
 
 /// §22 core/cli split: a `crates/*-core` and a `crates/*-cli` directory both exist (SHOULD). A
-/// missing `crates/` is a miss; a permission/I/O error reading it (or a directory entry) faults.
+/// missing `crates/` — or a `crates` that exists but is **not** a directory (a stray file) — is a
+/// *conformance miss*, not an operational fault: it is repo shape, decidable without running the
+/// tool. Only a genuine permission/transient I/O error (reading the dir, or a per-entry `metadata`
+/// read) faults.
 fn probe_core_cli_split(repo: &Path) -> std::io::Result<ProbeOutcome> {
     let crates = repo.join("crates");
     let entries = match std::fs::read_dir(&crates) {
         Ok(e) => e,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+        // NotFound (`crates/` absent) and NotADirectory (`crates` is a file/other) are both
+        // decidable repo-shape misses — never an exit-2 operational fault.
+        Err(e)
+            if matches!(
+                e.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+            ) =>
+        {
             return Ok(ProbeOutcome::fail(
-                "no crates/ directory — no core/cli split",
+                "no crates/ directory (missing or not a directory) — no core/cli split",
             ));
         }
         Err(e) => return Err(e),
@@ -160,7 +170,9 @@ fn probe_core_cli_split(repo: &Path) -> std::io::Result<ProbeOutcome> {
     let (mut has_core, mut has_cli) = (false, false);
     for entry in entries {
         let entry = entry?; // a per-entry read error faults rather than being silently dropped
-        if !entry.path().is_dir() {
+                            // `entry.metadata()` (follows symlinks) surfaces a metadata I/O error as a fault,
+                            // unlike `path().is_dir()`, which would swallow it as "not a directory".
+        if !entry.metadata()?.is_dir() {
             continue;
         }
         let name = entry.file_name();
@@ -279,6 +291,21 @@ mod tests {
         assert!(!passed(probe_core_cli_split(&repo.path))); // core only
         repo.mkdir("crates/foo-cli");
         assert!(passed(probe_core_cli_split(&repo.path)));
+    }
+
+    #[test]
+    fn core_cli_split_treats_a_crates_file_as_a_miss_not_a_fault() {
+        // `crates` existing as a regular file is decidable repo shape → a conformance miss
+        // (Ok(false)), never an operational I/O fault (Err → exit 2).
+        let repo = TmpRepo::new("crates-file");
+        repo.touch("crates");
+        let outcome = probe_core_cli_split(&repo.path).expect("a stray crates file is not a fault");
+        assert!(!outcome.passed);
+        assert!(
+            outcome.message.contains("not a directory"),
+            "{}",
+            outcome.message
+        );
     }
 
     #[test]

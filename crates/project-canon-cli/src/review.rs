@@ -386,11 +386,22 @@ impl Report {
             .collect()
     }
 
+    /// The actionable rows — confirmed gaps + manual-verify coverage notes. `pass`/`n/a` are not
+    /// findings (they live only in the summary counts and, for a human, under `--verbose`), so the
+    /// JSON `findings[]` carries `kind ∈ {confirmed-gap, manual-verify}` only.
+    fn actionable(&self) -> impl Iterator<Item = &Finding> {
+        self.findings.iter().filter(|f| {
+            matches!(
+                f.kind,
+                FindingKind::ConfirmedGap | FindingKind::ManualVerify
+            )
+        })
+    }
+
     /// The §10 structured payload.
     fn to_json(&self) -> Json {
         let findings = self
-            .findings
-            .iter()
+            .actionable()
             .map(|f| {
                 Json::Object(vec![
                     ("id".into(), Json::str(f.id)),
@@ -551,13 +562,13 @@ fn render_finding_row(f: &Finding) -> String {
     let section = f
         .canon_section
         .map_or_else(|| "§--".to_string(), |n| format!("§{n}"));
-    let mut row = format!(
-        "  [{:<9}] {:<4} {:<20} {}\n",
-        tag, section, f.id, f.observed
-    );
-    // Actionable detail for the two finding kinds; passing/n-a rows stay one-liners.
+    // The label line carries the human-readable title (not just the id) so an auditor need not
+    // memorize dimension ids to know what a row is about.
+    let mut row = format!("  [{:<9}] {:<4} {:<20} {}\n", tag, section, f.id, f.title);
+    // Actionable detail per kind.
     match f.kind {
         FindingKind::ConfirmedGap => {
+            row.push_str(&format!("      observed: {}\n", f.observed));
             row.push_str(&format!("      expected: {}\n", f.expected));
             if let Some(cmd) = &f.staged_command {
                 row.push_str(&format!("      stage:    {cmd}\n"));
@@ -572,7 +583,10 @@ fn render_finding_row(f: &Finding) -> String {
             row.push_str(&format!("      expected: {}\n", f.expected));
             row.push_str(&format!("      fail:     {}\n", f.fail_mode));
         }
-        FindingKind::Pass | FindingKind::NotApplicable => {}
+        // pass / n/a rows (verbose only) stay one-liners — show the evidence inline.
+        FindingKind::Pass | FindingKind::NotApplicable => {
+            row.push_str(&format!("      {}\n", f.observed));
+        }
     }
     row
 }
@@ -729,16 +743,21 @@ fn stage_command(dim: &Dimension, target: &str) -> String {
             format!("cli-canon-s{section:02}"),
         ),
         None => {
-            // A base scaffold dim (e.g. `base.doc-pattern`) → a `canon-<name>` slug.
-            let name = dim.id.rsplit('.').next().unwrap_or(dim.id);
+            // A base scaffold dim (e.g. `base.doc-pattern`) → a `canon-<full-id>` slug. Deriving
+            // the slug from the *whole* dimension id (not just its final segment) keeps every
+            // staged slug distinct — two dims that share a final segment (e.g. a future
+            // `profile.x.readme` vs. `base.readme`) must not collapse to one issue when a human
+            // runs the commands (issuectl dedups on slug). Uniqueness is asserted by test.
             (
                 format!("project-canon: {}", dim.title),
-                format!("canon-{name}"),
+                format!("canon-{}", dim.id.replace('.', "-")),
             )
         }
     };
+    // `cd --` ends option parsing so an absolute path is never mistaken for a flag (canonicalized
+    // paths start with `/` today, so this is belt-and-suspenders — but free and strictly safer).
     format!(
-        "( cd {} && issuectl new --type improvement --title {} --slug {} --label tooling --label cli-canon )",
+        "( cd -- {} && issuectl new --type improvement --title {} --slug {} --label tooling --label cli-canon )",
         shell_quote(target),
         shell_quote(&title),
         shell_quote(&slug),
@@ -990,8 +1009,8 @@ mod tests {
             .unwrap();
         // Scoped to the target repo, uses issuectl new, carries the stable slug + labels.
         assert!(cmd.contains("issuectl new"));
-        assert!(cmd.contains(&format!("cd '{}'", repo.target())));
-        assert!(cmd.contains("--slug 'canon-doc-pattern'"));
+        assert!(cmd.contains(&format!("cd -- '{}'", repo.target())));
+        assert!(cmd.contains("--slug 'canon-base-doc-pattern'"));
         assert!(cmd.contains("--label tooling"));
         assert!(cmd.contains("--label cli-canon"));
         // It is a STRING to print — building the report ran no issuectl / wrote nothing.
@@ -1009,6 +1028,24 @@ mod tests {
         let cmd = s22.staged_command.clone().unwrap();
         assert!(cmd.contains("--slug 'cli-canon-s22'"), "{cmd}");
         assert!(cmd.contains("§22"), "{cmd}");
+    }
+
+    #[test]
+    fn every_dimension_stages_a_unique_slug() {
+        // Guards the dedup contract: no two dimensions may render the same `--slug`, or one
+        // confirmed gap would silently suppress another when the human runs the staged commands.
+        let model = Model::standard();
+        let mut slugs = std::collections::BTreeSet::new();
+        for dim in model.dimensions() {
+            let cmd = stage_command(dim, "/repo");
+            let slug = cmd
+                .split("--slug ")
+                .nth(1)
+                .and_then(|s| s.split(" --label").next())
+                .expect("staged command carries a --slug")
+                .to_string();
+            assert!(slugs.insert(slug.clone()), "duplicate staged slug: {slug}");
+        }
     }
 
     #[test]
