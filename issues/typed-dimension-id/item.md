@@ -2,10 +2,11 @@
 created: 2026-08-14
 updated: 2026-08-14
 type: improvement
-status: open
+status: wontfix
 priority: normal
 epic: project-canon-v0
 labels: [tooling]
+closed: 2026-08-14
 ---
 
 # Typed DimensionId so the doctor probe registry is compile-checked against core
