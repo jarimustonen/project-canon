@@ -15,6 +15,15 @@ than the reverse.
   §17. Contents: `SKILL.md` + `templates/` (`conformance-probes.md`, `generate-plan.md`,
   `review-report.md`).
 
+- `ai-first-cli-canon` — the canon **content** as an installable reference skill. **This one has
+  no directory here on purpose:** it is *synthetic*, assembled by the binary from a small
+  frontmatter/description const + the master canon via `include_str!` (see
+  `crates/project-canon-cli/src/skill.rs`). Keeping it un-checked-in is the single-source rule in
+  action — a physical `SKILL.md` with a pasted canon body would be the drifting second copy this
+  design removes. It reaches adopting repos through `project-canon skill install` (§15/§16), not
+  by hand-copying `AGENTS-AI-FIRST-CLI.md`. Distinct from `cli-canon` (which is *behavior* — the
+  auditor; this is *content* — the rules). See `issues/canon-installable-skill/design.md`.
+
 ## Maintenance
 
 - Edit the skill **here**. This is the source of truth; downstream copies are derived.
