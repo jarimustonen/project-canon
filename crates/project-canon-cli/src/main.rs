@@ -1,11 +1,13 @@
 //! The `project-canon` binary — the thin CLI over `project-canon-core`.
 //!
-//! The `doctor` verb (mechanical conformance gate) lives in [`doctor`]; `new` / `review` are
-//! still tracked as separate issues. `main` dispatches the subcommand and, for a bare
-//! invocation, prints the no-verb smoke summary proving the core + env layer are wired.
+//! The `doctor` verb (mechanical conformance gate) lives in [`doctor`] and the `new` scaffold
+//! generator in [`new`]; `review` is still tracked as a separate issue. `main` dispatches the
+//! subcommand and, for a bare invocation, prints the no-verb smoke summary proving the core +
+//! env layer are wired.
 
 mod doctor;
 mod json;
+mod new;
 
 use std::process::ExitCode;
 
@@ -15,13 +17,14 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("doctor") => doctor::run(&args[1..]),
+        Some("new") => new::run(&args[1..]),
         // Only the bare invocation (and the not-yet-parsed top-level status flags) hit the stub;
         // an unknown subcommand OR an unknown leading flag is a strict usage error (§1), not a
         // silent exit-0 — a typo like `project-canon --doctr` must not look like success.
         None | Some("--help") | Some("--version") => smoke_summary(),
         Some(other) => {
             eprintln!("project-canon: unknown subcommand or flag: {other:?}");
-            eprintln!("known verbs: doctor  (new/review are not built yet)");
+            eprintln!("known verbs: doctor, new  (review is not built yet)");
             ExitCode::from(2)
         }
     }
@@ -70,7 +73,7 @@ fn smoke_summary() -> ExitCode {
         cfg.family_repos().len(),
     );
     eprintln!(
-        "Run `project-canon doctor --help`. `new` and `review` are tracked as separate issues."
+        "Run `project-canon doctor --help` or `project-canon new --help`. `review` is a separate issue."
     );
     ExitCode::SUCCESS
 }
