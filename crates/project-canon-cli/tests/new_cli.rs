@@ -209,6 +209,91 @@ fn unknown_flag_is_a_usage_error() {
 }
 
 #[test]
+fn unsafe_name_is_rejected() {
+    // A `--name` that would traverse out of the target, inject a flag, or break Cargo is refused
+    // at exit 2 — nothing is generated. This is the security boundary in action.
+    let t = Tmp::new("badname");
+    for bad in ["../escape", "foo bar", "-flag", "1tool", "foo;rm"] {
+        let out = run_new(&["--name", bad, t.str()]);
+        assert_eq!(
+            code(&out),
+            2,
+            "name {bad:?} should be rejected; stderr: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    assert!(!t.path.exists(), "no scaffold on a rejected name");
+}
+
+#[test]
+fn empty_positional_is_a_usage_error() {
+    // The design forbids a cwd default; an empty `<dir>` must not silently scaffold into cwd.
+    let out = run_new(&["--name", "foo", ""]);
+    assert_eq!(code(&out), 2);
+}
+
+#[test]
+fn flag_like_value_is_a_usage_error() {
+    // `--name --json <dir>` is a forgotten value, not name="--json" — strict §1.
+    let t = Tmp::new("flagval");
+    let out = run_new(&["--name", "--json", t.str()]);
+    assert_eq!(code(&out), 2);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("flag-like"));
+}
+
+#[test]
+fn generated_cli_scaffold_builds() {
+    // The whole point of `new` is a repo that starts conformant — prove the emitted cli scaffold
+    // actually compiles. The generated crates have zero dependencies, so `cargo build --offline`
+    // is hermetic (no network); an isolated target dir keeps it off the workspace's own target.
+    let t = Tmp::new("build");
+    let out = run_new(&["--name", "gentool", t.str()]);
+    assert_eq!(
+        code(&out),
+        0,
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let target_dir = t.path.join("_build_target");
+    let build = Command::new(env!("CARGO"))
+        .arg("build")
+        .arg("--offline")
+        .current_dir(&t.path)
+        .env("CARGO_TARGET_DIR", &target_dir)
+        .output();
+    let build = match build {
+        Ok(o) => o,
+        Err(_) => return, // no cargo on PATH — skip rather than fail the suite
+    };
+    assert!(
+        build.status.success(),
+        "generated cli scaffold must build; stdout: {} stderr: {}",
+        String::from_utf8_lossy(&build.stdout),
+        String::from_utf8_lossy(&build.stderr)
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn symlink_target_root_is_refused() {
+    // A symlinked target path is refused outright — following it could let writes escape.
+    let t = Tmp::new("symroot");
+    let real = Tmp::new("symroot-real");
+    std::fs::create_dir_all(&real.path).unwrap();
+    std::os::unix::fs::symlink(&real.path, &t.path).unwrap();
+    let out = run_new(&[t.str()]);
+    assert_eq!(
+        code(&out),
+        2,
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // Nothing written through the link.
+    assert!(!real.path.join("AGENTS.md").exists());
+    let _ = std::fs::remove_file(&t.path);
+}
+
+#[test]
 fn help_exits_zero_even_with_a_malformed_env() {
     let out = base_command()
         .arg("new")

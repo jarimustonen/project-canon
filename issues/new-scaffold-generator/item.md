@@ -8,6 +8,9 @@ epic: project-canon-v0
 labels: [tooling]
 blocked_by: ['@profile-and-base-canon-model']
 lane: build
+commits:
+- hash: 5f3fcfd
+  summary: 'feat(new): scaffold verb — generate-only + printed hook plan, new→doctor round-trip'
 ---
 
 # new verb: scaffold a conformant repo (subsumes create-project generator)

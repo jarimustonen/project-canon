@@ -67,14 +67,29 @@ pub fn run(args: &[String]) -> ExitCode {
     let cfg = EnvConfig::resolve(&[&EnvConfigLayer::empty(), &env_layer]);
     let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_string());
 
-    // Derive the project name: explicit `--name`, else the target dir's final component.
-    let name = match resolve_name(&parsed.name, &parsed.dir) {
+    // Derive AND validate the project name: explicit `--name`, else the target dir's final
+    // component. Validation is a security boundary, not cosmetics — the name is interpolated into
+    // relative paths, Cargo/Rust source, and the printed hook commands, so an unconstrained name
+    // is a path-traversal / broken-manifest / shell-injection vector. A strict slug closes all
+    // three at the source (a valid crate identifier can be neither `..` nor a flag nor a shell
+    // metacharacter).
+    let name = match resolve_name(&parsed.name, &parsed.dir).and_then(|n| {
+        validate_name(&n)?;
+        Ok(n)
+    }) {
         Ok(n) => n,
         Err(err) => {
             eprintln!("project-canon new: {err}");
             return ExitCode::from(EXIT_USAGE);
         }
     };
+
+    // A stable, absolute (lexical, un-canonicalized) target path — independent of whether the dir
+    // exists yet, so the `--json` `target` and the hook `cwd`/`tw` line are the same in dry-run and
+    // real runs. The hooks are rendered against the *actual* target the caller named, never a
+    // configured default location.
+    let root = Path::new(&parsed.dir);
+    let target = abs_target(root);
 
     // Resolve the model with the conservative questionnaire (all conditionals off — §3, `new`
     // never prompts). `--assume-defaults` names this explicitly; it is the only mode at v0.
@@ -93,16 +108,24 @@ pub fn run(args: &[String]) -> ExitCode {
         emoji.as_deref(),
         &cfg,
         &home,
+        &target,
     );
 
-    let root = Path::new(&parsed.dir);
-
     // Clobber guard (§1, no-clobber like §21 init): a non-empty target is refused unless --force.
-    // Missing / empty is fine (we create it). A dry-run inspects but must not create the dir.
+    // Missing / empty is fine (we create it). A dry-run inspects but must not create the dir. A
+    // symlinked target root is refused outright — following it would let writes escape the named
+    // directory (the side-effect boundary).
     match dir_state(root) {
         Err(err) => {
             eprintln!(
                 "project-canon new: cannot inspect target {:?}: {err}",
+                parsed.dir
+            );
+            return ExitCode::from(EXIT_USAGE);
+        }
+        Ok(DirState::NotADir) => {
+            eprintln!(
+                "project-canon new: target {:?} exists but is a symlink or non-directory; refusing (would escape the target)",
                 parsed.dir
             );
             return ExitCode::from(EXIT_USAGE);
@@ -133,7 +156,6 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     }
 
-    let target = display_target(root, &parsed.dir);
     let report = Report {
         target,
         name,
@@ -153,18 +175,25 @@ pub fn run(args: &[String]) -> ExitCode {
     ExitCode::from(EXIT_OK)
 }
 
-/// A best-effort absolute path for the report; falls back to the raw arg if canonicalization
-/// fails (e.g. the dir was not created under `--dry-run`).
-fn display_target(root: &Path, raw: &str) -> String {
-    std::fs::canonicalize(root)
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| raw.to_string())
+/// A stable absolute path for the report + hook rendering. Lexical only (no `canonicalize`), so it
+/// is identical whether or not the dir exists yet — a relative target is joined onto the process
+/// cwd; an absolute one is used verbatim. It is intentionally not normalized (`..` is left as-is);
+/// name validation already forbids the traversal vectors that would matter.
+fn abs_target(root: &Path) -> String {
+    let p = if root.is_absolute() {
+        root.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map(|c| c.join(root))
+            .unwrap_or_else(|_| root.to_path_buf())
+    };
+    p.display().to_string()
 }
 
-/// The project name: `--name` if given (non-empty), else the final path component of `<dir>`.
+/// The project name: `--name` if given, else the final path component of `<dir>`. The result is
+/// validated by [`validate_name`] at the call site before it reaches any template or path.
 fn resolve_name(explicit: &Option<String>, dir: &str) -> Result<String, String> {
     if let Some(n) = explicit {
-        // Parsing already rejects an empty `--name`; guard anyway.
         return Ok(n.clone());
     }
     Path::new(dir)
@@ -172,6 +201,37 @@ fn resolve_name(explicit: &Option<String>, dir: &str) -> Result<String, String> 
         .map(|s| s.to_string_lossy().to_string())
         .filter(|s| !s.is_empty())
         .ok_or_else(|| format!("cannot derive a project name from {dir:?}; pass --name <name>"))
+}
+
+/// Reject any name that is not a strict project slug: a leading ASCII letter, then ASCII
+/// alphanumerics, `-`, or `_`, at most 64 chars. This is the security boundary that keeps the name
+/// out of trouble everywhere it flows — it cannot be `..`/`/` (path traversal), a leading `-`
+/// (flag injection into a printed hook), a shell metacharacter (`$`, backtick, `;`), or an invalid
+/// Cargo package / Rust identifier. Derived-from-dir names are held to the same bar so a directory
+/// like `123` or `my project` fails loudly instead of scaffolding a broken repo.
+fn validate_name(name: &str) -> Result<(), String> {
+    let ok = !name.is_empty()
+        && name.len() <= 64
+        && name.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if ok {
+        Ok(())
+    } else {
+        Err(format!(
+            "invalid project name {name:?}: use ≤64 chars of ASCII letters/digits/'-'/'_', starting with a letter (pass --name to override a bad directory name)"
+        ))
+    }
+}
+
+/// POSIX single-quote a string for safe interpolation into a printed shell command. Wrapping in
+/// single quotes disables every shell expansion; an embedded single quote is closed, escaped, and
+/// reopened (`'\''`). Used for env-derived values (account, paths, emoji) in the hook plan — Rust's
+/// `{:?}` is NOT a shell escaper (it double-quotes, leaving `$`/backtick active, and renders
+/// non-ASCII as `\u{…}`), so it must never be used to build a command string.
+fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 // ===== argument parsing =============================================================
@@ -297,8 +357,12 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
     }))
 }
 
-/// Record the single positional `<dir>` argument, rejecting a second one (§1).
+/// Record the single positional `<dir>` argument, rejecting an empty one (the design forbids a cwd
+/// default — an empty target would silently scaffold into the process cwd) and a second one (§1).
 fn set_positional(dir: &mut Option<String>, arg: &str) -> Result<(), String> {
+    if arg.is_empty() {
+        return Err("target directory must not be empty".to_string());
+    }
     if dir.is_some() {
         return Err(format!("unexpected extra argument: {arg:?}"));
     }
@@ -332,10 +396,21 @@ fn take_value<'a>(
 ) -> Result<String, String> {
     let value = match inline {
         Some(v) => v.to_string(),
-        None => iter
-            .next()
-            .cloned()
-            .ok_or_else(|| format!("{flag} requires a value"))?,
+        None => {
+            let next = iter
+                .next()
+                .cloned()
+                .ok_or_else(|| format!("{flag} requires a value"))?;
+            // A separated value that looks like a flag (`--name --json`) is almost always a
+            // forgotten value, not an intended dash-prefixed string — reject it rather than
+            // silently swallowing the next flag (§1 strict). A genuine dash value uses `=`.
+            if next.starts_with('-') {
+                return Err(format!(
+                    "{flag} requires a value, got flag-like token {next:?} (use {flag}={next} for a literal dash value)"
+                ));
+            }
+            next
+        }
     };
     if value.is_empty() {
         return Err(format!("{flag} requires a non-empty value"));
@@ -455,6 +530,10 @@ struct PlannedHook {
     id: &'static str,
     class: HookClass,
     description: String,
+    /// The directory the command must be run from — the scaffolded repo. Surfaced so a caller
+    /// running the plan doesn't accidentally run `git init` / `gh repo create --source=.` in the
+    /// wrong repository.
+    cwd: String,
     command: String,
 }
 
@@ -468,6 +547,7 @@ struct ScaffoldPlan {
 }
 
 /// Build the scaffold plan. Pure: no I/O, deterministic in its inputs (so it is unit-tested).
+#[allow(clippy::too_many_arguments)] // A pure plan builder: every arg is a distinct plan input.
 fn build_plan(
     model: &Model,
     resolution: &Resolution,
@@ -476,6 +556,7 @@ fn build_plan(
     emoji: Option<&str>,
     cfg: &EnvConfig,
     home: &str,
+    target: &str,
 ) -> ScaffoldPlan {
     let profile = resolution.archetype();
     let is_cli = profile == Archetype::Cli;
@@ -493,7 +574,7 @@ fn build_plan(
 
     ScaffoldPlan {
         files,
-        hooks: bootstrap_hooks(name, emoji, cfg, home),
+        hooks: bootstrap_hooks(name, emoji, cfg, home, target),
         conformance_sections: resolution.canon_section_set(model),
     }
 }
@@ -547,15 +628,22 @@ fn cli_surface_files(name: &str) -> Vec<PlannedFile> {
 }
 
 /// The bootstrap hook plan, filled from the env layer. Emitted, never executed (see module docs).
+/// Every interpolated value is POSIX-`shell_quote`d; `name` is a validated slug and `target` is the
+/// directory actually generated into (not a configured default location). Each hook records its
+/// `cwd` (the scaffolded repo) so a caller running the plan does so in the right directory.
 fn bootstrap_hooks(
     name: &str,
     emoji: Option<&str>,
     cfg: &EnvConfig,
     home: &str,
+    target: &str,
 ) -> Vec<PlannedHook> {
     let account = &cfg.gh_account;
     let ssh_url = format!("git@github.com:{account}/{name}.git");
-    let repo_location = EnvConfig::expand_home(&cfg.repo_location(name), home);
+    // The tw registry records where the repo actually lives — the caller's target — not
+    // `cfg.repo_location(name)` (that convention only supplies the *default* location).
+    let repo_location = target;
+    let repo_slug = shell_quote(&format!("{account}/{name}"));
 
     let mut hooks = vec![
         PlannedHook {
@@ -563,28 +651,45 @@ fn bootstrap_hooks(
             class: HookClass::Local,
             description: "Initialize the local git repository with `main` as the default branch."
                 .to_string(),
-            command: "git init && git branch -M main".to_string(),
+            cwd: target.to_string(),
+            command: "git init -b main".to_string(),
         },
         PlannedHook {
             id: "issuectl-init",
             class: HookClass::Local,
             description: "Scaffold issue tracking (owns issues/, .issuectl/, the /issue skill)."
                 .to_string(),
+            cwd: target.to_string(),
             command: "issuectl init".to_string(),
+        },
+        PlannedHook {
+            id: "git-commit",
+            class: HookClass::Local,
+            description: "Stage and commit the scaffold so the GitHub push has something to send."
+                .to_string(),
+            cwd: target.to_string(),
+            command: format!(
+                "git add -A && git commit -m {}",
+                shell_quote(&format!("chore: scaffold {name}"))
+            ),
         },
         PlannedHook {
             id: "github-create",
             class: HookClass::External,
-            description: format!(
-                "Create the private GitHub repo under account {account:?} and push."
+            // Fully-qualify the repo with the configured account so the repo is created *there*,
+            // not under whatever `gh` happens to default to.
+            description: format!("Create the private GitHub repo {account}/{name} and push."),
+            cwd: target.to_string(),
+            command: format!(
+                "gh repo create {repo_slug} --private --source=. --remote=origin --push"
             ),
-            command: format!("gh repo create {name} --private --source=. --remote=origin --push"),
         },
         PlannedHook {
             id: "git-remote-ssh",
             class: HookClass::External,
             description: "Force the origin remote to the family SSH URL.".to_string(),
-            command: format!("git remote set-url origin {ssh_url}"),
+            cwd: target.to_string(),
+            command: format!("git remote set-url origin {}", shell_quote(&ssh_url)),
         },
     ];
 
@@ -599,7 +704,12 @@ fn bootstrap_hooks(
             id: "tw-register",
             class: HookClass::External,
             description: format!("Register the repo in the tw project registry ({projects_conf})."),
-            command: format!("printf '%s\\n' {line:?} >> {projects_conf:?}"),
+            cwd: target.to_string(),
+            command: format!(
+                "printf '%s\\n' {} >> {}",
+                shell_quote(&line),
+                shell_quote(&projects_conf)
+            ),
         });
     }
 
@@ -807,25 +917,30 @@ enum DirState {
     Empty,
     /// Exists and has ≥1 entry.
     NonEmpty,
+    /// The target path itself is a symlink — refused outright (following it would let writes
+    /// escape the named directory), or a non-directory file at the path.
+    NotADir,
 }
 
-/// Classify the target directory, distinguishing "does not exist" (fine) from a genuine I/O
-/// error (propagated → exit 2). A non-directory at the path reads as `NonEmpty` (refused without
-/// `--force`, and even with `--force` every write would land under a path that is not a dir → an
-/// I/O error surfaced honestly).
+/// Classify the target, distinguishing "does not exist" (fine) from a genuine I/O error
+/// (propagated → exit 2). A symlink at the target path — or any non-directory file — is `NotADir`
+/// and refused even with `--force`: following it would break the side-effect boundary (writes
+/// could land outside the named directory). Checked with no-follow `symlink_metadata` first.
 fn dir_state(root: &Path) -> std::io::Result<DirState> {
+    match std::fs::symlink_metadata(root) {
+        Ok(md) if md.file_type().is_symlink() => return Ok(DirState::NotADir),
+        Ok(md) if !md.is_dir() => return Ok(DirState::NotADir),
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(DirState::Missing),
+        Err(e) => return Err(e),
+    }
     match std::fs::read_dir(root) {
-        Ok(mut entries) => {
-            if entries.next().is_some() {
-                Ok(DirState::NonEmpty)
-            } else {
-                Ok(DirState::Empty)
-            }
-        }
+        Ok(mut entries) => Ok(if entries.next().is_some() {
+            DirState::NonEmpty
+        } else {
+            DirState::Empty
+        }),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(DirState::Missing),
-        // A path that exists but is not a directory: report NonEmpty so the guard refuses it
-        // rather than silently proceeding to write children under a file.
-        Err(e) if e.kind() == std::io::ErrorKind::NotADirectory => Ok(DirState::NonEmpty),
         Err(e) => Err(e),
     }
 }
@@ -913,12 +1028,30 @@ fn apply(
     Ok(())
 }
 
-/// Write a single planned file: a regular file, or a symlink (unix) / verbatim copy (non-unix).
+/// Write a single planned file: a regular file (created with no-clobber, no-follow semantics), or
+/// a symlink (unix) / verbatim copy (non-unix).
+///
+/// Regular files are opened with `create_new(true)` so the write is atomic against the earlier
+/// `symlink_metadata` check: it refuses to open an existing file OR follow a symlink that appeared
+/// in the race window, making "never overwrite / never escape via a final-component symlink" an
+/// OS-level guarantee rather than a check. (A parent-directory symlink that pre-exists in a
+/// `--force`d tree is a separate, deeper concern — see the design note's deferred items; name
+/// validation + the symlink-root refusal cover the reachable vectors.)
 fn write_one(f: &PlannedFile, root: &Path, full: &Path) -> std::io::Result<()> {
     match f.kind {
-        FileKind::File => std::fs::write(full, &f.content),
+        FileKind::File => create_new_file(full, f.content.as_bytes()),
         FileKind::Symlink => write_symlink(&f.content, root, full),
     }
+}
+
+/// Create a file exclusively (fails if it already exists or is a symlink) and write `content`.
+fn create_new_file(full: &Path, content: &[u8]) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(full)?;
+    file.write_all(content)
 }
 
 #[cfg(unix)]
@@ -930,7 +1063,15 @@ fn write_symlink(target: &str, _root: &Path, full: &Path) -> std::io::Result<()>
 fn write_symlink(target: &str, root: &Path, full: &Path) -> std::io::Result<()> {
     // No portable unprivileged symlink off-unix: fall back to a verbatim copy of the target
     // (doctor's doc-pattern probe accepts CLAUDE.md as any regular file). The target is written
-    // earlier in plan order, so it exists here.
+    // earlier in plan order, so it exists here. Guard: the link target must be a bare filename —
+    // never a path that could reach outside the scaffold (defence-in-depth; today only
+    // `CLAUDE.md → AGENTS.md` is ever emitted).
+    if target.contains('/') || target.contains('\\') || target.contains("..") {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("refusing non-local symlink target {target:?}"),
+        ));
+    }
     std::fs::copy(root.join(target), full).map(|_| ())
 }
 
@@ -977,6 +1118,7 @@ impl Report {
                     ("id".into(), Json::str(h.id)),
                     ("class".into(), Json::str(h.class.as_str())),
                     ("description".into(), Json::str(h.description.clone())),
+                    ("cwd".into(), Json::str(h.cwd.clone())),
                     ("command".into(), Json::str(h.command.clone())),
                 ])
             })
@@ -989,20 +1131,16 @@ impl Report {
             .map(|n| Json::Int(*n as i64))
             .collect();
 
-        // Under --dry-run nothing is written; the "written" count reflects what a real run would
-        // create, so the count is honest either way (it is the number of `create` rows).
+        // Stable keys regardless of mode (a machine consumer must not branch on key names):
+        //  - `create`  = rows that would be created (mode-independent plan size),
+        //  - `written` = rows actually written this run (0 under --dry-run),
+        //  - `skipped` = pre-existing rows left untouched.
         let created = self.count(FileAction::Create);
+        let written = if self.dry_run { 0 } else { created };
         let summary = Json::Object(vec![
             ("files".into(), Json::Int(self.plan.files.len() as i64)),
-            (
-                if self.dry_run {
-                    "would_write"
-                } else {
-                    "written"
-                }
-                .into(),
-                Json::Int(created as i64),
-            ),
+            ("create".into(), Json::Int(created as i64)),
+            ("written".into(), Json::Int(written as i64)),
             (
                 "skipped".into(),
                 Json::Int(self.count(FileAction::SkipExists) as i64),
@@ -1056,7 +1194,10 @@ impl Report {
             out.push_str(&format!("  {:<12} {} ({})\n", verb, f.rel, f.kind.as_str()));
         }
 
-        out.push_str("hooks (printed, not run — you run these):\n");
+        out.push_str(&format!(
+            "hooks (printed, not run — run these from inside {}):\n",
+            self.target
+        ));
         for h in &self.plan.hooks {
             out.push_str(&format!(
                 "  [{}] {}\n      $ {}\n",
@@ -1241,6 +1382,7 @@ mod tests {
             emoji,
             &cfg,
             "/home/j",
+            "/tmp/target",
         )
     }
 
@@ -1368,6 +1510,7 @@ mod tests {
             None,
             &cfg,
             "/home/j",
+            "/tmp/target",
         );
         assert!(has_file(&plan, "AGENTS.md")
             .unwrap()
@@ -1382,13 +1525,14 @@ mod tests {
         let plan = plan_for(Archetype::Cli, "foo", Some("📏"));
         let gh = plan.hooks.iter().find(|h| h.id == "github-create").unwrap();
         assert_eq!(gh.class, HookClass::External);
-        assert!(gh.command.contains("gh repo create foo"));
+        // Default gh account is jarimustonen (from EnvConfig::builtin_defaults); the repo is
+        // account-qualified so it is created there, not under gh's default.
+        assert!(gh.command.contains("jarimustonen/foo"), "{}", gh.command);
         let remote = plan
             .hooks
             .iter()
             .find(|h| h.id == "git-remote-ssh")
             .unwrap();
-        // Default gh account is jarimustonen (from EnvConfig::builtin_defaults).
         assert!(
             remote
                 .command
@@ -1396,13 +1540,66 @@ mod tests {
             "{}",
             remote.command
         );
-        // The local hooks exist and are classed local.
-        for id in ["git-init", "issuectl-init"] {
-            assert_eq!(
-                plan.hooks.iter().find(|h| h.id == id).unwrap().class,
-                HookClass::Local
-            );
+        // The local hooks exist and are classed local; every hook carries the target as its cwd.
+        for id in ["git-init", "issuectl-init", "git-commit"] {
+            let h = plan.hooks.iter().find(|h| h.id == id).unwrap();
+            assert_eq!(h.class, HookClass::Local);
+            assert_eq!(h.cwd, "/tmp/target");
         }
+    }
+
+    #[test]
+    fn hook_commands_are_shell_quoted_from_env_values() {
+        // A gh account with shell metacharacters is single-quoted in the emitted command, never
+        // left active (§: the printed plan must be safe to copy-paste).
+        let model = Model::standard();
+        let resolution = model.resolve(&Questionnaire::builder(Archetype::Cli).build());
+        let layer = EnvConfigLayer {
+            gh_account: Some("ev$il".to_string()),
+            ..EnvConfigLayer::empty()
+        };
+        let cfg = EnvConfig::resolve(&[&layer]);
+        let plan = build_plan(
+            &model,
+            &resolution,
+            "foo",
+            None,
+            None,
+            &cfg,
+            "/home/j",
+            "/tmp/target",
+        );
+        let gh = plan.hooks.iter().find(|h| h.id == "github-create").unwrap();
+        // The value is wrapped in single quotes, so the `$` never expands.
+        assert!(gh.command.contains("'ev$il/foo'"), "{}", gh.command);
+    }
+
+    #[test]
+    fn validate_name_rejects_unsafe_slugs() {
+        for bad in [
+            "",
+            "../evil",
+            "a/b",
+            "-flag",
+            "1tool",
+            "foo bar",
+            "foo;rm",
+            "foo$(x)",
+            "MiXeD_ok?no",
+        ] {
+            assert!(validate_name(bad).is_err(), "should reject {bad:?}");
+        }
+        for good in ["foo", "my-tool", "a", "x1_y-2", "Tool"] {
+            assert!(validate_name(good).is_ok(), "should accept {good:?}");
+        }
+    }
+
+    #[test]
+    fn shell_quote_neutralizes_metacharacters() {
+        assert_eq!(shell_quote("plain"), "'plain'");
+        assert_eq!(shell_quote("a$b`c"), "'a$b`c'");
+        // An embedded single quote is closed/escaped/reopened.
+        assert_eq!(shell_quote("it's"), "'it'\\''s'");
     }
 
     #[test]
@@ -1419,7 +1616,16 @@ mod tests {
             ..EnvConfigLayer::empty()
         };
         let cfg = EnvConfig::resolve(&[&layer]);
-        let plan = build_plan(&model, &resolution, "foo", None, None, &cfg, "/home/j");
+        let plan = build_plan(
+            &model,
+            &resolution,
+            "foo",
+            None,
+            None,
+            &cfg,
+            "/home/j",
+            "/tmp/target",
+        );
         assert!(!plan.hooks.iter().any(|h| h.id == "tw-register"));
     }
 
@@ -1432,7 +1638,16 @@ mod tests {
             ..EnvConfigLayer::empty()
         };
         let cfg = EnvConfig::resolve(&[&layer]);
-        let plan = build_plan(&model, &resolution, "foo", None, None, &cfg, "/home/j");
+        let plan = build_plan(
+            &model,
+            &resolution,
+            "foo",
+            None,
+            None,
+            &cfg,
+            "/home/j",
+            "/tmp/target",
+        );
         let remote = plan
             .hooks
             .iter()
@@ -1443,6 +1658,9 @@ mod tests {
             "{}",
             remote.command
         );
+        // The github-create hook fully-qualifies the repo with the configured account.
+        let gh = plan.hooks.iter().find(|h| h.id == "github-create").unwrap();
+        assert!(gh.command.contains("octocat/foo"), "{}", gh.command);
     }
 
     // ---- conformance TODO --------------------------------------------------------
