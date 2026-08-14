@@ -8,6 +8,9 @@
 mod doctor;
 mod json;
 mod new;
+mod probes;
+mod review;
+mod shell;
 
 use std::process::ExitCode;
 
@@ -18,13 +21,14 @@ fn main() -> ExitCode {
     match args.first().map(String::as_str) {
         Some("doctor") => doctor::run(&args[1..]),
         Some("new") => new::run(&args[1..]),
+        Some("review") => review::run(&args[1..]),
         // Only the bare invocation (and the not-yet-parsed top-level status flags) hit the stub;
         // an unknown subcommand OR an unknown leading flag is a strict usage error (§1), not a
         // silent exit-0 — a typo like `project-canon --doctr` must not look like success.
         None | Some("--help") | Some("--version") => smoke_summary(),
         Some(other) => {
             eprintln!("project-canon: unknown subcommand or flag: {other:?}");
-            eprintln!("known verbs: doctor, new  (review is not built yet)");
+            eprintln!("known verbs: doctor, new, review");
             ExitCode::from(2)
         }
     }
@@ -73,7 +77,7 @@ fn smoke_summary() -> ExitCode {
         cfg.family_repos().len(),
     );
     eprintln!(
-        "Run `project-canon doctor --help` or `project-canon new --help`. `review` is a separate issue."
+        "Run `project-canon doctor --help`, `project-canon new --help`, or `project-canon review --help`."
     );
     ExitCode::SUCCESS
 }

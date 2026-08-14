@@ -225,14 +225,7 @@ fn validate_name(name: &str) -> Result<(), String> {
     }
 }
 
-/// POSIX single-quote a string for safe interpolation into a printed shell command. Wrapping in
-/// single quotes disables every shell expansion; an embedded single quote is closed, escaped, and
-/// reopened (`'\''`). Used for env-derived values (account, paths, emoji) in the hook plan — Rust's
-/// `{:?}` is NOT a shell escaper (it double-quotes, leaving `$`/backtick active, and renders
-/// non-ASCII as `\u{…}`), so it must never be used to build a command string.
-fn shell_quote(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
-}
+use crate::shell::shell_quote;
 
 // ===== argument parsing =============================================================
 
