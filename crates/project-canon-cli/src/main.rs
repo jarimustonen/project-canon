@@ -1,16 +1,32 @@
-//! The `project-canon` binary — deliberately a **thin stub** at v0.
+//! The `project-canon` binary — the thin CLI over `project-canon-core`.
 //!
-//! This issue (`profile-and-base-canon-model`) delivers the two-layer conformance *model* in
-//! `project-canon-core`, not the verbs. The `new` / `doctor` / `review` verbs — and with them
-//! the clap surface, the §2 error→exit map, and the §10 `--json` envelope — land in their own
-//! (blocked) issues. Half-implementing the CLI canon here would be worse than an honest stub,
-//! so `main` only reports status and a one-line smoke summary proving the core is wired.
+//! The `doctor` verb (mechanical conformance gate) lives in [`doctor`]; `new` / `review` are
+//! still tracked as separate issues. `main` dispatches the subcommand and, for a bare
+//! invocation, prints the no-verb smoke summary proving the core + env layer are wired.
+
+mod doctor;
+mod json;
 
 use std::process::ExitCode;
 
 use project_canon_core::{Archetype, EnvConfig, EnvConfigLayer, Model, Questionnaire};
 
 fn main() -> ExitCode {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        Some("doctor") => doctor::run(&args[1..]),
+        Some(other) if !other.starts_with('-') => {
+            eprintln!("project-canon: unknown subcommand: {other:?}");
+            eprintln!("known verbs: doctor  (new/review are not built yet)");
+            ExitCode::from(2)
+        }
+        // No subcommand (or a leading flag like `--version` we don't yet parse): the smoke stub.
+        _ => smoke_summary(),
+    }
+}
+
+/// The no-verb smoke summary: prove the core model + env config layer are wired.
+fn smoke_summary() -> ExitCode {
     // Smoke summary from core: resolve the widest `cli` characterization and report the size of
     // its section-set. This keeps the core dependency real and gives an at-a-glance sanity line.
     let model = Model::standard();
@@ -52,7 +68,7 @@ fn main() -> ExitCode {
         cfg.family_repos().len(),
     );
     eprintln!(
-        "No verbs yet — `new`, `doctor`, and `review` are tracked as separate issues in this repo."
+        "Run `project-canon doctor --help`. `new` and `review` are tracked as separate issues."
     );
     ExitCode::SUCCESS
 }
