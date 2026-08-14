@@ -6,6 +6,9 @@ status: in-progress
 priority: normal
 epic: project-canon-v0
 labels: [tooling]
+commits:
+- hash: a8d69e3
+  summary: skill install/list/print verb, design.md, tests
 ---
 
 # Canon as an installable skill that project-canon installs (not a copied markdown file)

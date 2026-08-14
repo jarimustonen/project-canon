@@ -87,11 +87,20 @@ write ever lands in `$HOME` or this repo's real `.claude/`.
   `--force`** (never clobber a foreign file silently).
 
 `--dry-run` computes every per-file action and prints the plan, writing nothing (not even the
-target dirs). `--json` emits the §10 envelope (`schema_version`, `tool`, `verb`, `target`,
-per-file rows with `agent`/`path`/`action`, `summary`, `exit_code`). Writes use
-`create_dir_all` for parents; the skill file itself is written with an explicit
-overwrite/no-overwrite decision from the action table (never blind `create_new`, because
-*upgrade* must replace).
+target dirs). `--json` emits the §10 envelope (`schema_version`, `tool`, `verb`, `status`,
+`target`, per-file rows with `agent`/`path`/`action`/`blocked`, `summary`, `exit_code`) — on
+both the success and the *blocked* path (a blocking conflict yields `status: "blocked"`,
+`exit_code: 2`, not just stderr text).
+
+**Robustness (post-review).** Detection uses no-follow `symlink_metadata`: a symlink or other
+non-regular file at a target path is a foreign conflict, never read or written *through*. The
+"ours" marker is matched only at an **anchored** position (file start for Codex; first body line
+after the frontmatter for Claude), so a user file that merely quotes the marker is not mistaken
+for a managed one. Each file is written **atomically** via a sibling temp file + `rename` (which
+replaces the final component without following a final-component symlink) — durable against a
+truncated half-write. This is *per-file* atomic, **not** cross-file transactional: a mid-run I/O
+failure can still leave a subset of files installed (reported, non-zero exit). The Claude
+`description` is emitted as a YAML double-quoted scalar so a `: ` in it cannot break frontmatter.
 
 ## Exit codes
 

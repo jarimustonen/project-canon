@@ -316,9 +316,137 @@ fn print_json_carries_metadata_and_content() {
     assert_eq!(code(&out), 0);
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("\"name\":\"ai-first-cli-canon\""));
-    assert!(stdout.contains("\"schema_version_skill\":1"));
+    assert!(stdout.contains("\"skill_schema_version\":1"));
     assert!(stdout.contains("\"path_in_repo\":\"AGENTS-AI-FIRST-CLI.md\""));
     assert!(stdout.contains("\"content\":"));
+    assert!(stdout.contains("\"exit_code\":0"));
+}
+
+#[test]
+fn show_is_an_alias_for_print() {
+    // §15 names the read-only streamer `show`; §16 names it `print`. Both must work identically.
+    let print = run(&["print", "ai-first-cli-canon", "--agent", "codex"]);
+    let show = run(&["show", "ai-first-cli-canon", "--agent", "codex"]);
+    assert_eq!(code(&print), 0);
+    assert_eq!(code(&show), 0);
+    assert_eq!(print.stdout, show.stdout);
+}
+
+#[test]
+fn print_codex_is_byte_identical_to_install() {
+    // §16 for the Codex form too (the render path differs from Claude — no frontmatter).
+    let t = Tmp::new("print-codex");
+    assert_eq!(
+        code(&run(&["install", "--target", t.str(), "--agent", "codex"])),
+        0
+    );
+    let installed = std::fs::read_to_string(t.codex_prompt()).unwrap();
+    let printed = run(&["print", "ai-first-cli-canon", "--agent", "codex"]);
+    assert_eq!(String::from_utf8_lossy(&printed.stdout), installed);
+}
+
+#[test]
+fn list_and_print_reject_help_inline_value() {
+    // Strict §1 parsing is uniform: `--help=x` is a usage error in every subcommand.
+    assert_eq!(code(&run(&["list", "--help=x"])), 2);
+    assert_eq!(code(&run(&["print", "--help=x"])), 2);
+}
+
+#[test]
+fn list_and_print_refuse_a_malformed_env() {
+    // env validation is uniform across all three subcommands, not just install.
+    for sub in [
+        ["list"].as_slice(),
+        ["print", "ai-first-cli-canon"].as_slice(),
+    ] {
+        let out = base_command()
+            .arg("skill")
+            .args(sub)
+            .env("PROJECT_CANON_TW_ENABLED", "not-a-bool")
+            .output()
+            .unwrap();
+        assert_eq!(code(&out), 2, "sub {sub:?} should reject a malformed env");
+    }
+}
+
+#[test]
+fn list_json_envelope_is_consistent() {
+    let out = run(&["list", "--json"]);
+    assert_eq!(code(&out), 0);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"verb\":\"skill list\""));
+    assert!(stdout.contains("\"exit_code\":0"));
+    // Top-level cli_version + the per-skill skill_schema_version key (uniform with print).
+    assert!(stdout.contains("\"cli_version\":"));
+    assert!(stdout.contains("\"skill_schema_version\":1"));
+}
+
+#[test]
+fn blocked_install_emits_a_json_error_envelope() {
+    // Under --json, a blocking conflict must still yield a structured envelope, not only stderr.
+    let t = Tmp::new("blocked-json");
+    let p = t.claude_skill();
+    std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+    std::fs::write(&p, "HAND WRITTEN").unwrap();
+    let out = run(&[
+        "install",
+        "--target",
+        t.str(),
+        "--agent",
+        "claude",
+        "--json",
+    ]);
+    assert_eq!(code(&out), 2);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.trim().starts_with('{'), "expected JSON: {stdout}");
+    assert!(stdout.contains("\"status\":\"blocked\""));
+    assert!(stdout.contains("\"exit_code\":2"));
+    assert!(stdout.contains("\"blocked\":true"));
+    // The foreign file is untouched.
+    assert_eq!(std::fs::read_to_string(&p).unwrap(), "HAND WRITTEN");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_at_the_target_is_refused_and_not_followed() {
+    // A planted final-path symlink must NOT be written through to its target (write-through would
+    // clobber a foreign file, e.g. ~/.ssh/...). It is refused as a conflict; --force replaces the
+    // link itself (via rename), never the file it points at.
+    let t = Tmp::new("symlink");
+    let sentinel = t.path.join("sentinel.txt");
+    std::fs::write(&sentinel, "DO NOT TOUCH").unwrap();
+    let link = t.codex_prompt();
+    std::fs::create_dir_all(link.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&sentinel, &link).unwrap();
+
+    let out = run(&["install", "--target", t.str(), "--agent", "codex"]);
+    assert_eq!(
+        code(&out),
+        2,
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // The symlink's target was never written through.
+    assert_eq!(std::fs::read_to_string(&sentinel).unwrap(), "DO NOT TOUCH");
+
+    // --force replaces the link with a real file; the sentinel is still untouched.
+    let out = run(&[
+        "install",
+        "--target",
+        t.str(),
+        "--agent",
+        "codex",
+        "--force",
+    ]);
+    assert_eq!(code(&out), 0);
+    assert_eq!(std::fs::read_to_string(&sentinel).unwrap(), "DO NOT TOUCH");
+    assert!(std::fs::symlink_metadata(&link)
+        .unwrap()
+        .file_type()
+        .is_file());
+    assert!(std::fs::read_to_string(&link)
+        .unwrap()
+        .contains(&master_canon()));
 }
 
 #[test]
