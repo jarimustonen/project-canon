@@ -2,7 +2,7 @@
 created: 2026-08-12
 updated: 2026-08-14
 type: feature
-status: in-progress
+status: done
 priority: normal
 epic: project-canon-v0
 labels: [tooling]
@@ -11,6 +11,9 @@ lane: build
 commits:
 - hash: 5f3fcfd
   summary: 'feat(new): scaffold verb — generate-only + printed hook plan, new→doctor round-trip'
+- hash: f421ebe
+  summary: 'review: apply 4-model FIXes — name validation, shell-safe hooks, atomic no-clobber writes'
+closed: 2026-08-14
 ---
 
 # new verb: scaffold a conformant repo (subsumes create-project generator)
