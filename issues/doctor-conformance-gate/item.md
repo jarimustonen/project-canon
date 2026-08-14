@@ -2,7 +2,7 @@
 created: 2026-08-12
 updated: 2026-08-14
 type: feature
-status: in-progress
+status: done
 priority: normal
 epic: project-canon-v0
 labels: [tooling]
@@ -11,6 +11,9 @@ lane: build
 commits:
 - hash: 50f55e9
   summary: doctor verb — mechanical conformance gate + design note + tests
+- hash: 1d95573
+  summary: review fixes - 9 mechanical FIXes from 4-model review
+closed: 2026-08-14
 ---
 
 # doctor verb: mechanical conformance gate (CI, non-zero on MUST gap)
