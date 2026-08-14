@@ -2,13 +2,16 @@
 created: 2026-08-14
 updated: 2026-08-14
 type: feature
-status: in-progress
+status: done
 priority: normal
 epic: project-canon-v0
 labels: [tooling]
 commits:
 - hash: a8d69e3
   summary: skill install/list/print verb, design.md, tests
+- hash: '4440648'
+  summary: apply multi-model review FIXes
+closed: 2026-08-14
 ---
 
 # Canon as an installable skill that project-canon installs (not a copied markdown file)
