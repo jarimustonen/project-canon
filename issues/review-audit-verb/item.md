@@ -2,7 +2,7 @@
 created: 2026-08-12
 updated: 2026-08-14
 type: feature
-status: in-progress
+status: done
 priority: normal
 epic: project-canon-v0
 labels: [tooling]
@@ -11,6 +11,9 @@ lane: build
 commits:
 - hash: 12c91ed
   summary: 'feat(review): advisory audit verb — severity-triaged findings, staged (printed) issue commands, never acts'
+- hash: 78d1104
+  summary: 'review: apply multi-model FIXes (probe fault, JSON schema, slug uniqueness, never-act tests)'
+closed: 2026-08-14
 ---
 
 # review verb: recommending audit (severity-triaged findings, staged issues, never auto-fix)
