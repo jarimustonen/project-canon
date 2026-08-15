@@ -2,9 +2,10 @@
 created: 2026-08-15
 updated: 2026-08-15
 type: bug
-status: in-progress
+status: fixed
 priority: high
 labels: [release-blocker]
+closed: 2026-08-15
 ---
 
 # CLI crate not crates.io-publishable — canon embedded via include_str! from outside the crate
