@@ -9,33 +9,35 @@ _Repo bootstrapped 2026-08-12 from homebase **ADR 0009** (`project-canon` = proj
 conformance tool; base project canon + per-archetype profiles, AI-first CLI canon as the `cli`
 profile). Resume: `jatketaan @TODO.md`. Live scheduling is `issuectl dag`._
 
-_**Last round (2026-08-13): `profile-and-base-canon-model` landed and is closed `done`.** commits
-`8f1fe63` (feat(core): base-canon + archetype-profile model) + `53f5816` (review FIXes) + `f52a1c0`
-(close). This is the **first Rust code** in the repo: a `§22` workspace split —
-`crates/project-canon-core` (the two-layer model) + `crates/project-canon-cli` (thin binary).
-The model resolves `resolved(repo) = BASE CANON ∪ PROFILE[archetype]` additively; the **`cli`
-profile lifts §1–§22** (base = §10/§15–§17/§22 + create-project scaffold dims; cli profile = the
-other 17 sections), and `service`/`library`/`release` are **named-but-empty extension points**
-(`is_empty()` contract, disjointness asserted). Design in
-`issues/profile-and-base-canon-model/design.md`. **Green gate green on main** (build/test/clippy
--D warnings/fmt); **24 tests** (20 unit + 4 integration `resolution.rs`). Went through `/llm-review`
-+ `/assess-findings` before merge. **No deploy** (repo policy: distributable CLI, Phase 3 skipped)._
+_**Session 2026-08-14 (five rounds, all landed `done`, green on main, no deploy — repo policy):**
+`env-config-hook-layer` (`2d9f8ab`) → `doctor-conformance-gate` (`50f55e9`) →
+`new-scaffold-generator` (`5f3fcfd`) → `review-audit-verb` (`12c91ed`) → `canon-installable-skill`
+(`a8d69e3`), each with review FIXes + close commits. Prior: `profile-and-base-canon-model`
+(2026-08-13, the two-layer model), `extract-canon-and-skill` (2026-08-12, project-canon = maintained
+home of `AGENTS-AI-FIRST-CLI.md` + `cli-canon`). **Green gate green; 214 tests; clippy -D warnings +
+fmt clean.**_
 
-_**Prior round (2026-08-12): `extract-canon-and-skill` landed `done`** (`cef5c90`+`9770a1e`) —
-project-canon is the **declared maintained home** of `AGENTS-AI-FIRST-CLI.md` (§1–§22 verbatim) and
-the `cli-canon` skill (`skills/cli-canon/`); root `AGENTS.md` provenance = "homebase copies FROM
-here"._
+_**🎯 v0 is FEATURE-COMPLETE.** All three verbs shipped end-to-end for the `cli` profile —
+**`doctor`** (mechanical CI gate, non-zero on MUST gap), **`new`** (generate-only scaffold; external
+bootstrap steps rendered from the EnvConfig hook layer and PRINTED, never executed), **`review`**
+(advisory audit; severity-triaged findings + staged/printed `issuectl` commands; never acts) — on
+the two-layer model (`resolved = BASE ∪ PROFILE[cli]`) with the homebase env specifics externalized
+to the `env` config/hook layer (defaults → file → env). **Plus** the distribution mechanism:
+**`project-canon skill install|list|print`** installs the canon as the versioned, single-sourced
+(`include_str!` of the master, no drifting copy) **`ai-first-cli-canon`** reference skill (Claude +
+Codex). Design decisions in `issues/canon-installable-skill/design.md` — kept as **two** skills
+(`ai-first-cli-canon` = content, `cli-canon` = behavior); `skill` meta-verb dogfoods canon §14–§17;
+one recorded canon deviation (unknown-name in `print` exits **2** for binary-wide consistency, not
+§16's literal 1 — owner may amend the canon)._
 
-_**Next head: `env-config-hook-layer`** — chosen first deliberately: externalize homebase-specific
-paths/env into a config/hook layer **before** the three verbs are built, so `doctor`/`new`/`review`
-all inherit a clean seam instead of each hardcoding defaults that must be torn open later. The model
-left seams for exactly this (no homebase paths hardcoded). Then, in order:
-**`doctor-conformance-gate`** (CI gate; smallest surface, closest to the model — just reads it and
-emits a verdict, validates the keel first in real use) → **`new-scaffold-generator`** (generates a
-repo from the model; builds on doctor's resolution) → **`review-audit-verb`** (advisory audit; last,
-leans on doctor's gate logic). Still **one serial `build` lane** — the verbs may split into parallel
-lanes only once their modules are provably disjoint (re-assess after each lands).
-`homebase-canon-cutover` is ready but **executed in the homebase repo, not here**._
+_**Next: cut the FIRST release.** There is NO local build-lane work left to schedule in this repo.
+The only remaining tracked item, `homebase-canon-cutover`, is **executed in the homebase repo** and
+is **release-gated** (below). So the immediate next action is the release itself — no tracked issue
+by design; run the `/oss-*` family (`/oss-release`) when starting it. **When the first release is
+cut, tell the owner clearly and explicitly** (rollout gate below). **Two deferred follow-ups**
+(noted, NOT filed — owner has not asked to file): (1) wire `new` to optionally auto-install the
+`ai-first-cli-canon` skill on scaffold; (2) a top-level `version --json` `skills:` audit surface
+(§17 hook; `skill list --json` already exposes versions)._
 
 _**Rollout gate (owner decision 2026-08-13):** the cross-repo adoption — homebase + all other repos
 switching to consume this canon/tool FROM here (`homebase-canon-cutover` and its siblings) — is
@@ -44,13 +46,15 @@ When that first release is cut, **tell the owner clearly and explicitly**; the g
 repos happens on his go at that point. Until the release + his go: edit the canon only here, and
 leave the other repos' copies untouched (avoid drift)._
 
-**v0 scope discipline (ADR 0009 §6): a LIFT, not a greenfield canon.** ✅ `cli` profile authored
-(§1–§22 lift); ✅ base canon seeded (§10/§15–§17/§22 + create-project scaffold dims); ✅
-`service`/`library`/`release` left as named-but-empty extension points. Remaining: ship
-`new`/`doctor`/`review` end-to-end for the `cli` profile; externalize homebase env specifics to the
-config/hook layer (`env-config-hook-layer`, next).
+**v0 scope discipline (ADR 0009 §6): a LIFT, not a greenfield canon — ✅ COMPLETE.** ✅ `cli`
+profile authored (§1–§22 lift); ✅ base canon seeded (§10/§15–§17/§22 + create-project scaffold
+dims); ✅ `service`/`library`/`release` left as named-but-empty extension points; ✅ homebase env
+specifics externalized to the config/hook layer; ✅ `new`/`doctor`/`review` shipped end-to-end for
+the `cli` profile; ✅ canon installable as a skill. **Remaining path to adoption:** cut the first
+release → `homebase-canon-cutover` (homebase repo; now "install the canon skill", not "copy the
+markdown") → go-wide across all repos, on the owner's go — all gated on the release.
 
-## Execution DAG (2026-08-14, updated)
+## Execution DAG (2026-08-15, updated)
 
 Scheduling PLAN — source of truth for lane + order; issuectl is authoritative for STATUS
 (never copied here). Live scheduling is `issuectl dag` (frontmatter `lane:` + `blocked_by`);
@@ -61,22 +65,21 @@ this block is a hand-maintained snapshot that the `/stint-*` skills parse. Merge
 
 <!-- execution-dag:begin -->
 ```
-GLOBAL HEAD-OF-LINE: canon-installable-skill   ← start here on resume
+GLOBAL HEAD-OF-LINE: (none in-repo) → cut the FIRST release via /oss-* (no tracked issue by design)
 LANE build — the project-canon workspace: crates/project-canon-{core,cli} (epic: project-canon-v0)
-  # one serial lane at v0: the model landed but the verbs share the core model/resolution
-  # substrate (crates/project-canon-core). doctor/new/review MAY split into parallel lanes
-  # once code lands and their modules are provably disjoint — re-assess after each lands.
+  # EMPTY — v0 is feature-complete; no local build-lane work remains to schedule.
   # DONE (dropped): extract-canon-and-skill (2026-08-12) · profile-and-base-canon-model (2026-08-13)
   #                 · env-config-hook-layer (2026-08-14, the shared config/hook seam the verbs inherit)
   #                 · doctor-conformance-gate (2026-08-14, the mechanical CI gate; reads the model → verdict)
   #                 · new-scaffold-generator (2026-08-14, generate-only scaffold; external steps printed via EnvConfig hooks)
-  #                 · review-audit-verb (2026-08-14, advisory audit; severity-triaged findings + staged/printed commands; never acts).
-  #   v0 FEATURE-COMPLETE: doctor + new + review all landed for the cli profile (174 tests).
+  #                 · review-audit-verb (2026-08-14, advisory audit; severity-triaged findings + staged/printed commands; never acts)
+  #                 · canon-installable-skill (2026-08-14, `skill install|list|print`; canon → versioned single-sourced ai-first-cli-canon skill).
+  #   🎯 v0 FEATURE-COMPLETE: doctor + new + review + skill-install all landed for the cli profile (214 tests).
   # WONTFIX (owner call 2026-08-14, dropped): osstring-argv-env (one-in-a-blue-moon non-UTF-8 argv/env)
   #                 · typed-dimension-id (already guarded by every_mechanical_probe_id_exists_in_the_model test).
-  ▶ canon-installable-skill       distribution: turn AGENTS-AI-FIRST-CLI.md into a skill project-canon installs (reshapes homebase-canon-cutover). CLI surface + skill packaging
-UNLANED — confirmed no project-canon hot files (executed in a DIFFERENT repo):
-    homebase-canon-cutover         after extract-canon-and-skill (delivered) — EXECUTED IN HOMEBASE repo, tracked here
+  # NEXT (no issue by design): cut the first release with /oss-release; when cut, tell the owner explicitly (rollout gate).
+UNLANED — confirmed no project-canon hot files (executed in a DIFFERENT repo, release-gated):
+    homebase-canon-cutover         after FIRST RELEASE (gated) — EXECUTED IN HOMEBASE repo; now "install the ai-first-cli-canon skill from project-canon", not "copy the markdown"
 ```
 <!-- execution-dag:end -->
 
