@@ -1,18 +1,88 @@
 # project-canon 📏
 
-A project-scoped conformance tool for the AI-first CLI / project family. It carries a **base
-project canon** plus **per-archetype profiles** (`cli`, `service`, …) and, once built, will
-offer three verbs:
+<!-- oss-readme:badges-start -->
+[![CI](https://github.com/jarimustonen/project-canon/actions/workflows/ci.yml/badge.svg)](https://github.com/jarimustonen/project-canon/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/project-canon-cli.svg)](https://crates.io/crates/project-canon-cli)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+<!-- oss-readme:badges-end -->
 
-- `new` — scaffold a new repo that conforms to the canon (subsumes homebase's `create-project` generator role)
-- `doctor` — machine-verify a repo against the applicable profile (a CI conformance gate)
-- `review` — a recommending audit against the canon
+A project-scoped **conformance tool** for the AI-first CLI / project family. It carries a
+**base project canon** plus **per-archetype profiles** (`cli`, `service`, …) and resolves them
+into one model (`resolved = base ∪ profile`) that its verbs act on.
 
-The AI-first CLI canon (`AGENTS-AI-FIRST-CLI.md`) is carried as the `cli` profile.
+## Contents
 
-**Status: Private, early.** Bootstrap scaffold only — the tool is not implemented yet; work is
-tracked as issues in this repo. Design rationale: homebase ADR 0009.
+- [What it does](#what-it-does)
+- [Installation](#installation)
+- [Usage](#usage)
+- [The canon as a skill](#the-canon-as-a-skill)
+- [License](#license)
+
+## What it does
+
+Three verbs over the resolved conformance model, for the `cli` profile today:
+
+- **`doctor`** — machine-verify a repo against the applicable profile. A mechanical CI
+  conformance gate: it exits non-zero on any MUST gap, so it drops straight into a pipeline.
+- **`new`** — scaffold a new repo that conforms to the canon. Generate-only: external
+  bootstrap steps are *rendered and printed*, never executed.
+- **`review`** — a recommending audit against the canon: severity-triaged findings plus
+  staged (printed) issue-tracker commands. It advises; it never acts.
+
+The AI-first CLI canon (`AGENTS-AI-FIRST-CLI.md`, §1–§22) is carried as the `cli` profile, and
+this repo is its maintained home.
+
+## Installation
+
+**Homebrew** (macOS and Linux — the primary channel):
+
+```sh
+brew install jarimustonen/project-canon/project-canon
+```
+
+**From crates.io** (needs a Rust toolchain):
+
+```sh
+cargo install project-canon-cli
+```
+
+**Shell installer** (prebuilt binary, macOS and Linux, no toolchain):
+
+```sh
+curl -LsSf https://github.com/jarimustonen/project-canon/releases/latest/download/project-canon-installer.sh | sh
+```
+
+**Prebuilt binaries** — download the archive for your platform and its checksums from the
+[Releases page](https://github.com/jarimustonen/project-canon/releases/latest). Prebuilt
+binaries are published for **macOS (arm64, x86_64)** and **Linux (static musl; arm64,
+x86_64)**.
+
+The library crate is published separately as `project-canon-core` (`cargo add
+project-canon-core`) for embedding the conformance model.
+
+## Usage
+
+```sh
+project-canon --help              # all verbs and flags
+project-canon doctor --json       # conformance gate (non-zero exit on a MUST gap)
+project-canon new <name>          # scaffold a conformant repo (prints external steps)
+project-canon review              # advisory audit; severity-triaged findings
+```
+
+Every verb speaks the AI-first CLI conventions: strict input validation, `--json` output, and
+informative, non-interactive errors.
+
+## The canon as a skill
+
+`project-canon` can install the canon itself as a versioned, single-sourced reference skill
+(for Claude and Codex):
+
+```sh
+project-canon skill install       # install the ai-first-cli-canon skill
+project-canon skill list --json   # installed skills + versions
+project-canon skill print         # print the canon to stdout
+```
 
 ## License
 
-MIT.
+Licensed under the [MIT License](./LICENSE).
