@@ -35,8 +35,10 @@ const EXIT_OK: u8 = 0;
 const EXIT_USAGE: u8 = 2;
 
 /// The canon, bundled verbatim: project-canon is the maintained home of the canon (ADR 0009 §6),
-/// so the binary carries it and every scaffolded repo gets a byte-identical copy.
-const CANON: &str = include_str!("../../../AGENTS-AI-FIRST-CLI.md");
+/// so the binary carries it and every scaffolded repo gets a byte-identical copy. The physical
+/// master lives in `project-canon-core` (packaged there for crates.io); this is a re-export of
+/// [`project_canon_core::CANON`], keeping exactly one copy across the workspace.
+use project_canon_core::CANON;
 
 /// Run `project-canon new <args…>` (the args *after* the `new` subcommand). Owns all of new's
 /// I/O and returns the process exit code.

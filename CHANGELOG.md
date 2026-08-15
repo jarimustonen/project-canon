@@ -23,5 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   x86_64) and Linux (static musl; arm64, x86_64), a Homebrew formula, and a shell installer.
 
 ### Changed
+- The canon master (`AGENTS-AI-FIRST-CLI.md`) now physically lives in
+  `crates/project-canon-core/` and is exposed as `project_canon_core::CANON`; the repo-root
+  path is a symlink to it. Single-source, byte-identical — the CLI's `new`/`skill` verbs embed
+  the core copy instead of their own out-of-crate `include_str!`.
+
 ### Fixed
+- `project-canon-cli` is now crates.io-publishable: it no longer reaches outside its crate for
+  the canon (`include_str!("../../../…")`), which left the packaged tarball unable to compile.
 <!-- oss-changelog:unreleased-end -->

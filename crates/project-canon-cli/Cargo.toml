@@ -11,7 +11,7 @@ name = "project-canon"
 path = "src/main.rs"
 
 [dependencies]
-project-canon-core = { path = "../project-canon-core", version = "0.1.0" }
+project-canon-core = { path = "../project-canon-core", version = "0.1.1" }
 
 [lints]
 workspace = true

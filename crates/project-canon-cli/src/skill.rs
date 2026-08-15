@@ -11,8 +11,9 @@
 //!
 //! v0 ships exactly one skill, `ai-first-cli-canon`: the canon *content* as a reference skill,
 //! distinct from the `cli-canon` *behavior* skill (the reviewer/generator). Its body is not a
-//! second checked-in copy of the canon — it is **assembled from the single master** via
-//! [`include_str!`], the same master `new` bundles. There is therefore no drifting second copy;
+//! second checked-in copy of the canon — it is **assembled from the single master**
+//! ([`project_canon_core::CANON`]), the same master `new` bundles. There is therefore no drifting
+//! second copy;
 //! the single-source invariant is asserted in the integration tests.
 //!
 //! ## Side-effect discipline
@@ -47,8 +48,10 @@ const SKILL_SCHEMA_VERSION: i64 = 1;
 const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The canon master, bundled verbatim — the single source of truth (ADR 0009 §6). Both the
-/// Claude and Codex skill bodies embed exactly these bytes, so no second copy can drift.
-const CANON: &str = include_str!("../../../AGENTS-AI-FIRST-CLI.md");
+/// Claude and Codex skill bodies embed exactly these bytes, so no second copy can drift. The
+/// physical master is packaged in `project-canon-core`; this re-exports
+/// [`project_canon_core::CANON`] so the whole workspace shares one copy.
+use project_canon_core::CANON;
 
 /// A stable provenance marker written into every installed skill. It identifies a file as
 /// **project-canon-managed** (so re-install upgrades it in place), but only when it appears at the
@@ -66,8 +69,8 @@ const EXIT_OK: u8 = 0;
 /// says unknown-name in `print` exits 1; binary-wide consistency wins — see design.md.)
 const EXIT_USAGE: u8 = 2;
 
-/// A skill shipped by this binary. The body is generated (canon via [`include_str!`]), never a
-/// stored file — see the module docs.
+/// A skill shipped by this binary. The body is generated (canon via [`project_canon_core::CANON`]),
+/// never a stored file — see the module docs.
 struct ShippedSkill {
     name: &'static str,
     description: &'static str,
