@@ -67,12 +67,10 @@ fn code(output: &Output) -> i32 {
 }
 
 /// The master canon this repo maintains — the single source the installed skills must embed.
+/// Read straight from `project_canon_core::CANON` (the one physical copy, packaged in core) so
+/// this stays self-contained inside the published tarball and free of root-symlink fragility.
 fn master_canon() -> String {
-    std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../AGENTS-AI-FIRST-CLI.md"
-    ))
-    .unwrap()
+    project_canon_core::CANON.to_string()
 }
 
 #[test]

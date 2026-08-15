@@ -49,7 +49,7 @@ const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The canon master, bundled verbatim — the single source of truth (ADR 0009 §6). Both the
 /// Claude and Codex skill bodies embed exactly these bytes, so no second copy can drift. The
-/// physical master is packaged in `project-canon-core`; this re-exports
+/// physical master is packaged in `project-canon-core`; this imports
 /// [`project_canon_core::CANON`] so the whole workspace shares one copy.
 use project_canon_core::CANON;
 

@@ -1,0 +1,5 @@
+# The canon is embedded byte-for-byte into the published crate via `include_str!`
+# (`project_canon_core::CANON`) and asserted byte-identical by tests. Pin it to LF so a checkout
+# with autocrlf never rewrites its line endings and silently changes the compiled-in bytes across
+# platforms. Applies to the physical copy in project-canon-core and the repo-root symlink alike.
+AGENTS-AI-FIRST-CLI.md text eol=lf

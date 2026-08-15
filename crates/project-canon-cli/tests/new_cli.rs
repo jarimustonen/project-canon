@@ -91,14 +91,15 @@ fn generates_the_base_and_cli_scaffold() {
         .path
         .join(format!("crates/{name}-cli/src/main.rs"))
         .is_file());
-    // The canon copy is byte-identical to this repo's canon.
+    // The canon copy is byte-identical to the single source (`project_canon_core::CANON`) — the
+    // same bytes `new` embeds. Asserting against the const, not a repo-relative path, keeps this
+    // test self-contained inside the published crate tarball and free of root-symlink fragility.
     let bundled = std::fs::read_to_string(t.path.join("AGENTS-AI-FIRST-CLI.md")).unwrap();
-    let source = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../AGENTS-AI-FIRST-CLI.md"
-    ))
-    .unwrap();
-    assert_eq!(bundled, source, "bundled canon must match the repo canon");
+    assert_eq!(
+        bundled,
+        project_canon_core::CANON,
+        "bundled canon must match the single-source canon"
+    );
     // `new` does NOT create .git or issues/ (those are hook products).
     assert!(!t.path.join(".git").exists());
     assert!(!t.path.join("issues").exists());

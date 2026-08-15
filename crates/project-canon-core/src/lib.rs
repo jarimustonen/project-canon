@@ -52,3 +52,26 @@ pub use routing::{suggested_layer, Breadth};
 /// Every canon consumer (the `new` scaffolder, the `skill` installer, both here and in the CLI)
 /// reads exactly these bytes, so no second copy can drift.
 pub const CANON: &str = include_str!("../AGENTS-AI-FIRST-CLI.md");
+
+#[cfg(test)]
+mod canon_tests {
+    /// The one physical copy of the canon lives *inside this crate* as a regular file (never a
+    /// symlink — the repo-root path is the symlink, not this one) and is exactly what
+    /// [`super::CANON`] embeds. Guards the packaging invariant: if someone moved the master back to
+    /// the repo root and left a symlink here, or edited the file out from under `include_str!`,
+    /// this fails. Self-contained — the file ships in the core tarball, so it holds downstream too.
+    #[test]
+    fn canon_master_is_a_regular_file_inside_the_crate() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/AGENTS-AI-FIRST-CLI.md");
+        let meta = std::fs::symlink_metadata(path).expect("canon master must exist in the crate");
+        assert!(
+            meta.file_type().is_file(),
+            "the canon master in project-canon-core must be a regular file, not a symlink"
+        );
+        assert_eq!(
+            std::fs::read_to_string(path).unwrap(),
+            super::CANON,
+            "the packaged canon file must be byte-identical to the embedded CANON const"
+        );
+    }
+}

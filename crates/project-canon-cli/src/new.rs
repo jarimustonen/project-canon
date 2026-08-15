@@ -36,7 +36,7 @@ const EXIT_USAGE: u8 = 2;
 
 /// The canon, bundled verbatim: project-canon is the maintained home of the canon (ADR 0009 §6),
 /// so the binary carries it and every scaffolded repo gets a byte-identical copy. The physical
-/// master lives in `project-canon-core` (packaged there for crates.io); this is a re-export of
+/// master lives in `project-canon-core` (packaged there for crates.io); this imports
 /// [`project_canon_core::CANON`], keeping exactly one copy across the workspace.
 use project_canon_core::CANON;
 
