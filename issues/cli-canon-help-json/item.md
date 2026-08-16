@@ -2,7 +2,7 @@
 created: 2026-08-16
 updated: 2026-08-16
 type: improvement
-status: in-progress
+status: done
 priority: normal
 labels: [cli-canon, tooling]
 lane: canon-rollout
@@ -10,6 +10,9 @@ lane_seq: 35
 commits:
 - hash: f62b0ae
   summary: 'feat(cli): add machine-readable help JSON'
+- hash: e92f0a2
+  summary: 'fix(cli): harden help JSON contract'
+closed: 2026-08-16
 ---
 
 # cli-canon: §14 --help --json machine-readable help
@@ -32,3 +35,9 @@ help payload. Family-wide near-gap.
 prose.
 
 **Current state (evidence):** text help only; no `--help --json` payload.
+
+## Comments
+
+### 2026-08-16T14:51:14Z · @jari
+
+Delivered together with @add-machine-readable by the same canon §14 implementation; both audit trails point to commits f62b0ae and e92f0a2.

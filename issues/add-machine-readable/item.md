@@ -2,7 +2,7 @@
 created: 2026-08-16
 updated: 2026-08-16
 type: feature
-status: in-progress
+status: done
 priority: normal
 epic: project-canon-v0
 labels: [canon]
@@ -11,6 +11,9 @@ lane_seq: 30
 commits:
 - hash: f62b0ae
   summary: 'feat(cli): add machine-readable help JSON'
+- hash: e92f0a2
+  summary: 'fix(cli): harden help JSON contract'
+closed: 2026-08-16
 ---
 
 # Add machine-readable help JSON
