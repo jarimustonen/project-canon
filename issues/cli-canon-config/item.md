@@ -7,6 +7,9 @@ priority: normal
 labels: [cli-canon, tooling]
 lane: canon-rollout
 lane_seq: 45
+commits:
+- hash: 3d26358
+  summary: expose resolved configuration
 ---
 
 # cli-canon: §8 config path / config show --json

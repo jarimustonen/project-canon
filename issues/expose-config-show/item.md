@@ -8,6 +8,9 @@ epic: project-canon-v0
 labels: [canon]
 lane: canon-rollout
 lane_seq: 40
+commits:
+- hash: 3d26358
+  summary: expose resolved configuration
 ---
 
 # Expose config show and path inspection
