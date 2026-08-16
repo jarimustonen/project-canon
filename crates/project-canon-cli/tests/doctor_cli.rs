@@ -56,7 +56,7 @@ impl Drop for Fixture {
 
 /// A `project-canon` command with every `PROJECT_CANON_*` variable scrubbed, so a stray override
 /// on the dev/CI machine can't perturb these hermetic fixtures (the env layer is validated
-/// strictly and would otherwise fail the run with exit 2).
+/// strictly and would otherwise fail the run with exit 1).
 fn base_command() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_project-canon"));
     for (key, _) in std::env::vars_os() {
@@ -106,29 +106,25 @@ fn must_gap_exits_one() {
 }
 
 #[test]
-fn bad_profile_is_a_usage_error_exit_two() {
+fn bad_profile_is_a_usage_error_exit_one() {
     let f = Fixture::conformant("badprof");
     let out = run_doctor(&["--profile", "webapp", f.path.to_str().unwrap()]);
-    assert_eq!(
-        code(&out),
-        2,
-        "bad --profile must be distinct from a conformance gap"
-    );
+    assert_eq!(code(&out), 1, "bad --profile is caller-actionable");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("webapp"), "{stderr}");
 }
 
 #[test]
-fn missing_target_is_a_usage_error_exit_two() {
+fn missing_target_is_a_usage_error_exit_one() {
     let out = run_doctor(&["/no/such/repo/anywhere"]);
-    assert_eq!(code(&out), 2);
+    assert_eq!(code(&out), 1);
 }
 
 #[test]
-fn unknown_flag_is_a_usage_error_exit_two() {
+fn unknown_flag_is_a_usage_error_exit_one() {
     let f = Fixture::conformant("flag");
     let out = run_doctor(&["--nope", f.path.to_str().unwrap()]);
-    assert_eq!(code(&out), 2);
+    assert_eq!(code(&out), 1);
     assert!(String::from_utf8_lossy(&out.stderr).contains("--nope"));
 }
 
@@ -204,7 +200,7 @@ fn inline_value_on_a_valueless_flag_is_a_usage_error() {
     // §1: `--json=false` must not silently emit JSON. Exit 2, echoing the offending flag.
     let f = Fixture::conformant("inline");
     let out = run_doctor(&["--json=false", f.path.to_str().unwrap()]);
-    assert_eq!(code(&out), 2);
+    assert_eq!(code(&out), 1);
     assert!(String::from_utf8_lossy(&out.stderr).contains("--json"));
 }
 
@@ -238,7 +234,34 @@ fn help_exits_zero_even_with_a_malformed_env() {
 fn top_level_unknown_flag_is_a_usage_error() {
     // `project-canon --bogus` must not run the smoke stub and exit 0.
     let out = base_command().arg("--bogus").output().unwrap();
-    assert_eq!(code(&out), 2);
+    assert_eq!(code(&out), 1);
+}
+
+#[test]
+fn json_unknown_flag_uses_the_fatal_error_envelope() {
+    let out = base_command().args(["--json", "--bogus"]).output().unwrap();
+    assert_eq!(code(&out), 1);
+    assert!(out.stdout.is_empty(), "failure must not write stdout");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.trim().starts_with('{'),
+        "expected JSON error: {stderr}"
+    );
+    assert!(stderr.contains("\"schema_version\":1"));
+    assert!(stderr.contains("\"code\":\"usage_error\""));
+}
+
+#[test]
+fn json_domain_validation_error_uses_the_fatal_error_envelope() {
+    let out = run_doctor(&["--json", "/definitely/not/a/project-canon-repo"]);
+    assert_eq!(code(&out), 1);
+    assert!(out.stdout.is_empty(), "failure must not write stdout");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.trim().starts_with('{'),
+        "expected JSON error: {stderr}"
+    );
+    assert!(stderr.contains("\"code\":\"invalid_target\""));
 }
 
 /// Sanity: the fixture helpers point at a real directory (guards the temp-dir plumbing).

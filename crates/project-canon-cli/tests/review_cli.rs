@@ -139,24 +139,24 @@ fn a_conformant_repo_exits_zero_and_stages_nothing() {
 }
 
 #[test]
-fn bad_profile_is_a_usage_error_exit_two() {
+fn bad_profile_is_a_usage_error_exit_one() {
     let f = Fixture::conformant("badprof");
     let out = run_review(&["--profile", "webapp", f.path.to_str().unwrap()]);
-    assert_eq!(code(&out), 2);
+    assert_eq!(code(&out), 1);
     assert!(String::from_utf8_lossy(&out.stderr).contains("webapp"));
 }
 
 #[test]
-fn missing_target_is_a_usage_error_exit_two() {
+fn missing_target_is_a_usage_error_exit_one() {
     let out = run_review(&["/no/such/repo/anywhere"]);
-    assert_eq!(code(&out), 2);
+    assert_eq!(code(&out), 1);
 }
 
 #[test]
-fn unknown_flag_is_a_usage_error_exit_two() {
+fn unknown_flag_is_a_usage_error_exit_one() {
     let f = Fixture::conformant("flag");
     let out = run_review(&["--nope", f.path.to_str().unwrap()]);
-    assert_eq!(code(&out), 2);
+    assert_eq!(code(&out), 1);
     assert!(String::from_utf8_lossy(&out.stderr).contains("--nope"));
 }
 

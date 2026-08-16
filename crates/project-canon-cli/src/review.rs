@@ -24,6 +24,7 @@ use project_canon_core::{
     Resolution, Severity, SurfaceShape,
 };
 
+use crate::error::{fail, json_requested, CliError};
 use crate::json::Json;
 use crate::probes::mechanical_probe;
 use crate::shell::shell_quote;
@@ -34,8 +35,6 @@ const SCHEMA_VERSION: i64 = 1;
 // ===== exit codes (see design.md "Exit-code contract — advisory, NOT a gate") =======
 /// The report was produced — **regardless of how many gaps were found** (advisory).
 const EXIT_OK: u8 = 0;
-/// Usage / operational error — bad flag, bad `--profile`, missing target, I/O fault, malformed env.
-const EXIT_USAGE: u8 = 2;
 
 /// Run `project-canon review <args…>` (the args *after* the `review` subcommand). Owns all of
 /// review's I/O and returns the process exit code.
@@ -48,9 +47,10 @@ pub fn run(args: &[String]) -> ExitCode {
         }
         Ok(Command::Run(a)) => a,
         Err(err) => {
-            eprintln!("project-canon review: {err}");
-            eprintln!("try `project-canon review --help`");
-            return ExitCode::from(EXIT_USAGE);
+            return fail(
+                json_requested(args),
+                CliError::actionable("usage_error", format!("review: {err}")),
+            );
         }
     };
 
@@ -59,29 +59,35 @@ pub fn run(args: &[String]) -> ExitCode {
     // field itself (it audits an explicit target and scopes the staged command to it), but it
     // still refuses to run on a broken environment override. Runs *after* `--help`.
     if let Err(err) = EnvConfigLayer::from_env_vars(&std::env::vars().collect()) {
-        eprintln!("project-canon review: {err}");
-        return ExitCode::from(EXIT_USAGE);
+        return fail(
+            parsed.json,
+            CliError::actionable("validation_error", format!("review: {err}")),
+        );
     }
 
     // Read-only target validation (§1): the repo must be an existing directory.
     let repo = Path::new(&parsed.repo);
     if !repo.is_dir() {
-        eprintln!(
-            "project-canon review: target repo is not a directory: {:?}",
-            parsed.repo
+        return fail(
+            parsed.json,
+            CliError::actionable(
+                "invalid_target",
+                format!("review: target repo is not a directory: {:?}", parsed.repo),
+            ),
         );
-        return ExitCode::from(EXIT_USAGE);
     }
     // Absolute, symlink-resolved path for the report's `target` field and the staged command's
     // `cd`. A failure here (a race or permission error after the `is_dir` check) is operational.
     let target = match std::fs::canonicalize(repo) {
         Ok(p) => p.display().to_string(),
         Err(err) => {
-            eprintln!(
-                "project-canon review: cannot resolve target {:?}: {err}",
-                parsed.repo
+            return fail(
+                parsed.json,
+                CliError::system(
+                    "io_error",
+                    format!("review: cannot resolve target {:?}: {err}", parsed.repo),
+                ),
             );
-            return ExitCode::from(EXIT_USAGE);
         }
     };
 
@@ -96,11 +102,16 @@ pub fn run(args: &[String]) -> ExitCode {
     let report = match build_report(&model, &resolution, parsed.profile, &target) {
         Ok(r) => r,
         Err(fault) => {
-            eprintln!(
-                "project-canon review: cannot probe {} ({}): {}",
-                fault.dim_id, target, fault.source
+            return fail(
+                parsed.json,
+                CliError::system(
+                    "io_error",
+                    format!(
+                        "review: cannot probe {} ({}): {}",
+                        fault.dim_id, target, fault.source
+                    ),
+                ),
             );
-            return ExitCode::from(EXIT_USAGE);
         }
     };
 

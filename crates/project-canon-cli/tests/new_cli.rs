@@ -155,7 +155,7 @@ fn non_empty_target_is_refused_without_force() {
     let out = run_new(&[t.str()]);
     assert_eq!(
         code(&out),
-        2,
+        1,
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
@@ -188,7 +188,7 @@ fn force_fills_gaps_without_overwriting() {
 #[test]
 fn missing_dir_is_a_usage_error() {
     let out = run_new(&["--json"]);
-    assert_eq!(code(&out), 2);
+    assert_eq!(code(&out), 1);
     assert!(String::from_utf8_lossy(&out.stderr).contains("target directory"));
 }
 
@@ -196,7 +196,7 @@ fn missing_dir_is_a_usage_error() {
 fn bad_profile_is_a_usage_error() {
     let t = Tmp::new("badprof");
     let out = run_new(&["--profile", "webapp", t.str()]);
-    assert_eq!(code(&out), 2);
+    assert_eq!(code(&out), 1);
     assert!(String::from_utf8_lossy(&out.stderr).contains("webapp"));
     assert!(!t.path.exists());
 }
@@ -205,20 +205,20 @@ fn bad_profile_is_a_usage_error() {
 fn unknown_flag_is_a_usage_error() {
     let t = Tmp::new("flag");
     let out = run_new(&["--nope", t.str()]);
-    assert_eq!(code(&out), 2);
+    assert_eq!(code(&out), 1);
     assert!(String::from_utf8_lossy(&out.stderr).contains("--nope"));
 }
 
 #[test]
 fn unsafe_name_is_rejected() {
     // A `--name` that would traverse out of the target, inject a flag, or break Cargo is refused
-    // at exit 2 — nothing is generated. This is the security boundary in action.
+    // at exit 1 — nothing is generated. This is the security boundary in action.
     let t = Tmp::new("badname");
     for bad in ["../escape", "foo bar", "-flag", "1tool", "foo;rm"] {
         let out = run_new(&["--name", bad, t.str()]);
         assert_eq!(
             code(&out),
-            2,
+            1,
             "name {bad:?} should be rejected; stderr: {}",
             String::from_utf8_lossy(&out.stderr)
         );
@@ -230,7 +230,7 @@ fn unsafe_name_is_rejected() {
 fn empty_positional_is_a_usage_error() {
     // The design forbids a cwd default; an empty `<dir>` must not silently scaffold into cwd.
     let out = run_new(&["--name", "foo", ""]);
-    assert_eq!(code(&out), 2);
+    assert_eq!(code(&out), 1);
 }
 
 #[test]
@@ -238,7 +238,7 @@ fn flag_like_value_is_a_usage_error() {
     // `--name --json <dir>` is a forgotten value, not name="--json" — strict §1.
     let t = Tmp::new("flagval");
     let out = run_new(&["--name", "--json", t.str()]);
-    assert_eq!(code(&out), 2);
+    assert_eq!(code(&out), 1);
     assert!(String::from_utf8_lossy(&out.stderr).contains("flag-like"));
 }
 
@@ -285,7 +285,7 @@ fn symlink_target_root_is_refused() {
     let out = run_new(&[t.str()]);
     assert_eq!(
         code(&out),
-        2,
+        1,
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );

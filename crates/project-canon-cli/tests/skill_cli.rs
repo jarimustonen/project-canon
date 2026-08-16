@@ -176,11 +176,11 @@ fn foreign_file_is_refused_without_force_then_overwritten_with_force() {
     std::fs::create_dir_all(p.parent().unwrap()).unwrap();
     std::fs::write(&p, "HAND WRITTEN — KEEP").unwrap();
 
-    // Without --force: refused, exit 2, file untouched.
+    // Without --force: refused, exit 1, file untouched.
     let out = run(&["install", "--target", t.str(), "--agent", "claude"]);
     assert_eq!(
         code(&out),
-        2,
+        1,
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
@@ -236,7 +236,7 @@ fn newer_on_disk_is_refused_without_force() {
     )
     .unwrap();
     let out = run(&["install", "--target", t.str(), "--agent", "codex"]);
-    assert_eq!(code(&out), 2);
+    assert_eq!(code(&out), 1);
     assert!(String::from_utf8_lossy(&out.stderr).contains("newer"));
 }
 
@@ -244,7 +244,7 @@ fn newer_on_disk_is_refused_without_force() {
 fn unknown_skill_name_is_a_usage_error() {
     let t = Tmp::new("unknown");
     let out = run(&["install", "nope", "--target", t.str()]);
-    assert_eq!(code(&out), 2);
+    assert_eq!(code(&out), 1);
     assert!(String::from_utf8_lossy(&out.stderr).contains("nope"));
 }
 
@@ -252,7 +252,7 @@ fn unknown_skill_name_is_a_usage_error() {
 fn bad_agent_is_a_usage_error() {
     let t = Tmp::new("badagent");
     let out = run(&["install", "--target", t.str(), "--agent", "emacs"]);
-    assert_eq!(code(&out), 2);
+    assert_eq!(code(&out), 1);
     assert!(String::from_utf8_lossy(&out.stderr).contains("emacs"));
 }
 
@@ -260,7 +260,7 @@ fn bad_agent_is_a_usage_error() {
 fn unknown_flag_is_a_usage_error() {
     let t = Tmp::new("badflag");
     let out = run(&["install", "--target", t.str(), "--nope"]);
-    assert_eq!(code(&out), 2);
+    assert_eq!(code(&out), 1);
     assert!(String::from_utf8_lossy(&out.stderr).contains("--nope"));
 }
 
@@ -272,7 +272,7 @@ fn malformed_env_is_a_usage_error_but_help_still_exits_zero() {
         .env("PROJECT_CANON_TW_ENABLED", "not-a-bool")
         .output()
         .unwrap();
-    assert_eq!(code(&bad), 2);
+    assert_eq!(code(&bad), 1);
     // --help short-circuits before env validation.
     let help = base_command()
         .args(["skill", "install", "--help"])
@@ -346,8 +346,8 @@ fn print_codex_is_byte_identical_to_install() {
 #[test]
 fn list_and_print_reject_help_inline_value() {
     // Strict §1 parsing is uniform: `--help=x` is a usage error in every subcommand.
-    assert_eq!(code(&run(&["list", "--help=x"])), 2);
-    assert_eq!(code(&run(&["print", "--help=x"])), 2);
+    assert_eq!(code(&run(&["list", "--help=x"])), 1);
+    assert_eq!(code(&run(&["print", "--help=x"])), 1);
 }
 
 #[test]
@@ -363,7 +363,7 @@ fn list_and_print_refuse_a_malformed_env() {
             .env("PROJECT_CANON_TW_ENABLED", "not-a-bool")
             .output()
             .unwrap();
-        assert_eq!(code(&out), 2, "sub {sub:?} should reject a malformed env");
+        assert_eq!(code(&out), 1, "sub {sub:?} should reject a malformed env");
     }
 }
 
@@ -394,12 +394,15 @@ fn blocked_install_emits_a_json_error_envelope() {
         "claude",
         "--json",
     ]);
-    assert_eq!(code(&out), 2);
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.trim().starts_with('{'), "expected JSON: {stdout}");
-    assert!(stdout.contains("\"status\":\"blocked\""));
-    assert!(stdout.contains("\"exit_code\":2"));
-    assert!(stdout.contains("\"blocked\":true"));
+    assert_eq!(code(&out), 1);
+    assert!(out.stdout.is_empty(), "failure must not write stdout");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.trim().starts_with('{'),
+        "expected JSON error: {stderr}"
+    );
+    assert!(stderr.contains("\"schema_version\":1"));
+    assert!(stderr.contains("\"code\":\"already_exists\""));
     // The foreign file is untouched.
     assert_eq!(std::fs::read_to_string(&p).unwrap(), "HAND WRITTEN");
 }
@@ -420,7 +423,7 @@ fn a_symlink_at_the_target_is_refused_and_not_followed() {
     let out = run(&["install", "--target", t.str(), "--agent", "codex"]);
     assert_eq!(
         code(&out),
-        2,
+        1,
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
@@ -450,7 +453,7 @@ fn a_symlink_at_the_target_is_refused_and_not_followed() {
 #[test]
 fn print_unknown_name_is_a_usage_error() {
     let out = run(&["print", "nope"]);
-    assert_eq!(code(&out), 2);
+    assert_eq!(code(&out), 1);
     assert!(String::from_utf8_lossy(&out.stderr).contains("nope"));
 }
 

@@ -22,6 +22,7 @@ use project_canon_core::{
     SurfaceShape,
 };
 
+use crate::error::{fail, json_requested, CliError};
 use crate::json::Json;
 
 /// The `--json` payload schema version (§10). Bump on any breaking shape change.
@@ -30,9 +31,6 @@ const SCHEMA_VERSION: i64 = 1;
 // ===== exit codes (see design.md "Exit-code contract") ==============================
 /// Success — the plan was printed (`--dry-run`) or the files were written.
 const EXIT_OK: u8 = 0;
-/// Usage / operational error — bad flag/profile, missing target, clobber guard, I/O, bad env.
-/// `new` has no gate semantics, so exit `1` is reserved/unused (kept distinct from doctor's gate).
-const EXIT_USAGE: u8 = 2;
 
 /// The canon, bundled verbatim: project-canon is the maintained home of the canon (ADR 0009 §6),
 /// so the binary carries it and every scaffolded repo gets a byte-identical copy. The physical
@@ -51,9 +49,10 @@ pub fn run(args: &[String]) -> ExitCode {
         }
         Ok(Command::Run(a)) => a,
         Err(err) => {
-            eprintln!("project-canon new: {err}");
-            eprintln!("try `project-canon new --help`");
-            return ExitCode::from(EXIT_USAGE);
+            return fail(
+                json_requested(args),
+                CliError::actionable("usage_error", format!("new: {err}")),
+            );
         }
     };
 
@@ -62,8 +61,10 @@ pub fn run(args: &[String]) -> ExitCode {
     let env_layer = match EnvConfigLayer::from_env_vars(&std::env::vars().collect()) {
         Ok(layer) => layer,
         Err(err) => {
-            eprintln!("project-canon new: {err}");
-            return ExitCode::from(EXIT_USAGE);
+            return fail(
+                parsed.json,
+                CliError::actionable("validation_error", format!("new: {err}")),
+            );
         }
     };
     let cfg = EnvConfig::resolve(&[&EnvConfigLayer::empty(), &env_layer]);
@@ -81,8 +82,10 @@ pub fn run(args: &[String]) -> ExitCode {
     }) {
         Ok(n) => n,
         Err(err) => {
-            eprintln!("project-canon new: {err}");
-            return ExitCode::from(EXIT_USAGE);
+            return fail(
+                parsed.json,
+                CliError::actionable("validation_error", format!("new: {err}")),
+            );
         }
     };
 
@@ -119,25 +122,31 @@ pub fn run(args: &[String]) -> ExitCode {
     // directory (the side-effect boundary).
     match dir_state(root) {
         Err(err) => {
-            eprintln!(
-                "project-canon new: cannot inspect target {:?}: {err}",
-                parsed.dir
+            return fail(
+                parsed.json,
+                CliError::system(
+                    "io_error",
+                    format!("new: cannot inspect target {:?}: {err}", parsed.dir),
+                ),
             );
-            return ExitCode::from(EXIT_USAGE);
         }
         Ok(DirState::NotADir) => {
-            eprintln!(
-                "project-canon new: target {:?} exists but is a symlink or non-directory; refusing (would escape the target)",
-                parsed.dir
+            return fail(
+                parsed.json,
+                CliError::actionable(
+                    "invalid_target",
+                    format!("new: target {:?} exists but is a symlink or non-directory; refusing (would escape the target)", parsed.dir),
+                ),
             );
-            return ExitCode::from(EXIT_USAGE);
         }
         Ok(DirState::NonEmpty) if !parsed.force => {
-            eprintln!(
-                "project-canon new: target {:?} is not empty (use --force to fill gaps; existing files are never overwritten)",
-                parsed.dir
+            return fail(
+                parsed.json,
+                CliError::actionable(
+                    "already_exists",
+                    format!("new: target {:?} is not empty (use --force to fill gaps; existing files are never overwritten)", parsed.dir),
+                ),
             );
-            return ExitCode::from(EXIT_USAGE);
         }
         Ok(_) => {}
     }
@@ -147,14 +156,21 @@ pub fn run(args: &[String]) -> ExitCode {
     let file_rows = match resolve_file_actions(&plan, root) {
         Ok(rows) => rows,
         Err(err) => {
-            eprintln!("project-canon new: {}: {}", err.rel, err.source);
-            return ExitCode::from(EXIT_USAGE);
+            return fail(
+                parsed.json,
+                CliError::system("io_error", format!("new: {}: {}", err.rel, err.source)),
+            );
         }
     };
     if !parsed.dry_run {
         if let Err(err) = apply(&plan, &file_rows, root) {
-            eprintln!("project-canon new: writing {}: {}", err.rel, err.source);
-            return ExitCode::from(EXIT_USAGE);
+            return fail(
+                parsed.json,
+                CliError::system(
+                    "io_error",
+                    format!("new: writing {}: {}", err.rel, err.source),
+                ),
+            );
         }
     }
 

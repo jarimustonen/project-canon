@@ -17,6 +17,7 @@ use project_canon_core::{
     Severity, SurfaceShape,
 };
 
+use crate::error::{fail, json_requested, CliError};
 use crate::json::Json;
 use crate::probes::mechanical_probe;
 
@@ -28,8 +29,6 @@ const SCHEMA_VERSION: i64 = 1;
 const EXIT_CONFORMANT: u8 = 0;
 /// Non-conformant — ≥1 mechanically-decided MUST gap (the gate's designed non-zero).
 const EXIT_GAP: u8 = 1;
-/// Usage / operational error — bad flag, bad `--profile`, missing target, malformed env.
-const EXIT_USAGE: u8 = 2;
 
 /// Run `project-canon doctor <args…>` (the args *after* the `doctor` subcommand). Owns all of
 /// doctor's I/O and returns the process exit code.
@@ -42,9 +41,10 @@ pub fn run(args: &[String]) -> ExitCode {
         }
         Ok(Command::Run(a)) => a,
         Err(err) => {
-            eprintln!("project-canon doctor: {err}");
-            eprintln!("try `project-canon doctor --help`");
-            return ExitCode::from(EXIT_USAGE);
+            return fail(
+                json_requested(args),
+                CliError::actionable("usage_error", format!("doctor: {err}")),
+            );
         }
     };
 
@@ -54,29 +54,35 @@ pub fn run(args: &[String]) -> ExitCode {
     // broken environment override rather than ignoring it. Runs *after* `--help` so help never
     // requires a clean environment.
     if let Err(err) = EnvConfigLayer::from_env_vars(&std::env::vars().collect()) {
-        eprintln!("project-canon doctor: {err}");
-        return ExitCode::from(EXIT_USAGE);
+        return fail(
+            parsed.json,
+            CliError::actionable("validation_error", format!("doctor: {err}")),
+        );
     }
 
     // Read-only target validation (§1): the repo must be an existing directory.
     let repo = Path::new(&parsed.repo);
     if !repo.is_dir() {
-        eprintln!(
-            "project-canon doctor: target repo is not a directory: {:?}",
-            parsed.repo
+        return fail(
+            parsed.json,
+            CliError::actionable(
+                "invalid_target",
+                format!("doctor: target repo is not a directory: {:?}", parsed.repo),
+            ),
         );
-        return ExitCode::from(EXIT_USAGE);
     }
     // Absolute, symlink-resolved path for the report's `target` field. A failure here (a race or
     // permission error after the `is_dir` check) is operational, not a conformance gap → exit 2.
     let target = match std::fs::canonicalize(repo) {
         Ok(p) => p.display().to_string(),
         Err(err) => {
-            eprintln!(
-                "project-canon doctor: cannot resolve target {:?}: {err}",
-                parsed.repo
+            return fail(
+                parsed.json,
+                CliError::system(
+                    "io_error",
+                    format!("doctor: cannot resolve target {:?}: {err}", parsed.repo),
+                ),
             );
-            return ExitCode::from(EXIT_USAGE);
         }
     };
 
@@ -91,11 +97,16 @@ pub fn run(args: &[String]) -> ExitCode {
     let report = match build_report(&model, &resolution, parsed.profile, &target, repo) {
         Ok(r) => r,
         Err(fault) => {
-            eprintln!(
-                "project-canon doctor: cannot probe {} ({}): {}",
-                fault.dim_id, target, fault.source
+            return fail(
+                parsed.json,
+                CliError::system(
+                    "io_error",
+                    format!(
+                        "doctor: cannot probe {} ({}): {}",
+                        fault.dim_id, target, fault.source
+                    ),
+                ),
             );
-            return ExitCode::from(EXIT_USAGE);
         }
     };
 

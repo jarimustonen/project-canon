@@ -6,6 +6,7 @@
 //! env layer are wired.
 
 mod doctor;
+mod error;
 mod json;
 mod new;
 mod probes;
@@ -17,6 +18,8 @@ use std::process::ExitCode;
 
 use project_canon_core::{Archetype, EnvConfig, EnvConfigLayer, Model, Questionnaire};
 
+use crate::error::{fail, json_requested, CliError};
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
@@ -27,17 +30,23 @@ fn main() -> ExitCode {
         // Only the bare invocation (and the not-yet-parsed top-level status flags) hit the stub;
         // an unknown subcommand OR an unknown leading flag is a strict usage error (§1), not a
         // silent exit-0 — a typo like `project-canon --doctr` must not look like success.
-        None | Some("--help") | Some("--version") => smoke_summary(),
+        None | Some("--help") | Some("--version") => smoke_summary(&args),
         Some(other) => {
-            eprintln!("project-canon: unknown subcommand or flag: {other:?}");
-            eprintln!("known verbs: doctor, new, review, skill");
-            ExitCode::from(2)
+            fail(
+                json_requested(&args),
+                CliError::actionable(
+                    "usage_error",
+                    format!(
+                        "unknown subcommand or flag: {other:?}; known verbs: doctor, new, review, skill"
+                    ),
+                ),
+            )
         }
     }
 }
 
 /// The no-verb smoke summary: prove the core model + env config layer are wired.
-fn smoke_summary() -> ExitCode {
+fn smoke_summary(args: &[String]) -> ExitCode {
     // Smoke summary from core: resolve the widest `cli` characterization and report the size of
     // its section-set. This keeps the core dependency real and gives an at-a-glance sanity line.
     let model = Model::standard();
@@ -57,8 +66,10 @@ fn smoke_summary() -> ExitCode {
     let env_layer = match EnvConfigLayer::from_env_vars(&std::env::vars().collect()) {
         Ok(layer) => layer,
         Err(err) => {
-            eprintln!("project-canon: {err}");
-            return ExitCode::from(2); // §2: caller-actionable bad input.
+            return fail(
+                json_requested(args),
+                CliError::actionable("validation_error", err.to_string()),
+            );
         }
     };
     let cfg = EnvConfig::resolve(&[&EnvConfigLayer::empty(), &env_layer]);

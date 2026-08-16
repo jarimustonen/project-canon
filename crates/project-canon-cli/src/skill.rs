@@ -33,6 +33,7 @@ use std::process::ExitCode;
 
 use project_canon_core::EnvConfigLayer;
 
+use crate::error::{fail, json_requested, CliError};
 use crate::json::Json;
 
 /// The `--json` payload schema version (§10). Bump on any breaking shape change.
@@ -63,11 +64,6 @@ const MARKER_PREFIX: &str = "<!-- Installed by `project-canon skill install`";
 // ===== exit codes ===================================================================
 /// Success — installed/upgraded/unchanged, a dry-run plan, or a list/print.
 const EXIT_OK: u8 = 0;
-/// Usage / operational error — bad flag, bad `--agent`, unknown skill, a blocking clobber/version
-/// conflict without `--force`, an I/O fault, or malformed `PROJECT_CANON_*` env. (Uniform with
-/// new/review: exit `1` is reserved for a gate outcome, which `skill` has none of. §16 literally
-/// says unknown-name in `print` exits 1; binary-wide consistency wins — see design.md.)
-const EXIT_USAGE: u8 = 2;
 
 /// A skill shipped by this binary. The body is generated (canon via [`project_canon_core::CANON`]),
 /// never a stored file — see the module docs.
@@ -117,13 +113,15 @@ pub fn run(args: &[String]) -> ExitCode {
             print!("{HELP}");
             ExitCode::from(EXIT_OK)
         }
-        Some(other) => {
-            eprintln!("project-canon skill: unknown subcommand or flag: {other:?}");
-            eprintln!(
-                "known: install, list, print (alias: show) (try `project-canon skill --help`)"
-            );
-            ExitCode::from(EXIT_USAGE)
-        }
+        Some(other) => fail(
+            json_requested(args),
+            CliError::actionable(
+                "usage_error",
+                format!(
+                    "skill: unknown subcommand or flag: {other:?}; known: install, list, print (alias: show)"
+                ),
+            ),
+        )
     }
 }
 
@@ -328,10 +326,10 @@ fn write_stdout(content: &str) -> ExitCode {
     match out.write_all(content.as_bytes()) {
         Ok(()) => ExitCode::from(EXIT_OK),
         Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => ExitCode::from(EXIT_OK),
-        Err(e) => {
-            eprintln!("project-canon skill: writing stdout: {e}");
-            ExitCode::from(EXIT_USAGE)
-        }
+        Err(e) => fail(
+            false,
+            CliError::system("io_error", format!("skill: writing stdout: {e}")),
+        ),
     }
 }
 
@@ -364,15 +362,18 @@ mod install {
             }
             Ok(Command::Run(a)) => a,
             Err(err) => {
-                eprintln!("project-canon skill install: {err}");
-                eprintln!("try `project-canon skill --help`");
-                return ExitCode::from(EXIT_USAGE);
+                return fail(
+                    json_requested(args),
+                    CliError::actionable("usage_error", format!("skill install: {err}")),
+                );
             }
         };
 
         if let Err(err) = validate_env() {
-            eprintln!("project-canon skill install: {err}");
-            return ExitCode::from(EXIT_USAGE);
+            return fail(
+                parsed.json,
+                CliError::actionable("validation_error", format!("skill install: {err}")),
+            );
         }
 
         // Which skills: the named one (validated), else all shipped (§15 "installs all").
@@ -380,15 +381,20 @@ mod install {
             Some(name) => match lookup_skill(name) {
                 Some(s) => vec![s],
                 None => {
-                    eprintln!(
-                        "project-canon skill install: unknown skill {name:?} (available: {})",
-                        SHIPPED
-                            .iter()
-                            .map(|s| s.name)
-                            .collect::<Vec<_>>()
-                            .join(", ")
+                    return fail(
+                        parsed.json,
+                        CliError::actionable(
+                            "not_found",
+                            format!(
+                                "skill install: unknown skill {name:?} (available: {})",
+                                SHIPPED
+                                    .iter()
+                                    .map(|s| s.name)
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            ),
+                        ),
                     );
-                    return ExitCode::from(EXIT_USAGE);
                 }
             },
             None => SHIPPED.iter().collect(),
@@ -398,8 +404,10 @@ mod install {
         let base = match resolve_base(&parsed.target) {
             Ok(b) => b,
             Err(err) => {
-                eprintln!("project-canon skill install: {err}");
-                return ExitCode::from(EXIT_USAGE);
+                return fail(
+                    parsed.json,
+                    CliError::actionable("validation_error", format!("skill install: {err}")),
+                );
             }
         };
 
@@ -408,11 +416,16 @@ mod install {
         let rows = match resolve_rows(&skills, &parsed.agents, &base, parsed.force) {
             Ok(rows) => rows,
             Err(fault) => {
-                eprintln!(
-                    "project-canon skill install: cannot inspect {}: {}",
-                    fault.path, fault.source
+                return fail(
+                    parsed.json,
+                    CliError::system(
+                        "io_error",
+                        format!(
+                            "skill install: cannot inspect {}: {}",
+                            fault.path, fault.source
+                        ),
+                    ),
                 );
-                return ExitCode::from(EXIT_USAGE);
             }
         };
 
@@ -424,22 +437,25 @@ mod install {
             rows,
         };
 
-        // Blocking conflicts: refuse the whole run before any write. Under --json the caller still
-        // gets a structured envelope (status "blocked", exit_code 2) rather than only stderr text.
+        // Blocking conflicts: refuse the whole run before any write. Under --json the caller gets
+        // the central structured error envelope on stderr, with no stdout data.
         if report.rows.iter().any(|r| r.action.is_blocking()) {
-            if parsed.json {
-                println!("{}", report.to_json(EXIT_USAGE, "blocked"));
-            } else {
-                for b in report.rows.iter().filter(|r| r.action.is_blocking()) {
-                    eprintln!(
-                        "project-canon skill install: refusing to write {} ({})",
-                        b.path,
-                        b.action.blocking_reason().unwrap_or("conflict")
-                    );
-                }
-                eprintln!("pass --force to overwrite.");
-            }
-            return ExitCode::from(EXIT_USAGE);
+            let blocked = report
+                .rows
+                .iter()
+                .find(|r| r.action.is_blocking())
+                .expect("blocking row exists after any check");
+            return fail(
+                parsed.json,
+                CliError::actionable(
+                    "already_exists",
+                    format!(
+                        "skill install: refusing to write {} ({})\npass --force to overwrite.",
+                        blocked.path,
+                        blocked.action.blocking_reason().unwrap_or("conflict")
+                    ),
+                ),
+            );
         }
 
         // Apply the writes (skipped under --dry-run). Each file is written atomically (temp file +
@@ -448,8 +464,13 @@ mod install {
             for r in &report.rows {
                 if let (Some(content), true) = (&r.desired, r.action.writes()) {
                     if let Err(source) = write_file_atomic(Path::new(&r.path), content) {
-                        eprintln!("project-canon skill install: writing {}: {source}", r.path);
-                        return ExitCode::from(EXIT_USAGE);
+                        return fail(
+                            parsed.json,
+                            CliError::system(
+                                "io_error",
+                                format!("skill install: writing {}: {source}", r.path),
+                            ),
+                        );
                     }
                 }
             }
@@ -851,7 +872,7 @@ mod install {
         }
 
         /// The §10 payload. `exit_code`/`status` are passed in so the blocked path can emit a
-        /// structured error envelope (status "blocked", exit 2) rather than only stderr text.
+        /// central structured error envelope on stderr rather than only prose.
         fn to_json(&self, exit_code: u8, status: &str) -> Json {
             let files = self
                 .rows
@@ -1124,8 +1145,10 @@ mod list {
             match flag {
                 "--help" => {
                     if let Err(err) = reject_inline("--help", inline) {
-                        eprintln!("project-canon skill list: {err}");
-                        return ExitCode::from(EXIT_USAGE);
+                        return fail(
+                            json_requested(args),
+                            CliError::actionable("usage_error", format!("skill list: {err}")),
+                        );
                     }
                     print!("{HELP}");
                     return ExitCode::from(EXIT_OK);
@@ -1134,20 +1157,29 @@ mod list {
                     if let Err(err) =
                         reject_inline("--json", inline).and_then(|()| set_flag(&mut json, "--json"))
                     {
-                        eprintln!("project-canon skill list: {err}");
-                        return ExitCode::from(EXIT_USAGE);
+                        return fail(
+                            json_requested(args),
+                            CliError::actionable("usage_error", format!("skill list: {err}")),
+                        );
                     }
                 }
                 other => {
-                    eprintln!("project-canon skill list: unexpected argument: {other:?}");
-                    return ExitCode::from(EXIT_USAGE);
+                    return fail(
+                        json_requested(args),
+                        CliError::actionable(
+                            "usage_error",
+                            format!("skill list: unexpected argument: {other:?}"),
+                        ),
+                    );
                 }
             }
         }
 
         if let Err(err) = validate_env() {
-            eprintln!("project-canon skill list: {err}");
-            return ExitCode::from(EXIT_USAGE);
+            return fail(
+                json,
+                CliError::actionable("validation_error", format!("skill list: {err}")),
+            );
         }
 
         if json {
@@ -1204,7 +1236,7 @@ mod print {
         while let Some(arg) = iter.next() {
             if positional_only {
                 if name.is_some() {
-                    return usage("print", &format!("unexpected extra argument: {arg:?}"));
+                    return usage(args, &format!("unexpected extra argument: {arg:?}"));
                 }
                 name = Some(arg.clone());
                 continue;
@@ -1217,7 +1249,7 @@ mod print {
             match flag {
                 "--help" => {
                     if let Err(err) = reject_inline("--help", inline) {
-                        return usage("print", &err);
+                        return usage(args, &err);
                     }
                     print!("{HELP}");
                     return ExitCode::from(EXIT_OK);
@@ -1226,29 +1258,29 @@ mod print {
                     if let Err(err) =
                         reject_inline("--json", inline).and_then(|()| set_flag(&mut json, "--json"))
                     {
-                        return usage("print", &err);
+                        return usage(args, &err);
                     }
                 }
                 "--agent" => {
                     if agent_set {
-                        return usage("print", "repeated flag: --agent");
+                        return usage(args, "repeated flag: --agent");
                     }
                     let value = match take_value("--agent", inline, &mut iter) {
                         Ok(v) => v,
-                        Err(err) => return usage("print", &err),
+                        Err(err) => return usage(args, &err),
                     };
                     match parse_agent(&value, false) {
                         Ok(a) => agent = a[0],
-                        Err(err) => return usage("print", &err),
+                        Err(err) => return usage(args, &err),
                     }
                     agent_set = true;
                 }
                 other if other.starts_with('-') => {
-                    return usage("print", &format!("unknown flag: {other}"));
+                    return usage(args, &format!("unknown flag: {other}"));
                 }
                 _ => {
                     if name.is_some() {
-                        return usage("print", &format!("unexpected extra argument: {arg:?}"));
+                        return usage(args, &format!("unexpected extra argument: {arg:?}"));
                     }
                     name = Some(arg.clone());
                 }
@@ -1256,18 +1288,18 @@ mod print {
         }
 
         if let Err(err) = validate_env() {
-            return usage("print", &err);
+            return usage(args, &err);
         }
 
         let name = match name {
             Some(n) => n,
-            None => return usage("print", "missing skill name (usage: skill print <name>)"),
+            None => return usage(args, "missing skill name (usage: skill print <name>)"),
         };
         let skill = match lookup_skill(&name) {
             Some(s) => s,
             None => {
                 return usage(
-                    "print",
+                    args,
                     &format!(
                         "unknown skill {name:?} (available: {})",
                         SHIPPED
@@ -1306,8 +1338,10 @@ mod print {
         }
     }
 
-    fn usage(sub: &str, msg: &str) -> ExitCode {
-        eprintln!("project-canon skill {sub}: {msg}");
-        ExitCode::from(EXIT_USAGE)
+    fn usage(args: &[String], msg: &str) -> ExitCode {
+        fail(
+            json_requested(args),
+            CliError::actionable("usage_error", format!("skill print: {msg}")),
+        )
     }
 }
