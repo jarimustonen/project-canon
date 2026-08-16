@@ -121,11 +121,18 @@ coordinates as known-good, derivable from the git remote; plus an operator deny-
 user-config layer, keeping the check itself free of user specifics). Land it in a state where
 project-canon itself passes — a canon section the home repo violates is worse than none.
 
-**Also open:** `project-canon-v0` epic looks finishable — worth a close pass. One untriaged intake
-item (see the bug-report section at the bottom): `review` should **execute the built binary** to
-auto-confirm runtime-observable canon checks (§2/§8/§10/§14/§15/§16/§18) instead of punting ~14 of 22
-sections to manual-verify. It's now much more actionable than when filed — this session built the
-very surfaces it wants probed.
+**Then (laned, `canon-rollout` seq 30): `intake-feature-project-canon-ab1e44dfaf66`** — make `review`
+**execute the built binary** to auto-confirm runtime-observable canon checks (§2/§8/§10/§14/§15/§16/
+§18) instead of punting ~14 of 22 sections to manual-verify. Admitted from intake at this handoff
+(owner ack 2026-08-16). Filed against 0.1.1, when `review` auto-confirmed only ONE gap family-wide
+(§22, a static filesystem check) and the real gaps had to be found by hand-running each binary.
+**Much more actionable now:** this session built the very surfaces it wants probed, so the probes
+have something to find. Suggested shape from the reporter: an opt-in `--run <path-to-binary>` (or
+auto-detect a built target), keeping `--assume-defaults` static-only as the safe default for un-built
+repos. **Sequence it with `canon-no-user-specifics`** — that one also needs a new `doctor` check, so
+design the "actually execute/probe the target" mechanics once, for both.
+
+**Also open:** `project-canon-v0` epic looks finishable — worth a close pass.
 
 **v0 scope discipline (ADR 0009 §6): a LIFT, not a greenfield canon — ✅ COMPLETE, ✅ RELEASED (0.1.1).**
 ✅ `cli` profile (§1–§22 lift); ✅ base canon seeded; ✅ `service`/`library`/`release` named-but-empty
@@ -149,4 +156,4 @@ issuectl ls --status in-progress
 
 ## Piialiisan bugiraportit
 
-- [ ] 🐛 Piialiisan bugiraportti: review: execute the built binary to auto-verify runtime canon checks in… — jari via Telegram ([`intake-feature-project-canon-ab1e44dfaf66`](issues/intake-feature-project-canon-ab1e44dfaf66/item.md))
+- [x] 🐛 Piialiisan bugiraportti: review: execute the built binary to auto-verify runtime canon checks in… — jari via Telegram ([`intake-feature-project-canon-ab1e44dfaf66`](issues/intake-feature-project-canon-ab1e44dfaf66/item.md)) — **admitted 2026-08-16**, now normal planned work in `canon-rollout` (seq 30); see the handoff block above.

@@ -7,7 +7,8 @@ status: open
 priority: normal
 labels:
 - via:agent-homebase-wrapup
-- needs-triage
+lane: canon-rollout
+lane_seq: 30
 ---
 
 # review: execute the built binary to auto-verify runtime canon checks in…
