@@ -55,20 +55,12 @@ coordinated bump to **0.1.1** (core@0.1.0 was already public without the CANON A
 `core = "=0.1.1"`. **Two ossctl engine bugs filed in the ossctl repo:** `release-cut-ignores-version`,
 `release-resume-unimplemented`._
 
-_**Next: `homebase-canon-cutover` — the ROLLOUT GATE IS NOW OPEN.** The first release is cut, so the
-cross-repo adoption is unblocked: homebase + the other family repos switch to consume this canon/tool
-FROM here — now "**install the `ai-first-cli-canon` skill from project-canon**", not "copy the markdown".
-`homebase-canon-cutover` is **executed in the homebase repo**, not here. Go-wide across all repos on the
-owner's go. **Two deferred follow-ups** (noted, NOT filed): (1) wire `new` to optionally auto-install the
-`ai-first-cli-canon` skill on scaffold; (2) a top-level `version --json` `skills:` audit surface. **Also
-worth a follow-up:** teach cargo-dist to push the Homebrew formula in CI (today the formula is
-maintained by hand in the tap) once the ossctl `dist` phase is trusted._
+_**`homebase-canon-cutover` DONE 2026-08-16.** After the first release, homebase and the selected active repo set switched to consume the canon/tool FROM here: install the `ai-first-cli-canon` skill from project-canon, not copy the markdown. **Two deferred follow-ups** (noted, NOT filed): (1) wire `new` to optionally auto-install the `ai-first-cli-canon` skill on scaffold; (2) a top-level `version --json` `skills:` audit surface. **Also worth a follow-up:** teach cargo-dist to push the Homebrew formula in CI (today the formula is maintained by hand in the tap) once the ossctl `dist` phase is trusted._
 
 **v0 scope discipline (ADR 0009 §6): a LIFT, not a greenfield canon — ✅ COMPLETE, ✅ RELEASED (0.1.1).**
 ✅ `cli` profile (§1–§22 lift); ✅ base canon seeded; ✅ `service`/`library`/`release` named-but-empty
 extension points; ✅ env specifics externalized; ✅ `new`/`doctor`/`review` + skill-install shipped;
-✅ **first release cut & public**. **Path to adoption:** ✅ release → **`homebase-canon-cutover`** (homebase
-repo) → go-wide across all repos, on the owner's go.
+✅ **first release cut & public**. **Path to adoption:** ✅ release → ✅ **`homebase-canon-cutover`** (homebase repo) → selected active repos switched over.
 
 ## Execution DAG (2026-08-16, updated)
 
@@ -81,7 +73,7 @@ this block is a hand-maintained snapshot that the `/stint-*` skills parse. Merge
 
 <!-- execution-dag:begin -->
 ```
-GLOBAL HEAD-OF-LINE: homebase-canon-cutover  ← release cut (gate OPEN); executed in the HOMEBASE repo, not here
+GLOBAL HEAD-OF-LINE: none
 LANE build — the project-canon workspace: crates/project-canon-{core,cli} (epic: project-canon-v0)
   # EMPTY — v0 feature-complete AND released as 0.1.1 (2026-08-16); no local build-lane work remains.
   # DONE (dropped): extract-canon-and-skill · profile-and-base-canon-model · env-config-hook-layer
@@ -91,8 +83,8 @@ LANE build — the project-canon workspace: crates/project-canon-{core,cli} (epi
   #   🎯 v0 FEATURE-COMPLETE + 🚀 RELEASED 0.1.1: crates.io (core+cli) + Homebrew tap + tag v0.1.1.
   # WONTFIX (dropped): osstring-argv-env · typed-dimension-id.
   # OWNER TODO (not an issue): yank project-canon-core@0.0.0 on crates.io (token lacked yank scope).
-UNLANED — confirmed no project-canon hot files (executed in a DIFFERENT repo):
-    homebase-canon-cutover         GATE OPEN (release cut) — EXECUTED IN HOMEBASE repo; "install the ai-first-cli-canon skill from project-canon", not "copy the markdown"
+UNLANED — confirmed no project-canon hot files:
+    # EMPTY — homebase-canon-cutover closed 2026-08-16 after the homebase-side rollout.
 ```
 <!-- execution-dag:end -->
 
