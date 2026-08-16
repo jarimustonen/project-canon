@@ -84,3 +84,26 @@ leaving it to the reader.
 Sequence with `portable-neutral-defaults`: that issue is the concrete cleanup, this one is the
 general rule and its enforcement. The rule should land in a state where project-canon itself
 passes it — a canon section the home repo violates is worse than none.
+
+### 2026-08-16T17:15:08Z · @claude
+
+**Rule refinement (2026-08-16, after `portable-neutral-defaults` landed).** The first wording of
+this rule — "MUST NOT contain personal account handles" — was too absolute: it would flag the
+repo's OWN coordinates. Its GitHub URL, Homebrew tap, CI badge, install commands, and the public
+coordinates of tools it genuinely depends on (e.g. `github.com/<owner>/issuectl` in the
+issue-skill docs) all name the owner, and are all correct.
+
+The canon section MUST carry this carve-out explicitly, and the `doctor` check MUST NOT flag the
+repo's own coordinates. A check that fires on a README install line is a check that gets
+disabled — worse than no check at all.
+
+The distinguishing test is **whose environment the fact describes**: this project's public
+address = fine; the maintainer's other projects, machine layout, or private repos = never.
+
+This also sharpens what the check needs: it cannot work from a generic "looks like a username"
+heuristic. It needs the repo's own owner/coordinates as known-good input (derivable from the git
+remote / package manifest), plus an operator-supplied deny-list of their own private names via
+the §8 user-config layer — which keeps the check itself free of user specifics.
+
+See the refined wording in `AGENTS.md` (Operating policy, first bullet).
+
