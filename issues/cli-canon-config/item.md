@@ -5,8 +5,8 @@ type: improvement
 status: open
 priority: normal
 labels: [cli-canon, tooling]
-lane: cli-canon
-lane_seq: 10
+lane: canon-rollout
+lane_seq: 45
 ---
 
 # cli-canon: §8 config path / config show --json

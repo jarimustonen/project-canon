@@ -5,8 +5,8 @@ type: improvement
 status: open
 priority: normal
 labels: [cli-canon, tooling]
-lane: cli-canon
-lane_seq: 60
+lane: canon-rollout
+lane_seq: 35
 ---
 
 # cli-canon: §14 --help --json machine-readable help
