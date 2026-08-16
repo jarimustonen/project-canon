@@ -60,13 +60,16 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
     is easy to miss locally**: broken intra-doc links (`[`Foo`]` to a moved/renamed/private
     item, redundant explicit link targets) fail the `docs` job even when tests pass. Run it
     before landing any unit that touches doc comments (`//!` / `///`).
-- **Releases MAY be cut automatically whenever there is something to release** (maintainer
-  decision, 2026-08-05). Publishing `project-canon` itself (crates.io / GitHub Release / Homebrew)
-  no longer requires an explicit per-release go: when `main` carries unreleased user-facing
-  changes, `/stint` may bump the version, finalize the CHANGELOG, and run the release recipe
-  as an owned Phase-3 act — no confirmation needed. Preconditions still hold: the green gate
-  passes, and `cargo publish` runs `--dry-run` first. crates.io publishes are irreversible
-  (yank-only), so never publish red, and report each step.
+- **Releases MAY be cut automatically whenever there is something to release, and the agent
+  also OWNS THE DECISION to cut one** (maintainer decision, 2026-08-05; decision-ownership
+  clarified 2026-08-16). Publishing `project-canon` itself (crates.io / GitHub Release /
+  Homebrew) requires neither an explicit per-release go **nor a question about whether to
+  release at all**: when `main` carries unreleased user-facing changes, `/stint` may bump the
+  version, finalize the CHANGELOG, and run the release recipe as an owned Phase-3 act — no
+  confirmation needed. **Judging that there is something worth releasing is the agent's call**,
+  not a decision to escalate; do not surface "shall we publish?" as a Decisions-needed item.
+  Preconditions still hold: the green gate passes, and `cargo publish` runs `--dry-run` first.
+  crates.io publishes are irreversible (yank-only), so never publish red, and report each step.
 - **The ENGINE-DRIVEN cut (`ossctl release cut`) is fully autonomous — NO go/no-go checkpoint,
   ever** (maintainer decision, 2026-08-06). Running the release *through the engine* — the full
   multi-target flow (crates.io ×2 + cargo-dist binaries + the Homebrew tap) — requires **no
@@ -103,8 +106,8 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
 - **Test-account reset preference:** none.
 
 A stint round here is: pull → merge the DAG → spawn worktree(s) for the ready head(s) →
-green-gate + review-gate before merge → **skip deploy** (releases are a separate owner-gated OSS
-cut, above) → report. The canon (`AGENTS-AI-FIRST-CLI.md`) and the companion `cli-canon` skill
+green-gate + review-gate before merge → **skip deploy** (there is no server deploy; releases are
+the OSS cut described above, which the agent both decides on and runs autonomously) → report. The canon (`AGENTS-AI-FIRST-CLI.md`) and the companion `cli-canon` skill
 (`skills/cli-canon/`) are now maintained **here** — `extract-canon-and-skill` has landed, so
 this repo is the source and homebase copies from here. The homebase-side cutover (homebase
 actually pulling from here and retiring its own master copies) remains a documented follow-up
