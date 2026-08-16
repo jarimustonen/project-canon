@@ -28,13 +28,13 @@ pub fn run(args: &[String]) -> ExitCode {
             "--json" if !json => json = true,
             "--json" => {
                 return fail(
-                    true,
+                    json_requested(args),
                     CliError::actionable("usage_error", "version: repeated flag: --json"),
                 );
             }
             flag if flag.starts_with("--json=") => {
                 return fail(
-                    false,
+                    json_requested(args),
                     CliError::actionable(
                         "usage_error",
                         format!("version: flag --json does not take a value (got {flag:?})"),

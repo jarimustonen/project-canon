@@ -90,10 +90,16 @@ fn version_json_has_valid_commit_or_explicit_null_provenance() {
         .nth(1)
         .and_then(|tail| tail.split('"').next());
     match git_commit {
-        Some(commit) => assert!(
-            commit.len() == 40 && commit.bytes().all(|byte| byte.is_ascii_hexdigit()),
-            "commit must be a full hex SHA: {commit}"
-        ),
+        Some(commit) => {
+            assert!(
+                commit.len() == 40 && commit.bytes().all(|byte| byte.is_ascii_hexdigit()),
+                "commit must be a full hex SHA: {commit}"
+            );
+            assert!(
+                stdout.contains("\"build_provenance\":{\"kind\":\"git\""),
+                "a git commit must report git provenance: {stdout}"
+            );
+        }
         None => {
             assert!(stdout.contains("\"commit\":null"));
             assert!(stdout.contains("\"build_provenance\":{\"kind\":\"tarball\""));
@@ -115,10 +121,15 @@ fn parser_version_alias_is_human_readable_and_successful() {
 
 #[test]
 fn json_failure_uses_the_central_error_envelope() {
-    let out = run(&["version", "--json", "--unknown"]);
-    assert_eq!(code(&out), 1);
-    assert!(out.stdout.is_empty());
-    let stderr = String::from_utf8(out.stderr).unwrap();
-    assert!(stderr.contains("\"schema_version\":1"), "{stderr}");
-    assert!(stderr.contains("\"code\":\"usage_error\""), "{stderr}");
+    for args in [
+        ["version", "--json", "--unknown"].as_slice(),
+        ["version", "--json", "--json=invalid"].as_slice(),
+    ] {
+        let out = run(args);
+        assert_eq!(code(&out), 1);
+        assert!(out.stdout.is_empty());
+        let stderr = String::from_utf8(out.stderr).unwrap();
+        assert!(stderr.contains("\"schema_version\":1"), "{stderr}");
+        assert!(stderr.contains("\"code\":\"usage_error\""), "{stderr}");
+    }
 }
