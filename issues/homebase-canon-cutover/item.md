@@ -1,13 +1,14 @@
 ---
 created: 2026-08-12
-updated: 2026-08-12
+updated: 2026-08-16
 type: task
-status: open
+status: done
 priority: normal
 epic: project-canon-v0
 labels: [tooling]
 lane: build
 blocked_by: [extract-canon-and-skill]
+closed: 2026-08-16
 ---
 
 # Homebase-side canon cutover: homebase copies canon + cli-canon skill FROM project-canon; retire its masters
@@ -31,3 +32,9 @@ This cutover — and the wider cross-repo adoption (all other repos consuming th
 any other repo before that release exists. When the first release is cut, **tell the owner clearly
 and explicitly**; the go-wide across all repos happens on his go at that point. Until then: edit the
 canon only in `project-canon`, leave other repos' copies untouched (avoid drift).
+
+## Comments
+
+### 2026-08-16T08:44:34Z · @pi
+
+2026-08-16: gate opened by v0.1.1 release. Homebase-side cutover landed in homebase: repos now consume the released project-canon /ai-first-cli-canon skill, the old homebase master AGENTS-AI-FIRST-CLI.md copy is gone, and global Claude/Codex/pi installs are present.
