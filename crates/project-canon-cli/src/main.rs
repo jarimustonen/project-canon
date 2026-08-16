@@ -18,7 +18,7 @@ mod version;
 
 use std::process::ExitCode;
 
-use project_canon_core::{Archetype, EnvConfig, EnvConfigLayer, Model, Questionnaire};
+use project_canon_core::{Archetype, EnvConfig, Model, Questionnaire};
 
 use crate::error::{fail, json_requested, CliError};
 
@@ -70,11 +70,7 @@ fn smoke_summary(_args: &[String]) -> ExitCode {
     // Resolve the same defaults → config file → environment layer consumed by commands.
     let cfg = match config::resolve() {
         Ok(config) => config,
-        Err(_) => {
-            // Keep the no-verb smoke summary's historic best-effort behavior; command handlers
-            // surface the precise configuration failure through the central error envelope.
-            EnvConfig::resolve(&[&EnvConfigLayer::empty()])
-        }
+        Err(error) => return fail(json_requested(_args), error.into_cli()),
     };
     // `~`-relative config paths become usable filesystem paths only after edge expansion; the
     // home dir comes from the environment (an I/O-edge concern, never core's).

@@ -59,18 +59,7 @@ pub fn run(args: &[String]) -> ExitCode {
     // `PROJECT_CANON_*` value is a usage error, never a silent coerce. Runs *after* `--help`.
     let cfg = match crate::config::resolve() {
         Ok(config) => config,
-        Err(crate::config::ConfigError::Validation(error)) => {
-            return fail(
-                parsed.json,
-                CliError::actionable("validation_error", format!("new: {error}")),
-            );
-        }
-        Err(crate::config::ConfigError::Io(error)) => {
-            return fail(
-                parsed.json,
-                CliError::system("io_error", format!("new: {error}")),
-            );
-        }
+        Err(error) => return fail(parsed.json, error.into_cli()),
     };
     let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_string());
 
@@ -799,7 +788,8 @@ fn workmux_yaml(emoji: Option<&str>) -> String {
             "{header}\
 # Match the tw-command emoji prefix (projects.conf) so workmux windows\n\
 # blend in with `tw dev` windows.\n\
-window_prefix: \"{e} \"\n"
+window_prefix: \"{} \"\n",
+            yaml_double_quoted(e)
         ),
         None => format!(
             "{header}\
@@ -807,6 +797,24 @@ window_prefix: \"{e} \"\n"
 #   window_prefix: \"📏 \"\n"
         ),
     }
+}
+
+/// Escape a value embedded in a YAML double-quoted scalar without allowing it to add YAML keys.
+fn yaml_double_quoted(value: &str) -> String {
+    value
+        .chars()
+        .flat_map(|character| match character {
+            '\\' => "\\\\".chars().collect::<Vec<_>>(),
+            '\"' => "\\\"".chars().collect(),
+            '\n' => "\\n".chars().collect(),
+            '\r' => "\\r".chars().collect(),
+            '\t' => "\\t".chars().collect(),
+            character if character.is_control() => {
+                format!("\\u{:04x}", character as u32).chars().collect()
+            }
+            character => vec![character],
+        })
+        .collect()
 }
 
 fn workspace_cargo_toml(name: &str) -> String {
@@ -1486,6 +1494,13 @@ mod tests {
             .unwrap()
             .content
             .contains("/target"));
+    }
+
+    #[test]
+    fn workmux_emoji_is_escaped_as_one_yaml_scalar() {
+        let yaml = workmux_yaml(Some("x\"\nextra: value"));
+        assert!(yaml.contains("window_prefix: \"x\\\"\\nextra: value \""));
+        assert!(!yaml.lines().any(|line| line == "extra: value"));
     }
 
     #[test]

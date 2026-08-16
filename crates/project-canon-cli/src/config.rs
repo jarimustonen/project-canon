@@ -1,6 +1,7 @@
 //! Read-only inspection of the environment configuration resolved by the CLI.
 
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -51,34 +52,30 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     };
 
-    let resolved = match resolve_with_details() {
-        Ok(config) => config,
-        Err(ConfigError::Validation(message)) => {
-            return fail(
-                command.json(),
-                CliError::actionable("validation_error", message),
-            );
-        }
-        Err(ConfigError::Io(message)) => {
-            return fail(command.json(), CliError::system("io_error", message));
-        }
-    };
-
     match command {
-        Command::Path { json } => {
-            if json {
-                write_stdout(&format!("{}\n", path_payload(&resolved)), true)
-            } else {
-                write_stdout(&format!("{}\n", resolved.path.display()), false)
+        // Finding the file must work even when its contents are malformed: `path` is the repair
+        // discovery command, not a configuration consumer.
+        Command::Path { json } => match config_path() {
+            Ok(path) => {
+                let payload = path_payload(&path);
+                if json {
+                    write_stdout(&format!("{payload}\n"), true)
+                } else {
+                    write_stdout(&format!("{}\n", path.display()), false)
+                }
             }
-        }
-        Command::Show { json } => {
-            if json {
-                write_stdout(&format!("{}\n", show_payload(&resolved)), true)
-            } else {
-                write_stdout(&render_human(&resolved), false)
+            Err(error) => fail(json, error.into_cli()),
+        },
+        Command::Show { json } => match resolve_with_details() {
+            Ok(resolved) => {
+                if json {
+                    write_stdout(&format!("{}\n", show_payload(&resolved)), true)
+                } else {
+                    write_stdout(&render_human(&resolved), false)
+                }
             }
-        }
+            Err(error) => fail(json, error.into_cli()),
+        },
         Command::Help => unreachable!("handled before resolving configuration"),
     }
 }
@@ -88,7 +85,7 @@ pub(crate) fn resolve() -> Result<EnvConfig, ConfigError> {
 }
 
 fn resolve_with_details() -> Result<ResolvedConfig, ConfigError> {
-    let path = config_path();
+    let path = config_path()?;
     let exists = path.exists();
     let file = if exists {
         parse_file(&path)?
@@ -107,12 +104,30 @@ fn resolve_with_details() -> Result<ResolvedConfig, ConfigError> {
     })
 }
 
-fn config_path() -> PathBuf {
-    if let Some(path) = std::env::var_os("XDG_CONFIG_HOME").filter(|path| !path.is_empty()) {
-        return PathBuf::from(path).join("project-canon/config.toml");
+fn config_path() -> Result<PathBuf, ConfigError> {
+    config_path_from(
+        std::env::var_os("XDG_CONFIG_HOME").as_deref(),
+        std::env::var_os("HOME").as_deref(),
+    )
+}
+
+fn config_path_from(xdg: Option<&OsStr>, home: Option<&OsStr>) -> Result<PathBuf, ConfigError> {
+    if let Some(xdg) = xdg.filter(|path| !path.is_empty()) {
+        let path = PathBuf::from(xdg);
+        if path.is_absolute() {
+            return Ok(path.join("project-canon/config.toml"));
+        }
+        return Err(ConfigError::Validation(
+            "config: XDG_CONFIG_HOME must be an absolute path".to_string(),
+        ));
     }
-    let home = std::env::var_os("HOME").unwrap_or_else(|| "~".into());
-    PathBuf::from(home).join(".config/project-canon/config.toml")
+    let home = home.filter(|path| !path.is_empty()).ok_or_else(|| {
+        ConfigError::Validation(
+            "config: HOME is not set; set HOME or XDG_CONFIG_HOME to locate the config file"
+                .to_string(),
+        )
+    })?;
+    Ok(PathBuf::from(home).join(".config/project-canon/config.toml"))
 }
 
 fn parse_file(path: &PathBuf) -> Result<EnvConfigLayer, ConfigError> {
@@ -190,12 +205,19 @@ fn parse_file(path: &PathBuf) -> Result<EnvConfigLayer, ConfigError> {
                 })?
                 .iter()
                 .map(|value| {
-                    value.as_str().map(str::to_owned).ok_or_else(|| {
+                    let tool = value.as_str().ok_or_else(|| {
                         ConfigError::Validation(format!(
                             "config: family_tools in {} must be an array of strings",
                             path.display()
                         ))
-                    })
+                    })?;
+                    if tool.trim().is_empty() {
+                        return Err(ConfigError::Validation(format!(
+                            "config: family_tools in {} must not contain empty values",
+                            path.display()
+                        )));
+                    }
+                    Ok(tool.to_string())
                 })
                 .collect::<Result<_, _>>()?,
         ),
@@ -212,15 +234,19 @@ fn parse_file(path: &PathBuf) -> Result<EnvConfigLayer, ConfigError> {
             })?
             .iter()
             .map(|(tool, value)| {
-                value
-                    .as_str()
-                    .map(|path| (tool.clone(), path.to_string()))
-                    .ok_or_else(|| {
-                        ConfigError::Validation(format!(
-                            "config: repo_overrides.{tool} in {} must be a string",
-                            path.display()
-                        ))
-                    })
+                let override_path = value.as_str().ok_or_else(|| {
+                    ConfigError::Validation(format!(
+                        "config: repo_overrides.{tool} in {} must be a string",
+                        path.display()
+                    ))
+                })?;
+                if tool.trim().is_empty() || override_path.trim().is_empty() {
+                    return Err(ConfigError::Validation(format!(
+                        "config: repo_overrides.{tool} in {} must use non-empty tool and path values",
+                        path.display()
+                    )));
+                }
+                Ok((tool.clone(), override_path.to_string()))
             })
             .collect::<Result<_, _>>()?,
     };
@@ -297,14 +323,11 @@ fn detail(source: Source, path: &Path, env: &str) -> Option<String> {
     }
 }
 
-fn path_payload(resolved: &ResolvedConfig) -> Json {
+fn path_payload(path: &Path) -> Json {
     Json::Object(vec![
         ("schema_version".into(), Json::Int(SCHEMA_VERSION)),
-        (
-            "config_path".into(),
-            Json::str(resolved.path.display().to_string()),
-        ),
-        ("exists".into(), Json::Bool(resolved.exists)),
+        ("config_path".into(), Json::str(path.display().to_string())),
+        ("exists".into(), Json::Bool(path.exists())),
     ])
 }
 
@@ -461,23 +484,38 @@ fn show_payload(resolved: &ResolvedConfig) -> Json {
 
 fn render_human(resolved: &ResolvedConfig) -> String {
     let cfg = &resolved.config;
+    let gh_source = source(
+        resolved.file.gh_account.is_some(),
+        resolved.env.gh_account.is_some(),
+    );
+    let root_source = source(
+        resolved.file.repo_root.is_some(),
+        resolved.env.repo_root.is_some(),
+    );
+    let tw_source = source(
+        resolved.file.tw_enabled.is_some(),
+        resolved.env.tw_enabled.is_some(),
+    );
     format!(
-        "config: {} ({})\ngh account: {}\nrepo root: {}\nfamily repos: {}\ntw registration: {}\n",
+        "config: {} ({})\ngh account: {} [{}]\nrepo root: {} [{}]\nfamily repos: {}\ntw registration: {} [{}]\n",
         resolved.path.display(),
-        if resolved.exists {
-            "present"
-        } else {
-            "not found"
-        },
+        if resolved.exists { "present" } else { "not found" },
         cfg.gh_account,
+        human_source(gh_source, &resolved.path, "PROJECT_CANON_GH_ACCOUNT"),
         cfg.repo_root,
+        human_source(root_source, &resolved.path, "PROJECT_CANON_REPO_ROOT"),
         cfg.family_repos().len(),
-        if cfg.tw.enabled {
-            "enabled"
-        } else {
-            "disabled"
-        },
+        if cfg.tw.enabled { "enabled" } else { "disabled" },
+        human_source(tw_source, &resolved.path, "PROJECT_CANON_TW_ENABLED"),
     )
+}
+
+fn human_source(source: Source, path: &Path, env: &str) -> String {
+    match source {
+        Source::Default => "default".to_string(),
+        Source::File => format!("file: {}", path.display()),
+        Source::Env => format!("env: {env}"),
+    }
 }
 
 enum Command {
@@ -486,24 +524,10 @@ enum Command {
     Help,
 }
 
-impl Command {
-    const fn json(&self) -> bool {
-        match self {
-            Self::Path { json } | Self::Show { json } => *json,
-            Self::Help => false,
-        }
-    }
-}
-
 fn parse_args(args: &[String]) -> Result<Command, String> {
-    let Some((subcommand, rest)) = args.split_first() else {
-        return Err("missing subcommand; expected path or show".to_string());
-    };
-    if subcommand == "--help" {
-        return Ok(Command::Help);
-    }
     let mut json = false;
-    for arg in rest {
+    let mut subcommand = None;
+    for arg in args {
         match arg.as_str() {
             "--help" => return Ok(Command::Help),
             "--json" if !json => json = true,
@@ -512,21 +536,33 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
                 return Err(format!("flag --json does not take a value (got {flag:?})"))
             }
             flag if flag.starts_with('-') => return Err(format!("unknown flag: {flag}")),
+            value if subcommand.is_none() => subcommand = Some(value),
             value => return Err(format!("unexpected argument: {value:?}")),
         }
     }
-    match subcommand.as_str() {
-        "path" => Ok(Command::Path { json }),
-        "show" => Ok(Command::Show { json }),
-        other => Err(format!(
+    match subcommand {
+        Some("path") => Ok(Command::Path { json }),
+        Some("show") => Ok(Command::Show { json }),
+        Some(other) => Err(format!(
             "unknown subcommand: {other:?}; expected path or show"
         )),
+        None => Err("missing subcommand; expected path or show".to_string()),
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum ConfigError {
     Validation(String),
     Io(String),
+}
+
+impl ConfigError {
+    pub(crate) fn into_cli(self) -> CliError {
+        match self {
+            Self::Validation(message) => CliError::actionable("validation_error", message),
+            Self::Io(message) => CliError::system("io_error", message),
+        }
+    }
 }
 
 const HELP: &str = "\
@@ -553,13 +589,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn config_path_uses_xdg_when_set() {
-        std::env::set_var("XDG_CONFIG_HOME", "/tmp/project-canon-config-test");
+    fn config_path_uses_an_absolute_xdg_path_or_home() {
         assert_eq!(
-            config_path(),
+            config_path_from(Some(OsStr::new("/tmp/project-canon-config-test")), None).unwrap(),
             PathBuf::from("/tmp/project-canon-config-test/project-canon/config.toml")
         );
-        std::env::remove_var("XDG_CONFIG_HOME");
+        assert!(matches!(
+            config_path_from(Some(OsStr::new("relative")), None),
+            Err(ConfigError::Validation(_))
+        ));
+        assert!(matches!(
+            config_path_from(None, None),
+            Err(ConfigError::Validation(_))
+        ));
     }
 
     #[test]

@@ -81,6 +81,24 @@ fn config_path_and_missing_config_are_inspectable_without_writing() {
 }
 
 #[test]
+fn config_path_does_not_parse_a_malformed_config_file() {
+    let xdg = temp_dir("malformed-path");
+    let config_dir = xdg.join("project-canon");
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::write(config_dir.join("config.toml"), "not valid = [").unwrap();
+    let out = run(&xdg, &["config", "path", "--json"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let payload: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(payload["exists"], true);
+    let _ = fs::remove_dir_all(xdg);
+}
+
+#[test]
 fn config_json_failures_use_the_central_error_envelope() {
     let xdg = temp_dir("invalid");
     let out = run(&xdg, &["config", "show", "--json", "--unknown"]);
