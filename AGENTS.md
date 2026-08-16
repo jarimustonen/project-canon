@@ -51,6 +51,21 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
 
 `/stint` reads this section for how to run a work-session in this repo.
 
+- **🔒 THIS REPO IS PUBLIC — no user-specific facts, anywhere** (maintainer rule,
+  2026-08-16). A public artifact MUST NOT contain personal account handles, private
+  repo/project names, personal filesystem-layout conventions, hostnames, internal URLs, or
+  org-internal identifiers — not in source, **not in built-in defaults**, not in generated
+  scaffold output, not in installed skill content, not in docs, not in tests or fixtures.
+  **User-specific things belong in user config** (the §8 `defaults → file → env` layers,
+  which live outside the distributed artifact). Overridability does **not** launder a
+  user-specific default: unset still means whatever ships in the package. The correct
+  built-in default is neutral/absent plus an actionable error naming the config key to set —
+  never a guess at someone's environment. Fixtures and examples use obviously fictional
+  values. **Check this before every publish**, and treat any new default, scaffold template,
+  or `config`-surfaced value as a place this can regress. This rule was written after
+  `0.1.1`/`0.2.0` shipped `gh_account: "jarimustonen"`, `repo_root: "~/Sources"`, and a
+  family-tool list naming three *private* repos to crates.io — see `portable-neutral-defaults`
+  (the cleanup) and `canon-no-user-specifics` (making it a `doctor`-enforced canon section).
 - **Green gate** (must pass before a unit counts as landed):
   - `cargo fmt --all --check`
   - `cargo clippy --workspace --all-targets -- -D warnings`
