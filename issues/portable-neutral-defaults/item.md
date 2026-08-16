@@ -2,7 +2,7 @@
 created: 2026-08-16
 updated: 2026-08-16
 type: bug
-status: in-progress
+status: fixed
 priority: high
 labels: [canon]
 lane: canon-rollout
@@ -12,6 +12,7 @@ commits:
   summary: use neutral environment defaults
 - hash: cb042d0
   summary: neutralize optional tw integration
+closed: 2026-08-16
 ---
 
 # Neutral built-in defaults — no user specifics in a public artifact
