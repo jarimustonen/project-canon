@@ -7,6 +7,7 @@
 
 mod doctor;
 mod error;
+mod help;
 mod json;
 mod new;
 mod probes;
@@ -23,6 +24,9 @@ use crate::error::{fail, json_requested, CliError};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(status) = help::render_if_requested(&args) {
+        return status;
+    }
     match args.first().map(String::as_str) {
         Some("doctor") => doctor::run(&args[1..]),
         Some("new") => new::run(&args[1..]),
