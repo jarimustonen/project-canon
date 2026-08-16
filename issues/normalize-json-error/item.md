@@ -2,12 +2,18 @@
 created: 2026-08-16
 updated: 2026-08-16
 type: improvement
-status: open
+status: done
 priority: normal
 epic: project-canon-v0
 labels: [canon]
 lane: canon-rollout
 lane_seq: 10
+commits:
+- hash: ba6fc3a
+  summary: normalize JSON error envelopes and exit codes
+- hash: c32622f
+  summary: harden JSON error output
+closed: 2026-08-16
 ---
 
 # Normalize JSON error envelopes and exit codes
