@@ -7,7 +7,7 @@ Pointers to open issues. Descriptions and plans live in the linked
 
 _Repo bootstrapped 2026-08-12 from homebase **ADR 0009** (`project-canon` = project/repo-scoped
 conformance tool; base project canon + per-archetype profiles, AI-first CLI canon as the `cli`
-profile). Resume: `jatketaan @TODO.md`. Live scheduling is `issuectl dag`._
+profile). Resume: `jatketaan @TODO.md`. Live scheduling is `issuectl dag`; TODO.md carries only handoff notes._
 
 _**Session 2026-08-14 (five rounds, all landed `done`, green on main, no deploy — repo policy):**
 `env-config-hook-layer` (`2d9f8ab`) → `doctor-conformance-gate` (`50f55e9`) →
@@ -62,32 +62,18 @@ _**`homebase-canon-cutover` DONE 2026-08-16.** After the first release, homebase
 extension points; ✅ env specifics externalized; ✅ `new`/`doctor`/`review` + skill-install shipped;
 ✅ **first release cut & public**. **Path to adoption:** ✅ release → ✅ **`homebase-canon-cutover`** (homebase repo) → selected active repos switched over.
 
-## Execution DAG (2026-08-16, updated)
+## Scheduling
 
-Scheduling PLAN — source of truth for lane + order; issuectl is authoritative for STATUS
-(never copied here). Live scheduling is `issuectl dag` (frontmatter `lane:` + `blocked_by`);
-this block is a hand-maintained snapshot that the `/stint-*` skills parse. Merge each round
-(drop landed, add active, keep existing order). `▶` = head-of-line snapshot — RE-COMPUTE from
-`issuectl dag` at pick time. `after <slug> (needs …)` = logical `blocked_by` mirror.
-`collision: <file>` = touches a second lane's hot file (spawn-time exclusion).
+Canonical scheduling lives in `issuectl` frontmatter (`lane:`, `lane_seq:`, `blocked_by:`, `collision:`). Do not maintain a markdown DAG or adjacent backlog in this file.
 
-<!-- execution-dag:begin -->
+Use these views instead:
+
+```bash
+issuectl dag
+issuectl dag --json
+issuectl ls --status open
+issuectl ls --status in-progress
 ```
-GLOBAL HEAD-OF-LINE: none
-LANE build — the project-canon workspace: crates/project-canon-{core,cli} (epic: project-canon-v0)
-  # EMPTY — v0 feature-complete AND released as 0.1.1 (2026-08-16); no local build-lane work remains.
-  # DONE (dropped): extract-canon-and-skill · profile-and-base-canon-model · env-config-hook-layer
-  #                 · doctor-conformance-gate · new-scaffold-generator · review-audit-verb
-  #                 · canon-installable-skill (all 2026-08-12..14, the v0 build)
-  #                 · cli-canon-embed-packaging (2026-08-16, release-blocker: canon → core, root symlink; enabled the crates.io publish).
-  #   🎯 v0 FEATURE-COMPLETE + 🚀 RELEASED 0.1.1: crates.io (core+cli) + Homebrew tap + tag v0.1.1.
-  # WONTFIX (dropped): osstring-argv-env · typed-dimension-id.
-  # OWNER TODO (not an issue): yank project-canon-core@0.0.0 on crates.io (token lacked yank scope).
-UNLANED — confirmed no project-canon hot files:
-    # EMPTY — homebase-canon-cutover closed 2026-08-16 after the homebase-side rollout.
-```
-<!-- execution-dag:end -->
 
-### Adjacent backlog (active but not scheduled this round)
+`TODO.md` is only the session handoff and project notes; issue bodies and `issuectl dag` are the source of truth.
 
-_(none)_
