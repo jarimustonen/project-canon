@@ -2,7 +2,7 @@
 created: 2026-08-16
 updated: 2026-08-16
 type: feature
-status: in-progress
+status: done
 priority: normal
 epic: project-canon-v0
 labels: [canon]
@@ -11,6 +11,9 @@ lane_seq: 40
 commits:
 - hash: 3d26358
   summary: expose resolved configuration
+- hash: d7da2c0
+  summary: harden config inspection
+closed: 2026-08-16
 ---
 
 # Expose config show and path inspection

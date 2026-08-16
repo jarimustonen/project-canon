@@ -2,7 +2,7 @@
 created: 2026-08-16
 updated: 2026-08-16
 type: improvement
-status: in-progress
+status: done
 priority: normal
 labels: [cli-canon, tooling]
 lane: canon-rollout
@@ -10,6 +10,9 @@ lane_seq: 45
 commits:
 - hash: 3d26358
   summary: expose resolved configuration
+- hash: d7da2c0
+  summary: harden config inspection
+closed: 2026-08-16
 ---
 
 # cli-canon: §8 config path / config show --json
@@ -32,3 +35,9 @@ and `config show --json` (effective config values + their source/provenance). No
 `--json` envelope like the rest of the surface.
 
 **Current state (evidence):** `project-canon config` → not a subcommand (has doctor + skill).
+
+## Comments
+
+### 2026-08-16T15:08:23Z · @pi-agent
+
+Delivered together with @expose-config-show by the same canon §8 config path/show implementation; this preserves the stack-cli-alignment audit trail.
