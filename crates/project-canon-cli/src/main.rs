@@ -13,6 +13,7 @@ mod probes;
 mod review;
 mod shell;
 mod skill;
+mod version;
 
 use std::process::ExitCode;
 
@@ -27,10 +28,12 @@ fn main() -> ExitCode {
         Some("new") => new::run(&args[1..]),
         Some("review") => review::run(&args[1..]),
         Some("skill") => skill::run(&args[1..]),
-        // Only the bare invocation (and the not-yet-parsed top-level status flags) hit the stub;
-        // an unknown subcommand OR an unknown leading flag is a strict usage error (§1), not a
-        // silent exit-0 — a typo like `project-canon --doctr` must not look like success.
-        None | Some("--help") | Some("--version") => smoke_summary(&args),
+        Some("version") => version::run(&args[1..]),
+        Some("--version") => version::legacy(&args[1..]),
+        // Only the bare invocation and top-level help hit the stub; an unknown subcommand OR an
+        // unknown leading flag is a strict usage error (§1), not a silent exit-0 — a typo like
+        // `project-canon --doctr` must not look like success.
+        None | Some("--help") => smoke_summary(&args),
         Some(other) => {
             fail(
                 json_requested(&args),
@@ -90,7 +93,7 @@ fn smoke_summary(args: &[String]) -> ExitCode {
         cfg.family_repos().len(),
     );
     eprintln!(
-        "Run `project-canon doctor --help`, `project-canon new --help`, `project-canon review --help`, or `project-canon skill --help`."
+        "Run `project-canon doctor --help`, `project-canon new --help`, `project-canon review --help`, `project-canon skill --help`, or `project-canon version --help`."
     );
     ExitCode::SUCCESS
 }

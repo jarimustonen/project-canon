@@ -80,6 +80,14 @@ const SHIPPED: &[ShippedSkill] = &[ShippedSkill {
     description: "The AI-first CLI canon (AGENTS-AI-FIRST-CLI.md, \u{a7}1\u{2013}\u{a7}22): the family's binding conventions for any CLI surface \u{2014} strict input validation, --json output, JSONL logs, non-interactive operation, informative errors, meaningful exit codes, composable commands. Reference this when designing or changing this repo's CLI surface.",
 }];
 
+/// Metadata for `version --json`'s bundled-skill drift contract (§17).
+pub(crate) fn bundled_skill_metadata() -> Vec<(&'static str, &'static str, i64)> {
+    SHIPPED
+        .iter()
+        .map(|skill| (skill.name, CLI_VERSION, SKILL_SCHEMA_VERSION))
+        .collect()
+}
+
 fn lookup_skill(name: &str) -> Option<&'static ShippedSkill> {
     SHIPPED.iter().find(|s| s.name == name)
 }

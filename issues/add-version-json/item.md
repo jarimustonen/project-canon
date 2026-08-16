@@ -2,7 +2,7 @@
 created: 2026-08-16
 updated: 2026-08-16
 type: feature
-status: open
+status: in-progress
 priority: normal
 epic: project-canon-v0
 labels: [canon]
