@@ -13,6 +13,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 <!-- oss-changelog:unreleased-end -->
 
+## [0.3.0] - 2026-08-16
+
+Removes user-specific facts from the shipped artifact. `0.1.1` and `0.2.0` carried one
+maintainer's environment as built-in defaults — a GitHub account, a personal repo-root
+convention, and a seven-tool family list that named three private repositories. A public
+package must not describe someone's environment; that belongs in user configuration.
+
+Those versions remain available and are **not** yanked: crates.io retains published files
+permanently, so a yank would not remove the names while it would break existing installs.
+
+### Changed
+
+- **BREAKING** — `EnvConfig::gh_account` and `EnvConfig::repo_root` are now
+  `Option<String>` (previously `String`). Both are `None` by default, and
+  `EnvConfig::family_tools` defaults to an empty set. A value the tool genuinely needs but
+  that is not configured now produces an actionable error naming the config key to set,
+  instead of silently assuming a layout.
+- Built-in defaults are neutral. The environment is supplied entirely through the existing
+  `defaults → file → env` layers — i.e. from a user config file outside the distributed
+  artifact. `config path` reports where that file lives; `config show --json` reports each
+  value's provenance, so a configured value is visibly `"source": "file"` rather than a
+  default.
+- Optional `tw` registration is off by default and no longer assumes a personal registry.
+- Tests and fixtures use fictional values.
+
 ## [0.2.0] - 2026-08-16
 
 Closes the tool's own conformance gaps against the canon it publishes: §2/§10 error
