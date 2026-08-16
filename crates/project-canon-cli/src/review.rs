@@ -24,7 +24,7 @@ use project_canon_core::{
     Resolution, Severity, SurfaceShape,
 };
 
-use crate::error::{fail, json_requested, CliError};
+use crate::error::{fail, json_requested, write_stdout, CliError};
 use crate::json::Json;
 use crate::probes::mechanical_probe;
 use crate::shell::shell_quote;
@@ -115,10 +115,14 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     };
 
-    if parsed.json {
-        println!("{}", report.to_json());
+    let output = if parsed.json {
+        format!("{}\n", report.to_json())
     } else {
-        print!("{}", report.render_human(parsed.verbose));
+        report.render_human(parsed.verbose)
+    };
+    let write_status = write_stdout(&output, parsed.json);
+    if write_status != ExitCode::SUCCESS {
+        return write_status;
     }
     // Advisory: the exit code never reflects the conformance outcome. Only usage/operational
     // errors (handled above) exit non-zero.
@@ -193,9 +197,17 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
                 }
                 let value = match inline {
                     Some(v) => v.to_string(),
-                    None => iter.next().cloned().ok_or_else(|| {
-                        "--profile requires a value (cli/service/library/release)".to_string()
-                    })?,
+                    None => {
+                        let value = iter.next().cloned().ok_or_else(|| {
+                            "--profile requires a value (cli/service/library/release)".to_string()
+                        })?;
+                        if value.starts_with('-') {
+                            return Err(format!(
+                                "--profile requires a value, got flag-like token {value:?}"
+                            ));
+                        }
+                        value
+                    }
                 };
                 profile = Some(parse_archetype(&value)?);
             }

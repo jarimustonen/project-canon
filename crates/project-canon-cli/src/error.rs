@@ -3,6 +3,7 @@
 //! Every command must route failures through this module. It keeps `--json` errors on stderr,
 //! prevents accidental stdout payloads on failure, and implements the canon §2 exit-code map.
 
+use std::io::Write as _;
 use std::process::ExitCode;
 
 use crate::json::Json;
@@ -56,7 +57,9 @@ impl CliError {
 /// Whether an argv slice explicitly requests JSON. This deliberately recognizes only the
 /// valueless spelling: `--json=value` is itself a usage error, not a JSON request.
 pub(crate) fn json_requested(args: &[String]) -> bool {
-    args.iter().any(|arg| arg == "--json")
+    args.iter()
+        .take_while(|arg| arg.as_str() != "--")
+        .any(|arg| arg == "--json")
 }
 
 /// Render a fatal error to stderr and return its canon-defined exit code.
@@ -82,6 +85,22 @@ pub(crate) fn fail(json: bool, error: CliError) -> ExitCode {
         eprintln!("project-canon: {}", error.message);
     }
     ExitCode::from(error.class.exit_code())
+}
+
+/// Write command data without turning a closed pipe into a panic.
+///
+/// A broken pipe is a normal pipeline termination. Other stdout failures are system errors and
+/// honor the caller's requested output format.
+pub(crate) fn write_stdout(content: &str, json: bool) -> ExitCode {
+    let mut out = std::io::stdout().lock();
+    match out.write_all(content.as_bytes()) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
+        Err(error) => fail(
+            json,
+            CliError::system("io_error", format!("writing stdout: {error}")),
+        ),
+    }
 }
 
 #[cfg(test)]

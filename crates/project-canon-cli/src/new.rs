@@ -22,7 +22,7 @@ use project_canon_core::{
     SurfaceShape,
 };
 
-use crate::error::{fail, json_requested, CliError};
+use crate::error::{fail, json_requested, write_stdout, CliError};
 use crate::json::Json;
 
 /// The `--json` payload schema version (§10). Bump on any breaking shape change.
@@ -185,12 +185,12 @@ pub fn run(args: &[String]) -> ExitCode {
         file_rows,
     };
 
-    if parsed.json {
-        println!("{}", report.to_json());
+    let output = if parsed.json {
+        format!("{}\n", report.to_json())
     } else {
-        print!("{}", report.render_human(parsed.verbose));
-    }
-    ExitCode::from(EXIT_OK)
+        report.render_human(parsed.verbose)
+    };
+    write_stdout(&output, parsed.json)
 }
 
 /// A stable absolute path for the report + hook rendering. Lexical only (no `canonicalize`), so it

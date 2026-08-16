@@ -33,7 +33,7 @@ use std::process::ExitCode;
 
 use project_canon_core::EnvConfigLayer;
 
-use crate::error::{fail, json_requested, CliError};
+use crate::error::{fail, json_requested, write_stdout, CliError};
 use crate::json::Json;
 
 /// The `--json` payload schema version (§10). Bump on any breaking shape change.
@@ -319,20 +319,6 @@ fn validate_env() -> Result<(), String> {
         .map_err(|err| err.to_string())
 }
 
-/// Print `content` to stdout, treating a broken pipe (`skill print … | head`) as success rather
-/// than the panic Rust's `print!` macro raises on a closed stdout. Used by the streaming paths.
-fn write_stdout(content: &str) -> ExitCode {
-    let mut out = std::io::stdout().lock();
-    match out.write_all(content.as_bytes()) {
-        Ok(()) => ExitCode::from(EXIT_OK),
-        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => ExitCode::from(EXIT_OK),
-        Err(e) => fail(
-            false,
-            CliError::system("io_error", format!("skill: writing stdout: {e}")),
-        ),
-    }
-}
-
 // ===== `skill install` ==============================================================
 
 mod install {
@@ -483,12 +469,12 @@ mod install {
             }
         }
 
-        if parsed.json {
-            println!("{}", report.to_json(EXIT_OK, "ok"));
+        let output = if parsed.json {
+            format!("{}\n", report.to_json(EXIT_OK, "ok"))
         } else {
-            print!("{}", report.render_human());
-        }
-        ExitCode::from(EXIT_OK)
+            report.render_human()
+        };
+        write_stdout(&output, parsed.json)
     }
 
     /// Resolve the install base: `--target` (verbatim, relative-ok), else `$HOME`.
@@ -1182,7 +1168,7 @@ mod list {
             );
         }
 
-        if json {
+        let output = if json {
             let skills = SHIPPED
                 .iter()
                 .map(|s| {
@@ -1197,8 +1183,8 @@ mod list {
                     ])
                 })
                 .collect();
-            println!(
-                "{}",
+            format!(
+                "{}\n",
                 Json::Object(vec![
                     ("schema_version".into(), Json::Int(SCHEMA_VERSION)),
                     ("tool".into(), Json::str("project-canon")),
@@ -1207,16 +1193,19 @@ mod list {
                     ("skills".into(), Json::Array(skills)),
                     ("exit_code".into(), Json::Int(EXIT_OK as i64)),
                 ])
-            );
+            )
         } else {
-            for s in SHIPPED {
-                println!(
-                    "{}  (cli_version {CLI_VERSION})\n    {}",
-                    s.name, s.description
-                );
-            }
-        }
-        ExitCode::from(EXIT_OK)
+            SHIPPED
+                .iter()
+                .map(|s| {
+                    format!(
+                        "{}  (cli_version {CLI_VERSION})\n    {}\n",
+                        s.name, s.description
+                    )
+                })
+                .collect()
+        };
+        write_stdout(&output, json)
     }
 }
 
@@ -1288,7 +1277,10 @@ mod print {
         }
 
         if let Err(err) = validate_env() {
-            return usage(args, &err);
+            return fail(
+                json_requested(args),
+                CliError::actionable("validation_error", format!("skill print: {err}")),
+            );
         }
 
         let name = match name {
@@ -1331,10 +1323,10 @@ mod print {
                 ("path_in_repo".into(), Json::str("AGENTS-AI-FIRST-CLI.md")),
                 ("exit_code".into(), Json::Int(EXIT_OK as i64)),
             ]);
-            write_stdout(&format!("{payload}\n"))
+            write_stdout(&format!("{payload}\n"), true)
         } else {
             // Byte-identical to what install would write for this agent (§16).
-            write_stdout(&content)
+            write_stdout(&content, false)
         }
     }
 
