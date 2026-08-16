@@ -1,0 +1,11 @@
+# Copy to the path printed by `project-canon config path`, then replace these
+# fictional values with your own environment. This file is an example only.
+
+gh_account = "example-user"
+repo_root = "~/Projects"
+family_tools = ["alpha-tool", "beta-tool"]
+tw_enabled = false
+
+# Optional explicit paths for tools outside repo_root.
+[repo_overrides]
+alpha-tool = "~/Elsewhere/alpha-tool"

@@ -84,8 +84,11 @@ fn smoke_summary(_args: &[String]) -> ExitCode {
     );
     eprintln!(
         "env layer resolved (gh: {}; repo root: {}; {} family repos).",
-        cfg.gh_account,
-        EnvConfig::expand_home(&cfg.repo_root, &home),
+        cfg.gh_account.as_deref().unwrap_or("not configured"),
+        cfg.repo_root
+            .as_deref()
+            .map(|root| EnvConfig::expand_home(root, &home))
+            .unwrap_or_else(|| "not configured".to_string()),
         cfg.family_repos().len(),
     );
     eprintln!(

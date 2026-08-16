@@ -2,7 +2,7 @@
 //!
 //! These assert the seam's public contract against the crate's public API only:
 //! - the resolution order is defaults → config file → env override;
-//! - the enumerated homebase specifics resolve through the layer with overridable defaults;
+//! - neutral defaults remain absent until a config layer supplies the environment;
 //! - resolving the layer does not touch the two-layer model's invariants.
 
 use std::collections::BTreeMap;
@@ -27,8 +27,12 @@ fn resolution_order_defaults_then_file_then_env() {
 
     let cfg = EnvConfig::resolve(&[&file, &env]);
 
-    assert_eq!(cfg.gh_account, "env-acct", "env > file");
-    assert_eq!(cfg.repo_root, "/file/root", "file > default");
+    assert_eq!(cfg.gh_account.as_deref(), Some("env-acct"), "env > file");
+    assert_eq!(
+        cfg.repo_root.as_deref(),
+        Some("/file/root"),
+        "file > default"
+    );
     assert_eq!(
         cfg.tw.projects_conf, "~/.config/tw/projects.conf",
         "untouched field keeps the default"
@@ -36,20 +40,13 @@ fn resolution_order_defaults_then_file_then_env() {
 }
 
 #[test]
-fn enumerated_specifics_resolve_through_the_layer_with_defaults() {
+fn defaults_are_neutral_until_a_user_config_supplies_the_family_map() {
     let cfg = EnvConfig::resolve(&[&EnvConfigLayer::empty(), &EnvConfigLayer::empty()]);
 
-    // gh account + ~/Sources/<name> convention + family-repo map.
-    assert_eq!(cfg.gh_account, "jarimustonen");
-    assert_eq!(
-        cfg.repo_location("project-canon"),
-        "~/Sources/project-canon"
-    );
-    let repos = cfg.family_repos();
-    assert_eq!(
-        repos.get("orchestratectl").map(String::as_str),
-        Some("~/Sources/orchestratectl")
-    );
+    assert_eq!(cfg.gh_account, None);
+    assert_eq!(cfg.repo_root, None);
+    assert!(cfg.family_tools.is_empty());
+    assert!(cfg.family_repos().is_empty());
 
     // tw / projects.conf registration.
     assert!(cfg.tw.enabled);
@@ -63,17 +60,20 @@ fn enumerated_specifics_resolve_through_the_layer_with_defaults() {
 }
 
 #[test]
-fn a_portable_override_replaces_every_homebase_specific() {
-    // Someone else's environment: a full env override with none of the homebase values left.
+fn user_config_supplies_a_portable_family_environment() {
+    // A user's environment is wholly supplied by configuration.
     let env = EnvConfigLayer::from_env_vars(&BTreeMap::from([
         (
             "PROJECT_CANON_GH_ACCOUNT".to_string(),
-            "octo-org".to_string(),
+            "example-user".to_string(),
         ),
-        ("PROJECT_CANON_REPO_ROOT".to_string(), "/w".to_string()),
+        (
+            "PROJECT_CANON_REPO_ROOT".to_string(),
+            "~/Projects".to_string(),
+        ),
         (
             "PROJECT_CANON_FAMILY_TOOLS".to_string(),
-            "onectl,twoctl".to_string(),
+            "alpha-tool,beta-tool".to_string(),
         ),
         ("PROJECT_CANON_TW_ENABLED".to_string(), "false".to_string()),
         (
@@ -84,9 +84,12 @@ fn a_portable_override_replaces_every_homebase_specific() {
     .expect("valid env vars");
     let cfg = EnvConfig::resolve(&[&EnvConfigLayer::empty(), &env]);
 
-    assert_eq!(cfg.gh_account, "octo-org");
-    assert_eq!(cfg.family_repo("onectl").as_deref(), Some("/w/onectl"));
-    assert_eq!(cfg.family_repo("issuectl"), None, "homebase tools gone");
+    assert_eq!(cfg.gh_account.as_deref(), Some("example-user"));
+    assert_eq!(
+        cfg.family_repo("alpha-tool").as_deref(),
+        Some("~/Projects/alpha-tool")
+    );
+    assert_eq!(cfg.family_repo("unknown-tool"), None);
     assert!(!cfg.tw.enabled);
     assert_eq!(cfg.tw.projects_conf, "/w/tw.conf", "registry repointed too");
 }
@@ -106,10 +109,15 @@ fn strict_validation_happens_at_the_parse_edge() {
 fn convention_paths_are_tilde_expanded_at_the_edge() {
     // A verb turns a `~`-relative config path into a usable filesystem path via the pure helper,
     // supplying the home dir from its own I/O edge (core stays I/O-free).
-    let cfg = EnvConfig::resolve(&[]);
+    let layer = EnvConfigLayer {
+        repo_root: Some("~/Projects".to_string()),
+        family_tools: Some(["alpha-tool".to_string()].into()),
+        ..EnvConfigLayer::empty()
+    };
+    let cfg = EnvConfig::resolve(&[&layer]);
     assert_eq!(
-        EnvConfig::expand_home(&cfg.repo_location("issuectl"), "/home/dev"),
-        "/home/dev/Sources/issuectl"
+        EnvConfig::expand_home(&cfg.repo_location("alpha-tool").unwrap(), "/home/dev"),
+        "/home/dev/Projects/alpha-tool"
     );
     assert_eq!(
         EnvConfig::expand_home(&cfg.tw.projects_conf, "/home/dev"),

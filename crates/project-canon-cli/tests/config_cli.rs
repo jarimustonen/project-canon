@@ -81,6 +81,20 @@ fn config_path_and_missing_config_are_inspectable_without_writing() {
 }
 
 #[test]
+fn config_show_without_a_user_config_reports_neutral_defaults() {
+    let xdg = temp_dir("neutral");
+    let out = run(&xdg, &["config", "show", "--json"]);
+    assert_eq!(out.status.code(), Some(0));
+    let payload: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let values = &payload["values"];
+    assert_eq!(values["gh_account"]["value"], Value::Null);
+    assert_eq!(values["repo_root"]["value"], Value::Null);
+    assert_eq!(values["family_tools"]["value"], serde_json::json!([]));
+    assert_eq!(values["family_repos"], serde_json::json!({}));
+    let _ = fs::remove_dir_all(xdg);
+}
+
+#[test]
 fn config_path_does_not_parse_a_malformed_config_file() {
     let xdg = temp_dir("malformed-path");
     let config_dir = xdg.join("project-canon");

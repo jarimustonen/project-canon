@@ -15,6 +15,7 @@ into one model (`resolved = base ∪ profile`) that its verbs act on.
 - [What it does](#what-it-does)
 - [Installation](#installation)
 - [Usage](#usage)
+- [Configuration](#configuration)
 - [The canon as a skill](#the-canon-as-a-skill)
 - [License](#license)
 
@@ -71,6 +72,14 @@ project-canon review              # advisory audit; severity-triaged findings
 
 Every verb speaks the AI-first CLI conventions: strict input validation, `--json` output, and
 informative, non-interactive errors.
+
+## Configuration
+
+Built-in environment defaults are deliberately neutral. Before using a command that creates a
+GitHub repository, configure `gh_account` in the file printed by `project-canon config path`, or
+set `PROJECT_CANON_GH_ACCOUNT`. A complete fictional family configuration is available at
+[`docs/config.example.toml`](docs/config.example.toml); inspect the resolved values with
+`project-canon config show --json`.
 
 ## The canon as a skill
 

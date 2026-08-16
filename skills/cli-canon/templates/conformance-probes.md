@@ -274,15 +274,14 @@ MSRV policy). A single‑tool review cannot prove recurrence on its own, so make
 **concrete step**, not a hope that the model "notices":
 
 1. When the target exhibits a useful practice the canon doesn't name, first read the existing
-   candidates under `~/Sources/homebase/issues/cli-canon-consolidate/` (and open issues
-   labelled `cli-canon`).
+   candidates in the target project's issue tracker (and open issues labelled `cli-canon`).
 2. If this practice matches an **existing** candidate, **append this tool's evidence to it**
    — reaching the ≥2‑tool threshold is precisely this accumulation.
 3. Otherwise `grep` 2–3 other family repos for the same practice. Only when **≥2** tools show
    it do you write a **new** candidate: `applies‑when / look‑for / rationale / evidence:
    [tool→source]`.
-4. Stage it (do not auto‑file) as a candidate against homebase's `cli-canon-consolidate`
-   (Phase 2); it also seeds the Phase‑4 checker's expanding probe list. A single‑tool
+4. Stage it (do not auto-file) as a candidate in the target project's issue tracker; it also
+   seeds the Phase-4 checker's expanding probe list. A single-tool
    observation is a *watch‑list note*, not yet a candidate.
 
 This is the mechanism that keeps the canon and this skill from freezing at §22.

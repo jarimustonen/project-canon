@@ -98,6 +98,15 @@ pub fn run(args: &[String]) -> ExitCode {
         .emoji
         .clone()
         .or_else(|| cfg.workmux_emoji_prefix.clone());
+    if cfg.gh_account.is_none() {
+        return fail(
+            parsed.json,
+            CliError::actionable(
+                "required_config_missing",
+                "new: gh_account is not configured; set gh_account in `project-canon config path` or set PROJECT_CANON_GH_ACCOUNT",
+            ),
+        );
+    }
     let plan = build_plan(
         &model,
         &resolution,
@@ -642,7 +651,10 @@ fn bootstrap_hooks(
     home: &str,
     target: &str,
 ) -> Vec<PlannedHook> {
-    let account = &cfg.gh_account;
+    let account = cfg
+        .gh_account
+        .as_deref()
+        .expect("new validates gh_account before building hooks");
     let ssh_url = format!("git@github.com:{account}/{name}.git");
     // The tw registry records where the repo actually lives — the caller's target — not
     // `cfg.repo_location(name)` (that convention only supplies the *default* location).
@@ -740,7 +752,7 @@ Every directory follows this structure:\n\n\
 - `AGENTS.md` — all AI-relevant info (consolidated)\n\
 - `AGENTS-<TOPIC>.md` — complex topics split out (optional)\n\n\
 ## Issues & Planning\n\n\
-Issue tracking is managed by [`issuectl`](https://github.com/jarimustonen/issuectl). Use the \
+Issue tracking is managed by [`issuectl`](https://github.com/example-org/issuectl). Use the \
 `/issue` skill (installed by `issuectl init`) to create, search, update, and close issues.\n\n\
 - `issues/<slug>/item.md` — every issue and epic (flat layout — no numeric prefix, no `open/closed/` split)\n\
 - Status lives in the `status:` frontmatter field, not in the path\n\n\
@@ -1397,7 +1409,11 @@ mod tests {
     fn plan_for(profile: Archetype, name: &str, emoji: Option<&str>) -> ScaffoldPlan {
         let model = Model::standard();
         let resolution = model.resolve(&Questionnaire::builder(profile).build());
-        let cfg = EnvConfig::builtin_defaults();
+        let account = EnvConfigLayer {
+            gh_account: Some("example-user".to_string()),
+            ..EnvConfigLayer::empty()
+        };
+        let cfg = EnvConfig::resolve(&[&account]);
         build_plan(
             &model,
             &resolution,
@@ -1532,7 +1548,11 @@ mod tests {
     fn description_fills_agents_md() {
         let model = Model::standard();
         let resolution = model.resolve(&Questionnaire::builder(Archetype::Cli).build());
-        let cfg = EnvConfig::builtin_defaults();
+        let account = EnvConfigLayer {
+            gh_account: Some("example-user".to_string()),
+            ..EnvConfigLayer::empty()
+        };
+        let cfg = EnvConfig::resolve(&[&account]);
         let plan = build_plan(
             &model,
             &resolution,
@@ -1556,9 +1576,8 @@ mod tests {
         let plan = plan_for(Archetype::Cli, "foo", Some("📏"));
         let gh = plan.hooks.iter().find(|h| h.id == "github-create").unwrap();
         assert_eq!(gh.class, HookClass::External);
-        // Default gh account is jarimustonen (from EnvConfig::builtin_defaults); the repo is
-        // account-qualified so it is created there, not under gh's default.
-        assert!(gh.command.contains("jarimustonen/foo"), "{}", gh.command);
+        // The configured account qualifies the repo, rather than relying on gh's default.
+        assert!(gh.command.contains("example-user/foo"), "{}", gh.command);
         let remote = plan
             .hooks
             .iter()
@@ -1567,7 +1586,7 @@ mod tests {
         assert!(
             remote
                 .command
-                .contains("git@github.com:jarimustonen/foo.git"),
+                .contains("git@github.com:example-user/foo.git"),
             "{}",
             remote.command
         );
@@ -1643,6 +1662,7 @@ mod tests {
         let model = Model::standard();
         let resolution = model.resolve(&Questionnaire::builder(Archetype::Cli).build());
         let layer = EnvConfigLayer {
+            gh_account: Some("example-user".to_string()),
             tw_enabled: Some(false),
             ..EnvConfigLayer::empty()
         };

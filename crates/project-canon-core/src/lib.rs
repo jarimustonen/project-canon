@@ -18,11 +18,11 @@
 //!   mirrored from `cli-canon`) and [`Model::resolve`](profile::Model::resolve) turns it into a
 //!   [`Resolution`].
 //!
-//! Orthogonal to the model is the [`mod@env`] config/hook layer ([`EnvConfig`]): the non-portable
-//! homebase environment specifics (family-repo map, gh account, `~/Sources/<name>` convention,
-//! tw registration, `.workmux.yaml` prefix) resolved through *defaults → config file → env
-//! overrides*, with sensible overridable defaults. A verb reads both a [`Model`] and an
-//! `EnvConfig`; the layer does not change the model's `BASE ∪ PROFILE` semantics.
+//! Orthogonal to the model is the [`mod@env`] config/hook layer ([`EnvConfig`]): public built-in
+//! defaults are neutral, while an operator can configure a family-repo map, GitHub account,
+//! repository convention, tw registration, and `.workmux.yaml` prefix through *defaults → config
+//! file → env* overrides. A verb reads both a [`Model`] and an `EnvConfig`; the layer does not
+//! change the model's `BASE ∪ PROFILE` semantics.
 //!
 //! This crate is dependency-light and free of clap/I/O (§22 core/cli split); JSON serialization
 //! of a `Resolution` (§10, for the future `doctor`/`review` verbs) is a deferred seam.

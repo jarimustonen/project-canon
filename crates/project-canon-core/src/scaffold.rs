@@ -2,7 +2,7 @@
 //! homebase's `create-project` already sets up for *every* repo, regardless of archetype.
 //!
 //! These are declared **abstractly** — "the repo has a consolidated `AGENTS.md` with a
-//! `CLAUDE.md` symlink", never `~/Sources/...` or a `projects.conf` path. Probing an actual
+//! `CLAUDE.md` symlink", never a configured repository path or a `projects.conf` path. Probing an actual
 //! repo for them (and resolving homebase env specifics: `tw`, the `gh` account, `.workmux`
 //! emoji) is the later `env-config-hook-layer` issue's job. This crate hardcodes no filesystem
 //! path, account, or host.

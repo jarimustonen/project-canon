@@ -388,7 +388,7 @@ fn show_payload(resolved: &ResolvedConfig) -> Json {
         (
             "gh_account".into(),
             value(
-                Json::str(&cfg.gh_account),
+                cfg.gh_account.as_deref().map_or(Json::Null, Json::str),
                 gh_source,
                 detail(gh_source, &resolved.path, "PROJECT_CANON_GH_ACCOUNT"),
                 false,
@@ -397,7 +397,7 @@ fn show_payload(resolved: &ResolvedConfig) -> Json {
         (
             "repo_root".into(),
             value(
-                Json::str(&cfg.repo_root),
+                cfg.repo_root.as_deref().map_or(Json::Null, Json::str),
                 root_source,
                 detail(root_source, &resolved.path, "PROJECT_CANON_REPO_ROOT"),
                 false,
@@ -500,9 +500,9 @@ fn render_human(resolved: &ResolvedConfig) -> String {
         "config: {} ({})\ngh account: {} [{}]\nrepo root: {} [{}]\nfamily repos: {}\ntw registration: {} [{}]\n",
         resolved.path.display(),
         if resolved.exists { "present" } else { "not found" },
-        cfg.gh_account,
+        cfg.gh_account.as_deref().unwrap_or("not configured"),
         human_source(gh_source, &resolved.path, "PROJECT_CANON_GH_ACCOUNT"),
-        cfg.repo_root,
+        cfg.repo_root.as_deref().unwrap_or("not configured"),
         human_source(root_source, &resolved.path, "PROJECT_CANON_REPO_ROOT"),
         cfg.family_repos().len(),
         if cfg.tw.enabled { "enabled" } else { "disabled" },

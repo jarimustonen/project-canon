@@ -5,9 +5,8 @@ allowed-tools: Bash, Glob, Grep, Read, Write
 ---
 
 Operationalize the **AI-first CLI canon** — `AGENTS-AI-FIRST-CLI.md`, sections §1–§22 — as
-an active **reviewer/generator** for the family CLI tools (`ossctl`, `issuectl`,
-`orchestratectl`, `crmctl`, `tilictl`, `intakectl`, `glasspad`, and new ones). The canon is
-a *document*; this skill is the *tool* that applies it: given a family CLI (a repo or a
+an active **reviewer/generator** for family CLI tools. The canon is a *document*; this skill is
+the *tool* that applies it: given a family CLI (a repo or a
 binary), it either **reviews** the tool against the canon and produces actionable findings,
 or **generates** conformant surface scaffolding/guidance.
 
@@ -37,7 +36,7 @@ probe table and the same characterization questionnaire, so "what generate scaff
 ## When to use / when NOT to use
 
 **Use** when the unit of work is a **family CLI measured against the canon**:
-- "make this CLI conformant" / "which canon sections is it missing" / "audit ossctl against
+- "make this CLI conformant" / "which canon sections is it missing" / "audit a CLI against
   `AGENTS-AI-FIRST-CLI.md`" → **review** (the tool's own author then applies the fixes);
 - "scaffold the CLI surface for a new AI-first tool (inside an existing repo)" → **generate**;
 - as Phase 3 of the `stack-cli-alignment` epic: the reusable form of the conformance audit.
@@ -71,28 +70,17 @@ Invoked as `/cli-canon <mode> <target> [notes]`.
   mode"). A user-scoped review covers only the named sections and reports "Overall: not
   assessed — user-scoped to §N" rather than marking the rest `unknown`.
 
-**Family repo map** (env-specific to this homebase setup; a tool name resolves to its own
-repo — findings and canon-candidates are staged there, per the file-tooling rule):
-`issuectl`→`~/Sources/issuectl`, `orchestratectl`→`~/Sources/orchestratectl`,
-`crmctl`→`~/Sources/crmctl`, `tilictl`→`~/Sources/tilictl`; `ossctl`/`intakectl`/`glasspad`
-under their own repos likewise. Confirm the path exists **and** `git -C <repo> remote -v`
-identifies the expected repo before staging anything against it. (This map is now duplicated:
-`project-canon-core`'s `env` config/hook layer — `EnvConfig::family_repos()` — is the intended
-**single source**; this skill should read it from there once the homebase-side cutover lands.
-See the epic note.)
+**Family repo map:** resolve a tool name from the operator's `project-canon config show --json`
+output, specifically `values.family_repos`. Do not assume a repository root or tool list.
+Confirm the path exists **and** `git -C <repo> remote -v` identifies the expected repo before
+staging anything against it.
 
 ## Resolve the canon & templates (both modes, first thing)
 
-Read the canon fresh, **preferring homebase's live copy** (the growing source of truth) over
-a repo-local snapshot:
-
-1. `~/Sources/homebase/AGENTS-AI-FIRST-CLI.md` (the canonical, still-growing original);
-2. else `<target-repo>/AGENTS-AI-FIRST-CLI.md` (a point-in-time verbatim copy from
-   `/create-project` — it can lag).
-
-If the target repo carries its own copy and it **differs** from homebase's, grade against
-homebase's and emit a `canon_out_of_date` note (naming the two `Canon version:` values). If
-neither canon copy resolves — or any of the mode's templates
+Read the canon fresh from the installed `ai-first-cli-canon` skill, or use
+`project-canon skill print` when that command is available. If neither source resolves, fall
+back to `<target-repo>/AGENTS-AI-FIRST-CLI.md` and mark the result `canon_out_of_date` because a
+repo-local copy can lag. If no canon copy resolves — or any of the mode's templates
 (`templates/conformance-probes.md`, plus `generate-plan.md` / `review-report.md`) cannot be
 read — **STOP and say so**; do not hallucinate the canon or the probe table. Record the
 canon's `Canon version:` line in the matrix/plan header.
@@ -195,12 +183,12 @@ Follow `templates/conformance-probes.md` then `templates/review-report.md`:
 5. **Dimension-discovery (active, not passive).** The epic wants the canon to grow from
    practices recurring across **≥2** tools. A single-tool review cannot prove recurrence
    alone, so when you spot a canon-absent practice worth cataloguing: (a) read the existing
-   candidates under `~/Sources/homebase/issues/cli-canon-consolidate/` (and open issues
-   labelled `cli-canon`); if this tool exhibits an *existing* candidate, **add this tool's
-   evidence to it** — that is how the ≥2 threshold is reached; (b) else `grep` 2–3 other
-   family repos for the same practice and only write a **new** candidate
-   (`applies-when / look-for / rationale / evidence: [tool→source]`) once ≥2 tools show it.
-   This feeds `cli-canon-consolidate` (Phase 2) and the Phase-4 checker.
+   candidates in the selected canon-maintenance issue tracker (and open issues labelled
+   `cli-canon`); if this tool exhibits an *existing* candidate, **add this tool's evidence to
+   it**: that is how the ≥2 threshold is reached; (b) else `grep` 2–3 other family repos for
+   the same practice and only write a **new** candidate (`applies-when / look-for / rationale /
+   evidence: [tool→source]`) once ≥2 tools show it. This feeds the canon-maintenance backlog
+   and the Phase-4 checker.
 6. **Build the matrix, triage by canon severity, stage findings.** Assemble the conformance
    matrix (tool × section, evidence + severity). **The canon's severity model IS the triage**
    — do **not** run `/assess-findings` (it triages by production-likelihood and would DROP
@@ -300,7 +288,7 @@ probe blocks machine-shaped (`Applies / Look-for / Probe / Fail / effect-class` 
 what a checker consumes). The known extraction seams to carry over — **captured here so
 Phase 4 is a lift, not a rediscovery**: (1) convert the prose probe table to a machine-
 readable registry (YAML/JSON) with stable probe ids, effect-classes, and assertions;
-(2) externalize the family repo map to config (no `~/Sources` assumptions); (3) give every
+(2) externalize the family repo map to config (no repository-root assumptions); (3) give every
 judgment section a mechanical fallback so the checker isn't LatentlyLLM-dependent; (4) add a
 non-interactive `--assume-defaults` mode (a CI gate has no user to ask); (5) a cross-run
 aggregate/family-matrix so dimension-discovery evidence accumulates across tools.

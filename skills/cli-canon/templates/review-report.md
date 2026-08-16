@@ -78,11 +78,11 @@ erase a MUST row.
 
    Body = Observed / Expected / Fix sketch.
 5. **Canon-addition candidates** (from the active dimension-discovery hook, only once ≥2 tools
-   show the practice) are staged against **homebase**'s `cli-canon-consolidate` — a separate
-   scoped block, separately confirmed:
+   show the practice) are staged in the selected canon-maintenance repository as a separate,
+   explicitly scoped block:
 
    ```bash
-   ( cd ~/Sources/homebase && issuectl new --type task \
+   ( cd "$CANON_MAINTENANCE_REPO" && issuectl new --type task \
        --title "cli-canon dimension: <practice>" --body-file "$sandbox/candidate.md" \
        --label cli-canon )
    ```

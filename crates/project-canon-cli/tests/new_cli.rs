@@ -43,6 +43,7 @@ fn base_command() -> Command {
             cmd.env_remove(key);
         }
     }
+    cmd.env("PROJECT_CANON_GH_ACCOUNT", "example-user");
     cmd
 }
 
@@ -183,6 +184,29 @@ fn force_fills_gaps_without_overwriting() {
         std::fs::read_to_string(t.path.join("README.md")).unwrap(),
         "KEEP ME"
     );
+}
+
+#[test]
+fn new_requires_a_configured_gh_account() {
+    let t = Tmp::new("missing-account");
+    let xdg = std::env::temp_dir().join(format!("pc-new-missing-account-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&xdg);
+    let mut cmd = base_command();
+    let out = cmd
+        .env("XDG_CONFIG_HOME", &xdg)
+        .env_remove("PROJECT_CANON_GH_ACCOUNT")
+        .args(["new", "--json", "--dry-run", t.str()])
+        .output()
+        .expect("run project-canon new");
+    assert_eq!(code(&out), 1);
+    assert!(out.stdout.is_empty());
+    let error: serde_json::Value = serde_json::from_slice(&out.stderr).unwrap();
+    assert_eq!(error["error"]["code"], "required_config_missing");
+    assert!(error["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("PROJECT_CANON_GH_ACCOUNT"));
+    let _ = std::fs::remove_dir_all(xdg);
 }
 
 #[test]

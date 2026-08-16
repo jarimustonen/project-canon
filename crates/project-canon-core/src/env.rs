@@ -1,10 +1,10 @@
 //! The **env config/hook layer** — the first verb-independent seam (ADR 0009 §2/§5/§6).
 //!
-//! The non-portable homebase environment specifics (the `~/Sources` family-repo map, the gh
-//! account, the `~/Sources/<name>` location convention, tw / `projects.conf` registration, the
-//! `.workmux.yaml` emoji prefix, and a documented extension point for the future `hauis` CI
-//! release pattern) do **not** belong hardcoded in the conformance logic. They live here behind
-//! one resolved struct with sensible, overridable defaults.
+//! Environment-specific settings do **not** belong hardcoded in the conformance logic. This
+//! public artifact deliberately ships neutral defaults: no GitHub account, repository-root
+//! convention, or family-tool map. Operators supply their own values through configuration when a
+//! verb needs them. The layer also carries tw registration, a `.workmux.yaml` emoji prefix, and a
+//! documented extension point for a future CI release pattern.
 //!
 //! This is **orthogonal to [`Model`](crate::Model)**: a verb reads a `Model` (what conformance
 //! means) *and* an [`EnvConfig`] (where this environment's repos/account/registration live). The
@@ -37,19 +37,6 @@ use std::fmt;
 /// The environment-variable prefix for env overrides — the §8 "env mirrors flag" naming.
 const ENV_PREFIX: &str = "PROJECT_CANON_";
 
-/// The family CLI tools that follow the `~/Sources/<name>` location convention by default. The
-/// map itself (`tool → repo path`) is materialized on demand from these + `repo_root`, so it is
-/// never a set of stale absolute paths (see [`EnvConfig::family_repos`]).
-const DEFAULT_FAMILY_TOOLS: [&str; 7] = [
-    "issuectl",
-    "orchestratectl",
-    "crmctl",
-    "tilictl",
-    "ossctl",
-    "intakectl",
-    "glasspad",
-];
-
 /// tw / `projects.conf` registration settings.
 ///
 /// `#[non_exhaustive]`: a future registration knob (e.g. a `tw` binary path) must not break
@@ -79,10 +66,9 @@ pub struct CiReleaseHook {
 
 /// The fully-resolved environment config a verb consumes.
 ///
-/// Built with [`EnvConfig::resolve`] (defaults → file → env). The defaults preserve today's
-/// homebase behavior, but they now live in **one** place ([`EnvConfig::builtin_defaults`]) and
-/// every value is overridable — that, plus core no longer hardcoding any of them, is the
-/// portability win.
+/// Built with [`EnvConfig::resolve`] (defaults → file → env). Built-in defaults are neutral
+/// because this crate is public. A verb that requires an account or repository convention must
+/// report which configuration key or environment variable the operator needs to set.
 ///
 /// `#[non_exhaustive]`: verbs read this resolved type but never construct it (they call
 /// [`resolve`](Self::resolve)); marking it lets new environment specifics land without breaking
@@ -90,10 +76,11 @@ pub struct CiReleaseHook {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct EnvConfig {
-    /// The gh account family repos live under.
-    pub gh_account: String,
-    /// The base of the `~/Sources/<name>` location convention. See [`EnvConfig::repo_location`].
-    pub repo_root: String,
+    /// The GitHub account family repos live under, if configured.
+    pub gh_account: Option<String>,
+    /// The base of a `<repo_root>/<name>` location convention, if configured. See
+    /// [`EnvConfig::repo_location`].
+    pub repo_root: Option<String>,
     /// Known family tool names that resolve to a repo by the `repo_root/<name>` convention.
     pub family_tools: BTreeSet<String>,
     /// Explicit `tool → repo path` overrides for off-convention repos (usually empty).
@@ -108,12 +95,12 @@ pub struct EnvConfig {
 }
 
 impl EnvConfig {
-    /// Step 1 of resolution: the built-in defaults — the single source of the homebase values.
+    /// Step 1 of resolution: neutral built-in defaults for this public artifact.
     pub fn builtin_defaults() -> Self {
         EnvConfig {
-            gh_account: "jarimustonen".to_string(),
-            repo_root: "~/Sources".to_string(),
-            family_tools: DEFAULT_FAMILY_TOOLS.iter().map(|s| s.to_string()).collect(),
+            gh_account: None,
+            repo_root: None,
+            family_tools: BTreeSet::new(),
             repo_overrides: BTreeMap::new(),
             tw: TwRegistration {
                 enabled: true,
@@ -146,10 +133,10 @@ impl EnvConfig {
     /// config-file layer lands (env, the only wired source, cannot express a clear anyway).
     pub(crate) fn apply(&mut self, layer: &EnvConfigLayer) {
         if let Some(v) = &layer.gh_account {
-            self.gh_account = v.clone();
+            self.gh_account = Some(v.clone());
         }
         if let Some(v) = &layer.repo_root {
-            self.repo_root = v.clone();
+            self.repo_root = Some(v.clone());
         }
         if let Some(v) = &layer.family_tools {
             self.family_tools = v.clone();
@@ -171,14 +158,17 @@ impl EnvConfig {
         }
     }
 
-    /// The `~/Sources/<name>` location convention, computed in one place. Applying a `repo_root`
-    /// override re-derives every convention path through here.
+    /// The configured `<repo_root>/<name>` location convention, computed in one place. Applying a
+    /// `repo_root` override re-derives every convention path through here.
     ///
     /// The result is a **config string**, still `~`-relative when `repo_root` is — pass it
     /// through [`expand_home`](Self::expand_home) at the I/O edge before touching the filesystem.
-    /// A trailing slash on `repo_root` is trimmed so the join never doubles the separator.
-    pub fn repo_location(&self, name: &str) -> String {
-        format!("{}/{}", self.repo_root.trim_end_matches('/'), name)
+    /// A trailing slash on `repo_root` is trimmed so the join never doubles the separator. It
+    /// returns `None` until an operator configures `repo_root`.
+    pub fn repo_location(&self, name: &str) -> Option<String> {
+        self.repo_root
+            .as_ref()
+            .map(|root| format!("{}/{}", root.trim_end_matches('/'), name))
     }
 
     /// Expand a leading `~` / `~/` against `home` — the **pure** half of tilde resolution, so the
@@ -205,7 +195,7 @@ impl EnvConfig {
             return Some(path.clone());
         }
         if self.family_tools.contains(name) {
-            return Some(self.repo_location(name));
+            return self.repo_location(name);
         }
         None
     }
@@ -215,7 +205,9 @@ impl EnvConfig {
     pub fn family_repos(&self) -> BTreeMap<String, String> {
         let mut map = BTreeMap::new();
         for tool in &self.family_tools {
-            map.insert(tool.clone(), self.repo_location(tool));
+            if let Some(path) = self.repo_location(tool) {
+                map.insert(tool.clone(), path);
+            }
         }
         for (tool, path) in &self.repo_overrides {
             map.insert(tool.clone(), path.clone());
@@ -379,18 +371,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn defaults_hold_the_homebase_values_in_one_place() {
+    fn defaults_are_neutral_for_a_public_artifact() {
         let cfg = EnvConfig::builtin_defaults();
-        assert_eq!(cfg.gh_account, "jarimustonen");
-        assert_eq!(cfg.repo_root, "~/Sources");
-        assert_eq!(
-            cfg.repo_location("project-canon"),
-            "~/Sources/project-canon"
-        );
-        assert_eq!(
-            cfg.family_repo("issuectl").as_deref(),
-            Some("~/Sources/issuectl")
-        );
+        assert_eq!(cfg.gh_account, None);
+        assert_eq!(cfg.repo_root, None);
+        assert!(cfg.family_tools.is_empty());
+        assert!(cfg.family_repos().is_empty());
         assert!(cfg.tw.enabled);
         assert_eq!(cfg.tw.projects_conf, "~/.config/tw/projects.conf");
         // Portable defaults for the truly non-portable specifics.
@@ -419,8 +405,16 @@ mod tests {
             ..EnvConfigLayer::empty()
         };
         let cfg = EnvConfig::resolve(&[&file, &env]);
-        assert_eq!(cfg.gh_account, "env-acct", "env wins over file");
-        assert_eq!(cfg.repo_root, "/file/root", "file wins over default");
+        assert_eq!(
+            cfg.gh_account.as_deref(),
+            Some("env-acct"),
+            "env wins over file"
+        );
+        assert_eq!(
+            cfg.repo_root.as_deref(),
+            Some("/file/root"),
+            "file wins over default"
+        );
         assert_eq!(
             cfg.tw.projects_conf, "~/.config/tw/projects.conf",
             "untouched field keeps the default"
@@ -441,11 +435,11 @@ mod tests {
         };
         let cfg = EnvConfig::resolve(&[&EnvConfigLayer::empty(), &env]);
         // No stale absolute paths baked at default-time: the map re-derives from the new root.
-        assert_eq!(cfg.repo_location("issuectl"), "/work/issuectl");
         assert_eq!(
-            cfg.family_repo("issuectl").as_deref(),
-            Some("/work/issuectl")
+            cfg.repo_location("example-tool").as_deref(),
+            Some("/work/example-tool")
         );
+        assert_eq!(cfg.family_repo("example-tool"), None);
         assert!(cfg.family_repos().values().all(|p| p.starts_with("/work/")));
     }
 
@@ -464,11 +458,8 @@ mod tests {
             cfg.family_repo("issuectl").as_deref(),
             Some("/elsewhere/issuectl")
         );
-        // Other tools still follow the convention.
-        assert_eq!(
-            cfg.family_repo("orchestratectl").as_deref(),
-            Some("~/Sources/orchestratectl")
-        );
+        // Unconfigured tools do not silently acquire a convention path.
+        assert_eq!(cfg.family_repo("another-tool"), None);
     }
 
     #[test]
@@ -515,8 +506,8 @@ mod tests {
         let layer = EnvConfigLayer::from_env_vars(&vars).expect("valid vars");
         let cfg = EnvConfig::resolve(&[&EnvConfigLayer::empty(), &layer]);
 
-        assert_eq!(cfg.gh_account, "octocat");
-        assert_eq!(cfg.repo_root, "/src");
+        assert_eq!(cfg.gh_account.as_deref(), Some("octocat"));
+        assert_eq!(cfg.repo_root.as_deref(), Some("/src"));
         assert_eq!(
             cfg.family_tools,
             BTreeSet::from(["foo".to_string(), "bar".to_string(), "baz".to_string()])
@@ -607,7 +598,7 @@ mod tests {
             ..EnvConfigLayer::empty()
         };
         let cfg = EnvConfig::resolve(&[&file, &env, &flags]);
-        assert_eq!(cfg.gh_account, "flag", "last layer wins");
+        assert_eq!(cfg.gh_account.as_deref(), Some("flag"), "last layer wins");
         // Zero layers resolves to the built-in defaults.
         assert_eq!(EnvConfig::resolve(&[]), EnvConfig::builtin_defaults());
     }
@@ -615,23 +606,27 @@ mod tests {
     #[test]
     fn expand_home_resolves_only_a_leading_tilde() {
         assert_eq!(
-            EnvConfig::expand_home("~/Sources/x", "/home/j"),
-            "/home/j/Sources/x"
+            EnvConfig::expand_home("~/Projects/x", "/home/j"),
+            "/home/j/Projects/x"
         );
         assert_eq!(EnvConfig::expand_home("~", "/home/j"), "/home/j");
         // A trailing slash on home does not double the separator.
         assert_eq!(
-            EnvConfig::expand_home("~/Sources", "/home/j/"),
-            "/home/j/Sources"
+            EnvConfig::expand_home("~/Projects", "/home/j/"),
+            "/home/j/Projects"
         );
         // Non-tilde paths pass through untouched; a mid-string `~` is not expanded.
         assert_eq!(EnvConfig::expand_home("/abs/path", "/home/j"), "/abs/path");
         assert_eq!(EnvConfig::expand_home("a/~/b", "/home/j"), "a/~/b");
-        // The default config path becomes a usable filesystem path only after expansion.
-        let cfg = EnvConfig::builtin_defaults();
+        // A configured repository convention becomes a usable filesystem path only after expansion.
+        let layer = EnvConfigLayer {
+            repo_root: Some("~/Projects".to_string()),
+            ..EnvConfigLayer::empty()
+        };
+        let cfg = EnvConfig::resolve(&[&layer]);
         assert_eq!(
-            EnvConfig::expand_home(&cfg.repo_location("issuectl"), "/home/j"),
-            "/home/j/Sources/issuectl"
+            EnvConfig::expand_home(&cfg.repo_location("example-tool").unwrap(), "/home/j"),
+            "/home/j/Projects/example-tool"
         );
     }
 
@@ -642,6 +637,6 @@ mod tests {
             ..EnvConfigLayer::empty()
         };
         let cfg = EnvConfig::resolve(&[&env]);
-        assert_eq!(cfg.repo_location("x"), "/work/x");
+        assert_eq!(cfg.repo_location("x").as_deref(), Some("/work/x"));
     }
 }
