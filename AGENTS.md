@@ -52,10 +52,17 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
 `/stint` reads this section for how to run a work-session in this repo.
 
 - **🔒 THIS REPO IS PUBLIC — no user-specific facts, anywhere** (maintainer rule,
-  2026-08-16). A public artifact MUST NOT contain personal account handles, private
-  repo/project names, personal filesystem-layout conventions, hostnames, internal URLs, or
-  org-internal identifiers — not in source, **not in built-in defaults**, not in generated
-  scaffold output, not in installed skill content, not in docs, not in tests or fixtures.
+  2026-08-16). A public artifact MUST NOT contain private repo/project names, personal
+  filesystem-layout conventions, personal machine hostnames, internal URLs, or org-internal
+  identifiers — not in source, **not in built-in defaults**, not in generated scaffold output,
+  not in installed skill content, not in docs, not in tests or fixtures.
+  **Carve-out — the project's own published coordinates are not a leak.** This repo's own
+  URL, its Homebrew tap, its CI badge, its install commands, and the public coordinates of
+  tools it genuinely depends on (e.g. `github.com/<owner>/issuectl` in the issue-skill docs)
+  necessarily name the owner, and are correct. The line is *whose environment the fact
+  describes*: this project's public address = fine; the maintainer's other projects, machine
+  layout, or private repos = never. A check built from this rule must not flag the repo's own
+  coordinates, or it will be turned off.
   **User-specific things belong in user config** (the §8 `defaults → file → env` layers,
   which live outside the distributed artifact). Overridability does **not** launder a
   user-specific default: unset still means whatever ships in the package. The correct
