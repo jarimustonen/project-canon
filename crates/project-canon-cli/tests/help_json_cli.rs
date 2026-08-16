@@ -65,12 +65,27 @@ fn root_help_json_matches_the_golden_shape_and_lists_verbs() {
         .iter()
         .map(|item| item["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["doctor", "new", "review", "skill", "version"]);
+    assert_eq!(
+        names,
+        ["config", "doctor", "new", "review", "skill", "version"]
+    );
 }
 
 #[test]
 fn verb_and_nested_help_json_are_structured() {
     for (args, path) in [
+        (
+            &["config", "--help", "--json"][..],
+            &["project-canon", "config"][..],
+        ),
+        (
+            &["config", "path", "--help", "--json"][..],
+            &["project-canon", "config", "path"][..],
+        ),
+        (
+            &["config", "show", "--help", "--json"][..],
+            &["project-canon", "config", "show"][..],
+        ),
         (
             &["doctor", "--help", "--json"][..],
             &["project-canon", "doctor"][..],

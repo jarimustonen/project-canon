@@ -18,8 +18,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use project_canon_core::{
-    Archetype, Dimension, EnvConfig, EnvConfigLayer, Model, Questionnaire, Resolution, Severity,
-    SurfaceShape,
+    Archetype, Dimension, EnvConfig, Model, Questionnaire, Resolution, Severity, SurfaceShape,
 };
 
 use crate::error::{fail, json_requested, write_stdout, CliError};
@@ -58,16 +57,21 @@ pub fn run(args: &[String]) -> ExitCode {
 
     // Strict §1 validation of the env override layer, uniform with the family: a malformed
     // `PROJECT_CANON_*` value is a usage error, never a silent coerce. Runs *after* `--help`.
-    let env_layer = match EnvConfigLayer::from_env_vars(&std::env::vars().collect()) {
-        Ok(layer) => layer,
-        Err(err) => {
+    let cfg = match crate::config::resolve() {
+        Ok(config) => config,
+        Err(crate::config::ConfigError::Validation(error)) => {
             return fail(
                 parsed.json,
-                CliError::actionable("validation_error", format!("new: {err}")),
+                CliError::actionable("validation_error", format!("new: {error}")),
+            );
+        }
+        Err(crate::config::ConfigError::Io(error)) => {
+            return fail(
+                parsed.json,
+                CliError::system("io_error", format!("new: {error}")),
             );
         }
     };
-    let cfg = EnvConfig::resolve(&[&EnvConfigLayer::empty(), &env_layer]);
     let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_string());
 
     // Derive AND validate the project name: explicit `--name`, else the target dir's final
@@ -1247,6 +1251,7 @@ impl Report {
 mod tests {
     use super::*;
     use project_canon_core::AppStatus;
+    use project_canon_core::EnvConfigLayer;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU32, Ordering};
 

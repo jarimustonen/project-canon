@@ -1,10 +1,10 @@
 //! The `project-canon` binary — the thin CLI over `project-canon-core`.
 //!
 //! The `doctor` verb (mechanical conformance gate) lives in [`doctor`] and the `new` scaffold
-//! generator in [`new`]; `review` is still tracked as a separate issue. `main` dispatches the
-//! subcommand and, for a bare invocation, prints the no-verb smoke summary proving the core +
-//! env layer are wired.
+//! generator in [`new`]; `main` dispatches subcommands and, for a bare invocation, prints the
+//! no-verb smoke summary proving the core + configuration layer are wired.
 
+mod config;
 mod doctor;
 mod error;
 mod help;
@@ -28,6 +28,7 @@ fn main() -> ExitCode {
         return status;
     }
     match args.first().map(String::as_str) {
+        Some("config") => config::run(&args[1..]),
         Some("doctor") => doctor::run(&args[1..]),
         Some("new") => new::run(&args[1..]),
         Some("review") => review::run(&args[1..]),
@@ -44,7 +45,7 @@ fn main() -> ExitCode {
                 CliError::actionable(
                     "usage_error",
                     format!(
-                        "unknown subcommand or flag: {other:?}; known verbs: doctor, new, review, skill"
+                        "unknown subcommand or flag: {other:?}; known verbs: config, doctor, new, review, skill, version"
                     ),
                 ),
             )
@@ -52,8 +53,8 @@ fn main() -> ExitCode {
     }
 }
 
-/// The no-verb smoke summary: prove the core model + env config layer are wired.
-fn smoke_summary(args: &[String]) -> ExitCode {
+/// The no-verb smoke summary: prove the core model + configuration layer are wired.
+fn smoke_summary(_args: &[String]) -> ExitCode {
     // Smoke summary from core: resolve the widest `cli` characterization and report the size of
     // its section-set. This keeps the core dependency real and gives an at-a-glance sanity line.
     let model = Model::standard();
@@ -66,20 +67,15 @@ fn smoke_summary(args: &[String]) -> ExitCode {
         .canon_section_set(&model)
         .len();
 
-    // Exercise the env config/hook layer at the I/O edge (the only place I/O belongs): read the
-    // process env into an override layer over the built-in defaults. The config-file layer is a
-    // deferred `config` surface, so it is empty here. A malformed `PROJECT_CANON_*` value is a
-    // §1/§4 strict-validation error, not a silent coerce.
-    let env_layer = match EnvConfigLayer::from_env_vars(&std::env::vars().collect()) {
-        Ok(layer) => layer,
-        Err(err) => {
-            return fail(
-                json_requested(args),
-                CliError::actionable("validation_error", err.to_string()),
-            );
+    // Resolve the same defaults → config file → environment layer consumed by commands.
+    let cfg = match config::resolve() {
+        Ok(config) => config,
+        Err(_) => {
+            // Keep the no-verb smoke summary's historic best-effort behavior; command handlers
+            // surface the precise configuration failure through the central error envelope.
+            EnvConfig::resolve(&[&EnvConfigLayer::empty()])
         }
     };
-    let cfg = EnvConfig::resolve(&[&EnvConfigLayer::empty(), &env_layer]);
     // `~`-relative config paths become usable filesystem paths only after edge expansion; the
     // home dir comes from the environment (an I/O-edge concern, never core's).
     let home = std::env::var("HOME").unwrap_or_else(|_| "~".to_string());

@@ -29,8 +29,7 @@
 //! Core is zero-dependency and I/O-free (the crate's existing "serde is a deferred seam"
 //! discipline). The override layers are *produced* at the CLI edge and handed to core as pure
 //! [`EnvConfigLayer`] values: the env layer via [`EnvConfigLayer::from_env_vars`] (pure over a
-//! map), the file layer by whatever the edge parses (the on-disk format + read are a future
-//! `config` surface's concern, deferred like serde).
+//! map), the file layer by the CLI edge's `config` TOML parser.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;

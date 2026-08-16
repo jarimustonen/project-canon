@@ -125,7 +125,7 @@ fn payload() -> Json {
         (
             "supported_surfaces".into(),
             Json::Array(
-                ["doctor", "new", "review", "skill", "version"]
+                ["config", "doctor", "new", "review", "skill", "version"]
                     .into_iter()
                     .map(Json::str)
                     .collect(),

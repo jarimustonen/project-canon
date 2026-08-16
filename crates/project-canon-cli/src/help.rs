@@ -94,7 +94,101 @@ const ROOT: Command = Command {
         description: "Discover the available command surface.",
         argv: &["project-canon", "--help", "--json"],
     }],
-    subcommands: &["doctor", "new", "review", "skill", "version"],
+    subcommands: &["config", "doctor", "new", "review", "skill", "version"],
+    exit_codes: COMMON_EXITS,
+};
+
+const CONFIG: Command = Command {
+    path: &["config"],
+    summary: "Inspect effective configuration without changing it.",
+    arguments: NO_ARGS,
+    flags: &[
+        Flag {
+            name: "--help",
+            summary: "Show this help.",
+            value_name: None,
+            default: None,
+            accepted_values: &[],
+            env_var: None,
+            deprecated: false,
+        },
+        Flag {
+            name: "--json",
+            summary: "With --help, emit this help document.",
+            value_name: None,
+            default: None,
+            accepted_values: &[],
+            env_var: None,
+            deprecated: false,
+        },
+    ],
+    examples: &[Example {
+        description: "Inspect resolved configuration.",
+        argv: &["project-canon", "config", "show", "--json"],
+    }],
+    subcommands: &["path", "show"],
+    exit_codes: COMMON_EXITS,
+};
+const CONFIG_PATH: Command = Command {
+    path: &["config", "path"],
+    summary: "Print the effective configuration-file path.",
+    arguments: NO_ARGS,
+    flags: &[
+        Flag {
+            name: "--json",
+            summary: "Emit the path inspection payload.",
+            value_name: None,
+            default: None,
+            accepted_values: &[],
+            env_var: None,
+            deprecated: false,
+        },
+        Flag {
+            name: "--help",
+            summary: "Show this help.",
+            value_name: None,
+            default: None,
+            accepted_values: &[],
+            env_var: None,
+            deprecated: false,
+        },
+    ],
+    examples: &[Example {
+        description: "Inspect the config file location.",
+        argv: &["project-canon", "config", "path", "--json"],
+    }],
+    subcommands: NO_SUBCOMMANDS,
+    exit_codes: COMMON_EXITS,
+};
+const CONFIG_SHOW: Command = Command {
+    path: &["config", "show"],
+    summary: "Show resolved configuration values with per-value provenance.",
+    arguments: NO_ARGS,
+    flags: &[
+        Flag {
+            name: "--json",
+            summary: "Emit complete, schema-versioned config inspection data.",
+            value_name: None,
+            default: None,
+            accepted_values: &[],
+            env_var: None,
+            deprecated: false,
+        },
+        Flag {
+            name: "--help",
+            summary: "Show this help.",
+            value_name: None,
+            default: None,
+            accepted_values: &[],
+            env_var: None,
+            deprecated: false,
+        },
+    ],
+    examples: &[Example {
+        description: "Explain effective configuration values.",
+        argv: &["project-canon", "config", "show", "--json"],
+    }],
+    subcommands: NO_SUBCOMMANDS,
     exit_codes: COMMON_EXITS,
 };
 
@@ -600,6 +694,9 @@ const VERSION: Command = Command {
 
 const COMMANDS: &[&Command] = &[
     &ROOT,
+    &CONFIG,
+    &CONFIG_PATH,
+    &CONFIG_SHOW,
     &DOCTOR,
     &NEW,
     &REVIEW,
@@ -620,6 +717,20 @@ pub(crate) fn render_if_requested(args: &[String]) -> Option<ExitCode> {
     // The command grammar is at most two levels deep today, with `skill` as the sole group.
     let path: Vec<&str> = match args.first().map(String::as_str) {
         None | Some("--help") | Some("--json") => vec![],
+        Some("config") => match args.get(1).map(String::as_str) {
+            None | Some("--help") | Some("--json") => vec!["config"],
+            Some("path" | "show") => vec!["config", args[1].as_str()],
+            Some(other) if other.starts_with('-') => vec!["config"],
+            Some(other) => {
+                return Some(fail(
+                    true,
+                    CliError::actionable(
+                        "usage_error",
+                        format!("unknown config subcommand for --help --json: {other}"),
+                    ),
+                ));
+            }
+        },
         Some("skill") => match args.get(1).map(String::as_str) {
             None | Some("--help") | Some("--json") => vec!["skill"],
             Some("install" | "list" | "print" | "show") => vec!["skill", args[1].as_str()],
