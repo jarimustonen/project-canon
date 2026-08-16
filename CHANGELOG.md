@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+### Changed
+### Fixed
+<!-- oss-changelog:unreleased-end -->
+
+## [0.1.1] - 2026-08-16
+
+First public release.
+
+### Added
 - Two-layer conformance model — `resolved = base canon ∪ archetype profile` — with the
   AI-first CLI canon (`AGENTS-AI-FIRST-CLI.md`, §1–§22) carried as the `cli` profile, and
   `service`/`library`/`release` as named extension points.
@@ -31,4 +40,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `project-canon-cli` is now crates.io-publishable: it no longer reaches outside its crate for
   the canon (`include_str!("../../../…")`), which left the packaged tarball unable to compile.
-<!-- oss-changelog:unreleased-end -->
