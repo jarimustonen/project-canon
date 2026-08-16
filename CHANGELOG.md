@@ -13,6 +13,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 <!-- oss-changelog:unreleased-end -->
 
+## [0.2.0] - 2026-08-16
+
+Closes the tool's own conformance gaps against the canon it publishes: §2/§10 error
+envelopes and exit codes, §10 `version --json`, §14 machine-readable help, and §8 config
+inspection. `project-canon review` now reports zero confirmed gaps against this repo.
+
+### Added
+- `version --json` (canon §10) — schema-versioned drift payload carrying the tool name, CLI
+  version, build commit (or an explicit null) with build provenance, supported output schema
+  versions, supported profiles and surfaces, and bundled skills with their schema/version
+  metadata. Covered by golden tests. `--version` remains human-readable and exits 0.
+- `--help --json` (canon §14) — structured help for every command path, derived from the
+  command definition so it cannot drift as flags change: schema version, command path,
+  summary, arguments, flags (with value names, defaults, accepted values, env-var mappings
+  and deprecation), subcommands, examples, and exit-code notes. Human `--help` is unchanged.
+- `config path` and `config show --json` (canon §8) — inspect the resolved `defaults → file →
+  env` configuration layer. Every value reports its provenance (which layer, and which file
+  or variable specifically), with redaction support for secret-bearing values. Non-mutating.
+
+### Changed
+- All machine-facing failures now emit the canon error envelope on stderr with no data on
+  stdout, routed through a single central error layer rather than per-callsite formatting.
+- Exit codes follow the family map: 0 success, 1 caller/domain-actionable, 2 system/internal.
+  Clap usage and parse failures are centrally remapped instead of leaking clap's default
+  usage exit 2 with prose — `project-canon --json --version` now exits 1 with a JSON envelope
+  where it previously exited 2 with a plain-text message.
+
 ## [0.1.1] - 2026-08-16
 
 First public release.
