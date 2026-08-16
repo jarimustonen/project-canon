@@ -2,12 +2,18 @@
 created: 2026-08-16
 updated: 2026-08-16
 type: feature
-status: in-progress
+status: done
 priority: normal
 epic: project-canon-v0
 labels: [canon]
 lane: canon-rollout
 lane_seq: 20
+commits:
+- hash: f6e5728
+  summary: 'feat(cli): add version JSON drift contract'
+- hash: f4f6eaa0abc7fc2c0b87d679c035ee71f299f364
+  summary: 'fix(cli): harden version provenance contract'
+closed: 2026-08-16
 ---
 
 # Add version JSON drift contract
