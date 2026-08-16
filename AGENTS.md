@@ -58,12 +58,25 @@ the `TODO.md` Execution-DAG block is a hand-maintained dual-run snapshot.
   `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`. (Standard for the AI-first
   CLI family. No code exists yet — the gate applies from the first Rust code that lands.)
 - **Deploy command + target:** **none — this is a distributable CLI, not a hosted service.**
-  There is no deploy-to-server step. Changes land on `main`; releases are cut later via the OSS
-  release pipeline (Homebrew tap + release installer, per the family's `never-source-build`
-  policy). So `/stint-start` **Phase 3 (Deploy) is skipped** for this repo — say so and move to
-  the report. (Revisit this section once a release pipeline exists here.)
-- **Deploy autonomy:** N/A while there is no deploy step.
-- **Live-version check:** `project-canon --version` once the binary exists; N/A until then.
+  There is no deploy-to-server step; `/stint-start` **Phase 3 (Deploy) is skipped**. Changes land
+  on `main`, and **releases are cut via the OSS pipeline** (live since **v0.1.1**, 2026-08-16):
+  `OSS-RELEASE.md` (approved contract) + **`ossctl release`** + **cargo-dist** (`dist-workspace.toml`
+  → `.github/workflows/release.yml`). Publish targets: **crates.io** (`project-canon-core` +
+  `project-canon-cli`, released in lockstep — the CLI exact-pins `core = "=<ver>"`) and **Homebrew**
+  (tap **`jarimustonen/homebrew-project-canon`**, a **source-build** formula per the family
+  convention — `depends_on "rust"`, `cargo install --path crates/project-canon-cli`; **maintained by
+  hand in the tap** today, not auto-pushed). A release is a deliberate owner-gated action, not a
+  stint deploy.
+  - **⚠️ Release-cut gotcha (ossctl 0.2.2):** `ossctl release cut --version X` publishes the
+    **manifest** version, *not* `X` — it does not bump `Cargo.toml`. **Bump
+    `workspace.package.version` to the target version and commit it *before* cutting**, or you
+    permanently mis-publish (this burned `project-canon-core@0.0.0`). Tracked as ossctl bug
+    `release-cut-ignores-version`; also `release-resume-unimplemented` (a partial cut can't be
+    resumed in 0.2.2 — finish by hand: `cargo publish` core → cli, tag `v<ver>`, push formula).
+- **Deploy autonomy:** N/A (no deploy step). A **release** is owner-gated — never cut without an
+  explicit go (it's an irreversible crates.io publish).
+- **Live-version check:** `project-canon --version` (binary shipped as of v0.1.1); for the published
+  crates, `curl -s https://crates.io/api/v1/crates/project-canon-cli | jq .crate.max_version`.
 - **Hot files (define the DAG's lanes):** the `crates/project-canon-core` model/resolution
   substrate (`profile.rs`, `resolve.rs`, `canon.rs`, `questionnaire.rs`, `dimension.rs`,
   `routing.rs`, `scaffold.rs`, `lib.rs`) + the workspace `Cargo.toml`. This is the single serial
@@ -73,9 +86,9 @@ the `TODO.md` Execution-DAG block is a hand-maintained dual-run snapshot.
 - **Migration rules:** N/A (no schema/DB).
 - **Test-account reset preference:** none.
 
-Until this repo has code + a release pipeline, a stint round here is: pull → merge the DAG →
-spawn worktree(s) for the ready head(s) → green-gate + review-gate before merge → **skip deploy**
-→ report. The canon (`AGENTS-AI-FIRST-CLI.md`) and the companion `cli-canon` skill
+A stint round here is: pull → merge the DAG → spawn worktree(s) for the ready head(s) →
+green-gate + review-gate before merge → **skip deploy** (releases are a separate owner-gated OSS
+cut, above) → report. The canon (`AGENTS-AI-FIRST-CLI.md`) and the companion `cli-canon` skill
 (`skills/cli-canon/`) are now maintained **here** — `extract-canon-and-skill` has landed, so
 this repo is the source and homebase copies from here. The homebase-side cutover (homebase
 actually pulling from here and retiring its own master copies) remains a documented follow-up
