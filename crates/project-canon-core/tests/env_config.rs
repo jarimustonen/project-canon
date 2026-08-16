@@ -49,7 +49,7 @@ fn defaults_are_neutral_until_a_user_config_supplies_the_family_map() {
     assert!(cfg.family_repos().is_empty());
 
     // tw / projects.conf registration.
-    assert!(cfg.tw.enabled);
+    assert!(!cfg.tw.enabled);
     assert_eq!(cfg.tw.projects_conf, "~/.config/tw/projects.conf");
 
     // .workmux.yaml prefix — portable default (no glyph), overridable.

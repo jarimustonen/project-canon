@@ -195,11 +195,15 @@ fn new_requires_a_configured_gh_account() {
     let out = cmd
         .env("XDG_CONFIG_HOME", &xdg)
         .env_remove("PROJECT_CANON_GH_ACCOUNT")
-        .args(["new", "--json", "--dry-run", t.str()])
+        .args(["new", "--json", t.str()])
         .output()
         .expect("run project-canon new");
     assert_eq!(code(&out), 1);
     assert!(out.stdout.is_empty());
+    assert!(
+        !t.path.exists(),
+        "missing gh_account must fail before creating the target"
+    );
     let error: serde_json::Value = serde_json::from_slice(&out.stderr).unwrap();
     assert_eq!(error["error"]["code"], "required_config_missing");
     assert!(error["error"]["message"]

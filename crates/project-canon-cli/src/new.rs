@@ -1654,16 +1654,16 @@ mod tests {
 
     #[test]
     fn tw_register_is_emitted_only_when_enabled() {
-        // Default: tw enabled → the hook is present.
+        // The neutral default has no tw integration.
         let plan = plan_for(Archetype::Cli, "foo", Some("📏"));
-        assert!(plan.hooks.iter().any(|h| h.id == "tw-register"));
+        assert!(!plan.hooks.iter().any(|h| h.id == "tw-register"));
 
-        // Disable tw via a config layer → the hook is dropped.
+        // Enabling tw via a config layer emits the hook.
         let model = Model::standard();
         let resolution = model.resolve(&Questionnaire::builder(Archetype::Cli).build());
         let layer = EnvConfigLayer {
             gh_account: Some("example-user".to_string()),
-            tw_enabled: Some(false),
+            tw_enabled: Some(true),
             ..EnvConfigLayer::empty()
         };
         let cfg = EnvConfig::resolve(&[&layer]);
@@ -1677,7 +1677,7 @@ mod tests {
             "/home/j",
             "/tmp/target",
         );
-        assert!(!plan.hooks.iter().any(|h| h.id == "tw-register"));
+        assert!(plan.hooks.iter().any(|h| h.id == "tw-register"));
     }
 
     #[test]

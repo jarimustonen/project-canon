@@ -103,7 +103,7 @@ impl EnvConfig {
             family_tools: BTreeSet::new(),
             repo_overrides: BTreeMap::new(),
             tw: TwRegistration {
-                enabled: true,
+                enabled: false,
                 projects_conf: "~/.config/tw/projects.conf".to_string(),
             },
             workmux_emoji_prefix: None,
@@ -353,7 +353,7 @@ impl fmt::Display for EnvConfigError {
             EnvConfigError::EmptyValue { var } => {
                 write!(
                     f,
-                    "{var}: empty value (omit the variable to keep the default)"
+                    "{var}: empty value (omit the variable to leave this setting unset)"
                 )
             }
             EnvConfigError::InvalidList { var, value } => write!(
@@ -377,7 +377,7 @@ mod tests {
         assert_eq!(cfg.repo_root, None);
         assert!(cfg.family_tools.is_empty());
         assert!(cfg.family_repos().is_empty());
-        assert!(cfg.tw.enabled);
+        assert!(!cfg.tw.enabled);
         assert_eq!(cfg.tw.projects_conf, "~/.config/tw/projects.conf");
         // Portable defaults for the truly non-portable specifics.
         assert_eq!(cfg.workmux_emoji_prefix, None);

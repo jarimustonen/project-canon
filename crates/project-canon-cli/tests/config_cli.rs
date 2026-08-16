@@ -91,6 +91,7 @@ fn config_show_without_a_user_config_reports_neutral_defaults() {
     assert_eq!(values["repo_root"]["value"], Value::Null);
     assert_eq!(values["family_tools"]["value"], serde_json::json!([]));
     assert_eq!(values["family_repos"], serde_json::json!({}));
+    assert_eq!(values["tw_enabled"]["value"], serde_json::json!(false));
     let _ = fs::remove_dir_all(xdg);
 }
 
