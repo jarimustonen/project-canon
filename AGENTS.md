@@ -47,34 +47,50 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
 - `issues/<slug>/breakdown.md` — epic → child-issue breakdown with dependencies and critical path
 - `issues/<slug>/todo.md` — task checklists
 
-## Operating policy (for `/stint-start` and `/stint-handoff`)
+## Operating policy (for `/stint`)
 
-This repo supports the stint work-session skills. `/stint-start` (round engine) and
-`/stint-handoff` (terminal wrap) read the facts below plus the `TODO.md` handoff block +
-Execution-DAG section. Live scheduling is **`issuectl dag`** (frontmatter `lane:` + `blocked_by`);
-the `TODO.md` Execution-DAG block is a hand-maintained dual-run snapshot.
+`/stint` reads this section for how to run a work-session in this repo.
 
-- **Green gate** (must pass before anything lands): `cargo build`, `cargo test`,
-  `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`. (Standard for the AI-first
-  CLI family. No code exists yet — the gate applies from the first Rust code that lands.)
+- **Green gate** (must pass before a unit counts as landed):
+  - `cargo fmt --all --check`
+  - `cargo clippy --workspace --all-targets -- -D warnings`
+  - `cargo test --workspace`
+  - `cargo build --workspace` (release build not required per-unit)
+  - `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps` — **CI runs this and it
+    is easy to miss locally**: broken intra-doc links (`[`Foo`]` to a moved/renamed/private
+    item, redundant explicit link targets) fail the `docs` job even when tests pass. Run it
+    before landing any unit that touches doc comments (`//!` / `///`).
+- **Releases MAY be cut automatically whenever there is something to release** (maintainer
+  decision, 2026-08-05). Publishing `project-canon` itself (crates.io / GitHub Release / Homebrew)
+  no longer requires an explicit per-release go: when `main` carries unreleased user-facing
+  changes, `/stint` may bump the version, finalize the CHANGELOG, and run the release recipe
+  as an owned Phase-3 act — no confirmation needed. Preconditions still hold: the green gate
+  passes, and `cargo publish` runs `--dry-run` first. crates.io publishes are irreversible
+  (yank-only), so never publish red, and report each step.
+- **The ENGINE-DRIVEN cut (`ossctl release cut`) is fully autonomous — NO go/no-go checkpoint,
+  ever** (maintainer decision, 2026-08-06). Running the release *through the engine* — the full
+  multi-target flow (crates.io ×2 + cargo-dist binaries + the Homebrew tap) — requires **no
+  permission and no pause before the irreversible publish**, not for the first-ever engine cut,
+  not for the homebrew leg (the homebrew leg is the most important target — it must be cut, not
+  dropped). Do **not** stop to ask "shall I cut?" — just run the recipe end to end and report
+  as you go. The safety is structural, not a human gate: `ossctl release plan` seals a
+  content-addressed plan (a side-effect-free preview the agent inspects), the coordinator runs
+  `dry-run-all` before any publish, `project-canon-core`→`project-canon-cli` ordering + index-wait
+  guard the crates.io partial-publish case, and `ossctl release resume`/`abandon` recover an
+  interrupted run. Still: green gate first, dry-run/plan first, never publish red, report each
+  phase.
+- **Git: `pull --rebase` → `push` is always allowed, no confirmation** (maintainer
+  decision, 2026-08-05). On this repo the agent may run the pull-rebase-push sequence
+  (`git pull --rebase origin main` then `git push origin main`, and pushing tags) on its own
+  whenever `main` is clean and green — publishing commits to the remote does not need a
+  separate go. Still: never force-push a shared branch, and never push a red tree.
 - **Deploy command + target:** **none — this is a distributable CLI, not a hosted service.**
-  There is no deploy-to-server step; `/stint-start` **Phase 3 (Deploy) is skipped**. Changes land
-  on `main`, and **releases are cut via the OSS pipeline** (live since **v0.1.1**, 2026-08-16):
-  `OSS-RELEASE.md` (approved contract) + **`ossctl release`** + **cargo-dist** (`dist-workspace.toml`
-  → `.github/workflows/release.yml`). Publish targets: **crates.io** (`project-canon-core` +
-  `project-canon-cli`, released in lockstep — the CLI exact-pins `core = "=<ver>"`) and **Homebrew**
-  (tap **`jarimustonen/homebrew-project-canon`**, a **source-build** formula per the family
-  convention — `depends_on "rust"`, `cargo install --path crates/project-canon-cli`; **maintained by
-  hand in the tap** today, not auto-pushed). A release is a deliberate owner-gated action, not a
-  stint deploy.
-  - **⚠️ Release-cut gotcha (ossctl 0.2.2):** `ossctl release cut --version X` publishes the
-    **manifest** version, *not* `X` — it does not bump `Cargo.toml`. **Bump
-    `workspace.package.version` to the target version and commit it *before* cutting**, or you
-    permanently mis-publish (this burned `project-canon-core@0.0.0`). Tracked as ossctl bug
-    `release-cut-ignores-version`; also `release-resume-unimplemented` (a partial cut can't be
-    resumed in 0.2.2 — finish by hand: `cargo publish` core → cli, tag `v<ver>`, push formula).
-- **Deploy autonomy:** N/A (no deploy step). A **release** is owner-gated — never cut without an
-  explicit go (it's an irreversible crates.io publish).
+  There is no deploy-to-server step; `/stint-start` Phase 3 is skipped. Changes land on `main`,
+  and releases are cut via the OSS pipeline: `OSS-RELEASE.md` (approved contract) +
+  **`ossctl release`** + **cargo-dist** (`dist-workspace.toml` → `.github/workflows/release.yml`).
+  Publish targets: **crates.io** (`project-canon-core` + `project-canon-cli`, released in
+  lockstep — the CLI exact-pins `core = "=<ver>"`) and **Homebrew** (tap
+  **`jarimustonen/homebrew-project-canon`**).
 - **Live-version check:** `project-canon --version` (binary shipped as of v0.1.1); for the published
   crates, `curl -s https://crates.io/api/v1/crates/project-canon-cli | jq .crate.max_version`.
 - **Hot files (define the DAG's lanes):** the `crates/project-canon-core` model/resolution

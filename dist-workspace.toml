@@ -11,10 +11,20 @@ ci = "github"
 installers = ["shell"]
 targets = [
     "aarch64-apple-darwin",
-    "x86_64-apple-darwin",
     "aarch64-unknown-linux-musl",
     "x86_64-unknown-linux-musl",
 ]
 hosting = "github"
 github-attestations = true
 pr-run-mode = "skip"
+
+# PERSONAL / NON-STANDARD infra override (NOT project-canon canon — do not generate this
+# for other projects). Build the macOS target on the self-hosted `hauis` runner
+# (a personal Apple-silicon Mac registered to this repo) instead of GitHub's
+# hosted macOS queue. hauis uses Homebrew Rust (no rustup), so it cannot
+# cross-compile x86_64-apple-darwin; Intel-mac users install via
+# `cargo install project-canon-cli`. This sub-table MUST stay at the end — a
+# `[dist.*]` table placed among the `[dist]` scalar keys would swallow every
+# key after it.
+[dist.github-custom-runners]
+aarch64-apple-darwin = "self-hosted"

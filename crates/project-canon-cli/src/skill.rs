@@ -55,7 +55,7 @@ use project_canon_core::CANON;
 
 /// A stable provenance marker written into every installed skill. It identifies a file as
 /// **project-canon-managed** (so re-install upgrades it in place), but only when it appears at the
-/// *anchored* position ([`is_ours`]) — file start (Codex) or the first body line after the
+/// *anchored* position (`is_ours`) — file start (Codex) or the first body line after the
 /// frontmatter (Claude) — so a user file that merely quotes the marker is never mistaken for ours.
 /// The `cli_version=` field (parsed only from within the marker) drives the §17 drift decision.
 const MARKER_PREFIX: &str = "<!-- Installed by `project-canon skill install`";

@@ -7,18 +7,18 @@
 //!                  (repo-invariant)   (archetype-specific, additive)
 //! ```
 //!
-//! - A [`Dimension`](dimension::Dimension) is the unit of conformance — a canon §N section or a
-//!   create-project scaffold requirement, unified so base and profiles are plain id-sets.
+//! - A [`Dimension`] is the unit of conformance — a canon §N section or a create-project scaffold
+//!   requirement, unified so base and profiles are plain id-sets.
 //! - The **base canon** holds the repo-invariant dimensions: the repo-general canon sections
 //!   (§10, §15–§17, §22) plus the create-project scaffold dims.
-//! - A [`Profile`](profile::Profile) is a named section-set + a probe registry. Only
-//!   [`Archetype::Cli`](dimension::Archetype::Cli) has content at v0 (the `AGENTS-AI-FIRST-CLI.md`
-//!   §1–§22 lift); `service`/`library`/`release` are named-but-empty extension points.
-//! - The [`Questionnaire`](questionnaire::Questionnaire) *characterizes* a repo (archetype + the
-//!   eight yes/no questions, mirrored from `cli-canon`) and [`Model::resolve`](profile::Model::resolve)
-//!   turns it into a [`Resolution`](resolve::Resolution).
+//! - A [`Profile`] is a named section-set + a probe registry. Only [`Archetype::Cli`] has content
+//!   at v0 (the `AGENTS-AI-FIRST-CLI.md` §1–§22 lift); `service`/`library`/`release` are
+//!   named-but-empty extension points.
+//! - The [`Questionnaire`] *characterizes* a repo (archetype + the eight yes/no questions,
+//!   mirrored from `cli-canon`) and [`Model::resolve`](profile::Model::resolve) turns it into a
+//!   [`Resolution`].
 //!
-//! Orthogonal to the model is the [`env`] config/hook layer ([`EnvConfig`]): the non-portable
+//! Orthogonal to the model is the [`mod@env`] config/hook layer ([`EnvConfig`]): the non-portable
 //! homebase environment specifics (family-repo map, gh account, `~/Sources/<name>` convention,
 //! tw registration, `.workmux.yaml` prefix) resolved through *defaults → config file → env
 //! overrides*, with sensible overridable defaults. A verb reads both a [`Model`] and an
