@@ -7,6 +7,11 @@ priority: high
 labels: [canon]
 lane: canon-rollout
 lane_seq: 10
+commits:
+- hash: 4b61e84
+  summary: use neutral environment defaults
+- hash: cb042d0
+  summary: neutralize optional tw integration
 ---
 
 # Neutral built-in defaults — no user specifics in a public artifact
