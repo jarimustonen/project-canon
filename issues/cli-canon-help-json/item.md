@@ -7,6 +7,9 @@ priority: normal
 labels: [cli-canon, tooling]
 lane: canon-rollout
 lane_seq: 35
+commits:
+- hash: f62b0ae
+  summary: 'feat(cli): add machine-readable help JSON'
 ---
 
 # cli-canon: §14 --help --json machine-readable help

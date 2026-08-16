@@ -209,7 +209,7 @@ const NEW: Command = Command {
             name: "--emoji",
             summary: "Workmux/tw window prefix.",
             value_name: Some("glyph"),
-            default: Some("PROJECT_CANON_WORKMUX_EMOJI_PREFIX"),
+            default: None,
             accepted_values: &[],
             env_var: Some("PROJECT_CANON_WORKMUX_EMOJI_PREFIX"),
             deprecated: false,
@@ -294,7 +294,53 @@ const REVIEW: Command = Command {
         default: Some("."),
         accepted_values: &[],
     }],
-    flags: DOCTOR.flags,
+    flags: &[
+        Flag {
+            name: "--profile",
+            summary: "Archetype used for conformance resolution.",
+            value_name: Some("archetype"),
+            default: Some("cli"),
+            accepted_values: VALUES_ARCHETYPE,
+            env_var: None,
+            deprecated: false,
+        },
+        Flag {
+            name: "--assume-defaults",
+            summary: "Characterize non-interactively with conservative defaults.",
+            value_name: None,
+            default: None,
+            accepted_values: &[],
+            env_var: None,
+            deprecated: false,
+        },
+        Flag {
+            name: "--json",
+            summary: "Emit the structured advisory review report.",
+            value_name: None,
+            default: None,
+            accepted_values: &[],
+            env_var: None,
+            deprecated: false,
+        },
+        Flag {
+            name: "--verbose",
+            summary: "Show manual-verify, passing, and n/a rows in human output.",
+            value_name: None,
+            default: None,
+            accepted_values: &[],
+            env_var: None,
+            deprecated: false,
+        },
+        Flag {
+            name: "--help",
+            summary: "Show this help.",
+            value_name: None,
+            default: None,
+            accepted_values: &[],
+            env_var: None,
+            deprecated: false,
+        },
+    ],
     examples: &[Example {
         description: "Audit the current repository.",
         argv: &["project-canon", "review", "--json", "."],
@@ -346,7 +392,7 @@ const SKILL_INSTALL: Command = Command {
         summary: "Optional bundled skill name; omit for all.",
         required: false,
         default: Some("all"),
-        accepted_values: &["ai-first-cli-canon"],
+        accepted_values: &["ai-first-cli-canon", "all"],
     }],
     flags: &[
         Flag {
@@ -502,6 +548,24 @@ const SKILL_PRINT: Command = Command {
     subcommands: NO_SUBCOMMANDS,
     exit_codes: COMMON_EXITS,
 };
+const SKILL_SHOW: Command = Command {
+    path: &["skill", "show"],
+    summary: "Alias for `skill print`: print a bundled skill without installing it.",
+    arguments: SKILL_PRINT.arguments,
+    flags: SKILL_PRINT.flags,
+    examples: &[Example {
+        description: "Read the canon skill through the compatibility alias.",
+        argv: &[
+            "project-canon",
+            "skill",
+            "show",
+            "ai-first-cli-canon",
+            "--json",
+        ],
+    }],
+    subcommands: NO_SUBCOMMANDS,
+    exit_codes: COMMON_EXITS,
+};
 const VERSION: Command = Command {
     path: &["version"],
     summary: "Print build and schema compatibility information.",
@@ -543,6 +607,7 @@ const COMMANDS: &[&Command] = &[
     &SKILL_INSTALL,
     &SKILL_LIST,
     &SKILL_PRINT,
+    &SKILL_SHOW,
     &VERSION,
 ];
 
@@ -554,21 +619,36 @@ pub(crate) fn render_if_requested(args: &[String]) -> Option<ExitCode> {
     // Positionals (for example `doctor . --help --json`) are not command-path components.
     // The command grammar is at most two levels deep today, with `skill` as the sole group.
     let path: Vec<&str> = match args.first().map(String::as_str) {
+        None | Some("--help") | Some("--json") => vec![],
         Some("skill") => match args.get(1).map(String::as_str) {
+            None | Some("--help") | Some("--json") => vec!["skill"],
             Some("install" | "list" | "print" | "show") => vec!["skill", args[1].as_str()],
-            _ => vec!["skill"],
+            Some(other) if other.starts_with('-') => vec!["skill"],
+            Some(other) => {
+                return Some(fail(
+                    true,
+                    CliError::actionable(
+                        "usage_error",
+                        format!("unknown skill subcommand for --help --json: {other}"),
+                    ),
+                ));
+            }
         },
         Some("doctor" | "new" | "review" | "version") => vec![args[0].as_str()],
-        _ => vec![],
+        Some(other) => {
+            return Some(fail(
+                true,
+                CliError::actionable(
+                    "usage_error",
+                    format!("unknown command path for --help --json: {other}"),
+                ),
+            ));
+        }
     };
-    let command = if path.as_slice() == ["skill", "show"] {
-        Some(&SKILL_PRINT)
-    } else {
-        COMMANDS
-            .iter()
-            .copied()
-            .find(|command| command.path == path.as_slice())
-    };
+    let command = COMMANDS
+        .iter()
+        .copied()
+        .find(|command| command.path == path.as_slice());
     Some(match command {
         Some(command) => write_stdout(&format!("{}\n", payload(command)), true),
         None => fail(

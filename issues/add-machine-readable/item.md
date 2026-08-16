@@ -8,6 +8,9 @@ epic: project-canon-v0
 labels: [canon]
 lane: canon-rollout
 lane_seq: 30
+commits:
+- hash: f62b0ae
+  summary: 'feat(cli): add machine-readable help JSON'
 ---
 
 # Add machine-readable help JSON
