@@ -77,3 +77,6 @@ issuectl ls --status in-progress
 
 `TODO.md` is only the session handoff and project notes; issue bodies and `issuectl dag` are the source of truth.
 
+## Piialiisan bugiraportit
+
+- [ ] 🐛 Piialiisan bugiraportti: review: execute the built binary to auto-verify runtime canon checks in… — jari via Telegram ([`intake-feature-project-canon-ab1e44dfaf66`](issues/intake-feature-project-canon-ab1e44dfaf66/item.md))
