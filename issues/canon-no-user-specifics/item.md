@@ -1,8 +1,8 @@
 ---
 created: 2026-08-16
-updated: 2026-08-16
+updated: 2026-08-17
 type: feature
-status: open
+status: in-progress
 priority: high
 labels: [canon]
 lane: canon-rollout
