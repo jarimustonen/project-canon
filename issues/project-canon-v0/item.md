@@ -1,11 +1,13 @@
 ---
 created: 2026-08-12
-updated: 2026-08-16
+updated: 2026-08-17
 type: epic
 owner: jari
-status: open
+status: done
 priority: normal
 labels: [design]
+closed: 2026-08-17
+closed_by: agent
 ---
 
 # project-canon v0: extract the canon + ship new/doctor/review with the cli profile

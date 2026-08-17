@@ -1,9 +1,11 @@
 ---
 created: 2026-08-16
-updated: 2026-08-16
+updated: 2026-08-17
 type: bug
-status: open
+status: fixed
 priority: high
+closed: 2026-08-17
+closed_by: agent
 ---
 
 # Release workflow fails: profile `dist` is not defined
