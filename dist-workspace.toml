@@ -18,12 +18,30 @@ ci = "github"
 installers = ["shell", "homebrew"]
 tap = "jarimustonen/homebrew-project-canon"
 publish-jobs = ["homebrew"]
+# x86_64-apple-darwin is deliberately ABSENT: macOS builds run on the self-hosted
+# runner below, which uses Homebrew Rust (no rustup) and therefore cannot
+# cross-compile the Intel target. Intel-mac users install via
+# `cargo install project-canon-cli`. Do not add it back without first giving
+# macOS x86_64 a runner that can actually build it — an unbuildable target does
+# not fail the release, it QUEUES FOREVER and blocks every other artifact from
+# publishing (this cost the v0.3.1 cut; see CHANGELOG 0.3.2).
 targets = [
     "aarch64-apple-darwin",
-    "x86_64-apple-darwin",
     "aarch64-unknown-linux-musl",
     "x86_64-unknown-linux-musl",
 ]
 hosting = "github"
 github-attestations = true
 pr-run-mode = "skip"
+
+# PERSONAL / NON-STANDARD infra override (NOT project-canon canon — do not generate this
+# for other projects, and do not "clean it up": it is load-bearing). Build the macOS
+# target on the self-hosted `hauis` runner (a personal Apple-silicon Mac registered to
+# this repo) instead of GitHub's hosted macOS queue. GitHub-hosted macOS jobs for this
+# repo do NOT get picked up — they queue indefinitely (v0.1.1: 22h; v0.3.1: cancelled
+# after 90min with both macOS jobs still queued while both Linux jobs had succeeded).
+# `ossctl dist generate` strips this block, which is why this file is hand-maintained.
+# This sub-table MUST stay at the end — a `[dist.*]` table placed among the `[dist]`
+# scalar keys would swallow every key after it.
+[dist.github-custom-runners]
+aarch64-apple-darwin = "self-hosted"

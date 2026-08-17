@@ -4,6 +4,7 @@ description = "Two-layer conformance model (base canon + archetype profiles) for
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+homepage.workspace = true
 repository.workspace = true
 
 # Zero external dependencies at v0. serde (JSON serialization of a Resolution, for the §10

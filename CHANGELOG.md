@@ -13,6 +13,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 <!-- oss-changelog:unreleased-end -->
 
+## [0.3.2] - 2026-08-17
+
+Completes the distribution repair started in `0.3.1`. That release fixed the build profile —
+both Linux musl targets compiled successfully — but still published no artifacts, because both
+macOS jobs queued indefinitely and a release only attaches assets once every build job
+finishes. `0.3.1` therefore has no binaries either; use `0.3.2`.
+
+### Fixed
+
+- macOS builds are pinned back to the repository's self-hosted Apple-silicon runner.
+  GitHub-hosted macOS jobs are not picked up for this repository — they queue indefinitely
+  (22h on `v0.1.1`; `v0.3.1` was cancelled after 90 minutes with both macOS jobs still
+  queued while both Linux jobs had already succeeded). The override was removed in `0.3.1`
+  on the mistaken assumption that it was incidental personal configuration; it is load-bearing,
+  and `dist-workspace.toml` now says so.
+- `x86_64-apple-darwin` is removed from the target matrix again. The self-hosted runner uses
+  Homebrew Rust and cannot cross-compile it, and an unbuildable target does not fail the
+  release — it queues forever and blocks every other artifact from publishing. Intel macOS
+  installs via `cargo install project-canon-cli`.
+
+### Added
+
+- `homepage` package metadata, required by the Homebrew publish job.
+
 ## [0.3.1] - 2026-08-17
 
 Repairs binary distribution. No library or CLI behaviour changes.
