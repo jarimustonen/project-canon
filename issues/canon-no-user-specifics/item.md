@@ -8,6 +8,9 @@ labels: [canon]
 lane: canon-rollout
 lane_seq: 20
 blocked_by: ['@portable-neutral-defaults']
+commits:
+- hash: 2a001154c65774c1aef8b09b0532947276984dc7
+  summary: mark issue in progress
 ---
 
 # Canon rule: public artifacts must not embed user-specific facts
