@@ -86,6 +86,7 @@ pub struct RuntimeProbeOutcome {
     pub id: &'static str,
     pub status: RuntimeProbeStatus,
     pub message: String,
+    blocks_suite: bool,
 }
 
 pub const RUNTIME_TIMEOUT_MS: u64 = 3000;
@@ -119,11 +120,12 @@ fn runtime_probes_with_timeout(
                 id,
                 status: RuntimeProbeStatus::CouldNotProbe,
                 message: format!("not attempted after target execution failure: {reason}"),
+                blocks_suite: true,
             }
         } else {
-            probe_runtime_section(id, &runner, repo)
+            probe_runtime_section(id, &runner)
         };
-        if outcome.status == RuntimeProbeStatus::CouldNotProbe {
+        if outcome.blocks_suite {
             blocked = Some(outcome.message.clone());
         }
         outcomes.push(outcome);
@@ -149,56 +151,77 @@ enum RunFailure {
     Start(String),
     Timeout,
     Crash,
+    Capture(String),
     Wait(String),
 }
 
 impl RuntimeRunner {
     fn run(&self, args: &[&str]) -> Result<ChildCapture, RunFailure> {
-        let mut child = Command::new(&self.binary)
+        let mut command = Command::new(&self.binary);
+        command
             .args(args)
             .current_dir(&self.current_dir)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        // project-canon ships on Unix targets. A dedicated process group lets timeout handling
+        // terminate descendants as well as the direct child, preventing continued work and pipe
+        // holders after review returns. Other targets retain direct-child kill as a fallback.
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt as _;
+            command.process_group(0);
+        }
+        let mut child = command
             .spawn()
             .map_err(|error| RunFailure::Start(error.to_string()))?;
 
         let stdout = child.stdout.take().expect("piped stdout");
         let stderr = child.stderr.take().expect("piped stderr");
-        let stdout_reader = std::thread::spawn(move || read_bounded(stdout));
-        let stderr_reader = std::thread::spawn(move || read_bounded(stderr));
+        let (stdout_sender, stdout_receiver) = std::sync::mpsc::sync_channel(1);
+        let (stderr_sender, stderr_receiver) = std::sync::mpsc::sync_channel(1);
+        std::thread::spawn(move || {
+            let _ = stdout_sender.send(read_bounded(stdout));
+        });
+        std::thread::spawn(move || {
+            let _ = stderr_sender.send(read_bounded(stderr));
+        });
         let started = Instant::now();
-        let status = loop {
-            match child.try_wait() {
-                Ok(Some(status)) => break status,
-                Ok(None) if started.elapsed() < self.timeout => {
-                    std::thread::sleep(Duration::from_millis(10));
-                }
-                Ok(None) => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    // A target may have spawned descendants that still hold inherited pipe FDs.
-                    // Dropping the reader handles avoids turning the child's timeout into an
-                    // unbounded join; the detached bounded readers exit when those FDs close.
-                    drop(stdout_reader);
-                    drop(stderr_reader);
-                    return Err(RunFailure::Timeout);
-                }
-                Err(error) => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    drop(stdout_reader);
-                    drop(stderr_reader);
-                    return Err(RunFailure::Wait(error.to_string()));
-                }
+        // Drain both pipes before reaping the group leader. On Unix this keeps its pid/pgid
+        // reserved until descendants are terminated, eliminating any pid-reuse window. The same
+        // deadline covers capture and process exit.
+        let remaining = || self.timeout.saturating_sub(started.elapsed());
+        let (stdout, stdout_truncated) = match stdout_receiver.recv_timeout(remaining()) {
+            Ok(Ok(capture)) => capture,
+            Ok(Err(error)) => {
+                kill_child_tree(&mut child);
+                return Err(RunFailure::Capture(error.to_string()));
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                kill_child_tree(&mut child);
+                return Err(RunFailure::Timeout);
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                kill_child_tree(&mut child);
+                return Err(RunFailure::Wait("stdout capture thread failed".to_string()));
             }
         };
-        let (stdout, stdout_truncated) = stdout_reader
-            .join()
-            .map_err(|_| RunFailure::Wait("stdout capture thread failed".to_string()))?;
-        let (stderr, stderr_truncated) = stderr_reader
-            .join()
-            .map_err(|_| RunFailure::Wait("stderr capture thread failed".to_string()))?;
+        let (stderr, stderr_truncated) = match stderr_receiver.recv_timeout(remaining()) {
+            Ok(Ok(capture)) => capture,
+            Ok(Err(error)) => {
+                kill_child_tree(&mut child);
+                return Err(RunFailure::Capture(error.to_string()));
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                kill_child_tree(&mut child);
+                return Err(RunFailure::Timeout);
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                kill_child_tree(&mut child);
+                return Err(RunFailure::Wait("stderr capture thread failed".to_string()));
+            }
+        };
+        let status = wait_for_child_without_pid_reuse(&mut child, started, self.timeout)?;
         let code = status.code().ok_or(RunFailure::Crash)?;
         Ok(ChildCapture {
             code,
@@ -209,19 +232,109 @@ impl RuntimeRunner {
     }
 }
 
-fn read_bounded(reader: impl Read) -> (Vec<u8>, bool) {
-    let mut bytes = Vec::new();
-    let _ = reader.take(MAX_CAPTURE_BYTES + 1).read_to_end(&mut bytes);
-    let truncated = bytes.len() as u64 > MAX_CAPTURE_BYTES;
-    bytes.truncate(MAX_CAPTURE_BYTES as usize);
-    (bytes, truncated)
+#[cfg(unix)]
+fn wait_for_child_without_pid_reuse(
+    child: &mut std::process::Child,
+    started: Instant,
+    timeout: Duration,
+) -> Result<std::process::ExitStatus, RunFailure> {
+    loop {
+        let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::zeroed();
+        // SAFETY: `info` points to writable siginfo storage. WNOWAIT observes the child state
+        // without reaping it, keeping the pid/pgid reserved until descendants are terminated.
+        let result = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                child.id(),
+                info.as_mut_ptr(),
+                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+            )
+        };
+        if result != 0 {
+            kill_child_tree(child);
+            return Err(RunFailure::Wait(
+                std::io::Error::last_os_error().to_string(),
+            ));
+        }
+        // SAFETY: successful waitid initialized the siginfo storage.
+        let exited = unsafe { info.assume_init().si_pid() != 0 };
+        if exited {
+            terminate_process_group(child.id());
+            return child
+                .wait()
+                .map_err(|error| RunFailure::Wait(error.to_string()));
+        }
+        if started.elapsed() >= timeout {
+            kill_child_tree(child);
+            return Err(RunFailure::Timeout);
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
-fn probe_runtime_section(
-    id: &'static str,
-    runner: &RuntimeRunner,
-    repo: &Path,
-) -> RuntimeProbeOutcome {
+#[cfg(not(unix))]
+fn wait_for_child_without_pid_reuse(
+    child: &mut std::process::Child,
+    started: Instant,
+    timeout: Duration,
+) -> Result<std::process::ExitStatus, RunFailure> {
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) if started.elapsed() < timeout => {
+                std::thread::sleep(Duration::from_millis(10))
+            }
+            Ok(None) => {
+                kill_child_tree(child);
+                return Err(RunFailure::Timeout);
+            }
+            Err(error) => {
+                kill_child_tree(child);
+                return Err(RunFailure::Wait(error.to_string()));
+            }
+        }
+    }
+}
+
+fn terminate_process_group(pid: u32) {
+    #[cfg(unix)]
+    {
+        // SAFETY: the spawned child is placed in a fresh process group whose id equals its pid.
+        // A negative pid addresses only that group. The group id remains reserved while any
+        // descendant is in the group, even after the leader has been reaped.
+        unsafe {
+            libc::kill(-(pid as i32), libc::SIGKILL);
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = pid;
+}
+
+fn kill_child_tree(child: &mut std::process::Child) {
+    terminate_process_group(child.id());
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+fn read_bounded(mut reader: impl Read) -> std::io::Result<(Vec<u8>, bool)> {
+    let mut bytes = Vec::new();
+    let mut truncated = false;
+    let mut chunk = [0u8; 8192];
+    loop {
+        match reader.read(&mut chunk)? {
+            0 => break,
+            read => {
+                let remaining = MAX_CAPTURE_BYTES.saturating_sub(bytes.len() as u64) as usize;
+                let retained = read.min(remaining);
+                bytes.extend_from_slice(&chunk[..retained]);
+                truncated |= retained < read;
+            }
+        }
+    }
+    Ok((bytes, truncated))
+}
+
+fn probe_runtime_section(id: &'static str, runner: &RuntimeRunner) -> RuntimeProbeOutcome {
     let result = match id {
         "canon.s02" => probe_exit_contract(runner),
         "canon.s08" => probe_config_surface(runner),
@@ -232,7 +345,7 @@ fn probe_runtime_section(
         }
         "canon.s16" => probe_skill_print(runner),
         "canon.s17" => probe_skill_sync(runner),
-        "canon.s18" => probe_doctor_surface(runner, repo),
+        "canon.s18" => probe_doctor_surface(runner),
         _ => unreachable!("runtime probe id registry is closed"),
     };
     match result {
@@ -240,51 +353,71 @@ fn probe_runtime_section(
             id,
             status: RuntimeProbeStatus::Pass,
             message,
+            blocks_suite: false,
         },
         Err(RuntimeCheckError::Gap(message)) => RuntimeProbeOutcome {
             id,
             status: RuntimeProbeStatus::Gap,
             message,
+            blocks_suite: false,
         },
-        Err(RuntimeCheckError::Unavailable(message)) => RuntimeProbeOutcome {
+        Err(RuntimeCheckError::Unavailable {
+            message,
+            blocks_suite,
+        }) => RuntimeProbeOutcome {
             id,
             status: RuntimeProbeStatus::CouldNotProbe,
             message,
+            blocks_suite,
         },
     }
 }
 
 enum RuntimeCheckError {
     Gap(String),
-    Unavailable(String),
+    Unavailable { message: String, blocks_suite: bool },
 }
 
 type RuntimeCheck<T = String> = Result<T, RuntimeCheckError>;
 
 fn invoke(runner: &RuntimeRunner, args: &[&str]) -> RuntimeCheck<ChildCapture> {
+    let unavailable = |message: String, blocks_suite| RuntimeCheckError::Unavailable {
+        message,
+        blocks_suite,
+    };
     match runner.run(args) {
-        Ok(capture) if capture.output_truncated => Err(RuntimeCheckError::Gap(format!(
-            "{} produced more than the 1 MiB capture limit",
-            display_args(args)
-        ))),
+        Ok(capture) if capture.output_truncated => Err(unavailable(
+            format!("{} exceeded the 1 MiB capture limit", display_args(args)),
+            false,
+        )),
         Ok(capture) => Ok(capture),
-        Err(RunFailure::Start(error)) => Err(RuntimeCheckError::Unavailable(format!(
-            "could not start explicitly named binary for {}: {error}",
-            display_args(args)
-        ))),
-        Err(RunFailure::Timeout) => Err(RuntimeCheckError::Unavailable(format!(
-            "{} timed out after {} ms and was killed",
-            display_args(args),
-            runner.timeout.as_millis()
-        ))),
-        Err(RunFailure::Crash) => Err(RuntimeCheckError::Unavailable(format!(
-            "{} terminated without an exit code",
-            display_args(args)
-        ))),
-        Err(RunFailure::Wait(error)) => Err(RuntimeCheckError::Unavailable(format!(
-            "could not wait for {}: {error}",
-            display_args(args)
-        ))),
+        Err(RunFailure::Start(error)) => Err(unavailable(
+            format!(
+                "could not start explicitly named binary for {}: {error}",
+                display_args(args)
+            ),
+            true,
+        )),
+        Err(RunFailure::Timeout) => Err(unavailable(
+            format!(
+                "{} timed out after {} ms and was killed",
+                display_args(args),
+                runner.timeout.as_millis()
+            ),
+            true,
+        )),
+        Err(RunFailure::Crash) => Err(unavailable(
+            format!("{} terminated without an exit code", display_args(args)),
+            false,
+        )),
+        Err(RunFailure::Capture(error)) => Err(unavailable(
+            format!("could not capture {} output: {error}", display_args(args)),
+            false,
+        )),
+        Err(RunFailure::Wait(error)) => Err(unavailable(
+            format!("could not wait for {}: {error}", display_args(args)),
+            true,
+        )),
     }
 }
 
@@ -326,7 +459,11 @@ fn object_has(value: &Value, key: &str, predicate: impl FnOnce(&Value) -> bool) 
 }
 
 fn schema_object(value: &Value) -> bool {
-    value.is_object() && object_has(value, "schema_version", Value::is_i64)
+    value.is_object()
+        && value
+            .get("schema_version")
+            .and_then(Value::as_i64)
+            .is_some_and(|schema| schema > 0)
 }
 
 fn probe_exit_contract(runner: &RuntimeRunner) -> RuntimeCheck {
@@ -397,12 +534,26 @@ fn probe_config_surface(runner: &RuntimeRunner) -> RuntimeCheck {
 fn version_json(runner: &RuntimeRunner) -> RuntimeCheck<Value> {
     let args = ["version", "--json"];
     let value = expect_json(&invoke(runner, &args)?, &args, &[0])?;
+    let schema = value.get("schema_version").and_then(Value::as_i64);
     let valid = schema_object(&value)
         && object_has(&value, "supported_schemas", |v| {
-            v.as_array().is_some_and(|a| !a.is_empty())
+            v.as_array().is_some_and(|schemas| {
+                !schemas.is_empty()
+                    && schemas
+                        .iter()
+                        .all(|schema| schema.as_i64().is_some_and(|schema| schema > 0))
+                    && schema.is_some_and(|current| {
+                        schemas
+                            .iter()
+                            .any(|candidate| candidate.as_i64() == Some(current))
+                    })
+            })
         })
         && object_has(&value, "skills", Value::is_array)
-        && object_has(&value, "version", Value::is_string)
+        && value
+            .get("version")
+            .and_then(Value::as_str)
+            .is_some_and(|version| !version.is_empty())
         && value.get("commit").is_some_and(|commit| {
             commit.is_null()
                 || commit
@@ -461,12 +612,19 @@ fn probe_skill_list(runner: &RuntimeRunner) -> RuntimeCheck<Vec<(String, String,
             let name = skill.get("name").and_then(Value::as_str).filter(|name| {
                 !name.is_empty()
                     && name.len() <= 64
+                    && name.bytes().next().is_some_and(|b| b.is_ascii_lowercase())
                     && name
                         .bytes()
                         .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
             });
-            let version = skill.get("cli_version").and_then(Value::as_str);
-            let schema = skill.get("skill_schema_version").and_then(Value::as_i64);
+            let version = skill
+                .get("cli_version")
+                .and_then(Value::as_str)
+                .filter(|version| !version.is_empty());
+            let schema = skill
+                .get("skill_schema_version")
+                .and_then(Value::as_i64)
+                .filter(|schema| *schema > 0);
             match (name, version, schema) {
                 (Some(name), Some(version), Some(schema)) => {
                     Ok((name.to_string(), version.to_string(), schema))
@@ -484,9 +642,18 @@ fn print_skill_json(runner: &RuntimeRunner, name: &str) -> RuntimeCheck<Value> {
     let value = expect_json(&invoke(runner, &args)?, &args, &[0])?;
     let valid = schema_object(&value)
         && value.get("name").and_then(Value::as_str) == Some(name)
-        && object_has(&value, "cli_version", Value::is_string)
-        && object_has(&value, "skill_schema_version", Value::is_i64)
-        && object_has(&value, "content", Value::is_string);
+        && value
+            .get("cli_version")
+            .and_then(Value::as_str)
+            .is_some_and(|version| !version.is_empty())
+        && value
+            .get("skill_schema_version")
+            .and_then(Value::as_i64)
+            .is_some_and(|schema| schema > 0)
+        && value
+            .get("content")
+            .and_then(Value::as_str)
+            .is_some_and(|content| !content.is_empty());
     if valid {
         Ok(value)
     } else {
@@ -513,6 +680,11 @@ fn probe_skill_sync(runner: &RuntimeRunner) -> RuntimeCheck {
         .get("skills")
         .and_then(Value::as_array)
         .ok_or_else(|| RuntimeCheckError::Gap("version --json lacks skills[]".to_string()))?;
+    if version_skills.len() != listed.len() {
+        return Err(RuntimeCheckError::Gap(
+            "version --json and skill list --json expose different skill counts".to_string(),
+        ));
+    }
     for (name, listed_version, listed_schema) in &listed {
         let metadata_matches = version_skills.iter().any(|skill| {
             skill.get("name").and_then(Value::as_str) == Some(name.as_str())
@@ -524,31 +696,69 @@ fn probe_skill_sync(runner: &RuntimeRunner) -> RuntimeCheck {
                 "skill metadata for {name:?} is not synchronized across version and skill list"
             )));
         }
-        let printed = print_skill_json(runner, name)?;
-        let content = printed
-            .get("content")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        if printed.get("cli_version").and_then(Value::as_str) != Some(cli_version)
-            || !content.contains("cli_version:")
-            || !content.contains("schema_version:")
-        {
-            return Err(RuntimeCheckError::Gap(format!(
-                "printed skill {name:?} lacks synchronized version frontmatter"
-            )));
-        }
     }
-    Ok("version, skill list, and printed skill frontmatter are synchronized".to_string())
+    // `skill print` shape is section 16's check. For §17, one catalog-selected sample is enough
+    // to verify that the running binary stamps synchronized frontmatter without making runtime
+    // proportional to a target-controlled catalog size.
+    let sampled = &listed[0];
+    let printed = print_skill_json(runner, &sampled.0)?;
+    let content = printed
+        .get("content")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let printed_schema = printed
+        .get("skill_schema_version")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    if printed.get("cli_version").and_then(Value::as_str) != Some(cli_version)
+        || printed_schema != sampled.2
+        || frontmatter_value(content, "cli_version") != Some(cli_version)
+        || frontmatter_value(content, "schema_version").and_then(|value| value.parse::<i64>().ok())
+            != Some(printed_schema)
+    {
+        return Err(RuntimeCheckError::Gap(format!(
+            "printed skill {:?} lacks synchronized version frontmatter",
+            sampled.0
+        )));
+    }
+    Ok(
+        "version and skill-list metadata match; sampled printed skill frontmatter is synchronized"
+            .to_string(),
+    )
 }
 
-fn probe_doctor_surface(runner: &RuntimeRunner, repo: &Path) -> RuntimeCheck {
-    let target = repo.to_string_lossy();
-    let args = ["doctor", "--json", target.as_ref()];
-    let value = expect_json(&invoke(runner, &args)?, &args, &[0, 1])?;
+fn frontmatter_value<'a>(content: &'a str, key: &str) -> Option<&'a str> {
+    let mut lines = content.lines();
+    if lines.next()?.trim() != "---" {
+        return None;
+    }
+    for line in lines {
+        if line.trim() == "---" {
+            break;
+        }
+        if let Some(value) = line
+            .strip_prefix(key)
+            .and_then(|line| line.strip_prefix(':'))
+        {
+            return Some(value.trim().trim_matches(['\'', '"']));
+        }
+    }
+    None
+}
+
+fn probe_doctor_surface(runner: &RuntimeRunner) -> RuntimeCheck {
+    // The runner has already set the audited repository as cwd. Passing `.` avoids duplicating a
+    // relative target and preserves non-UTF-8 filesystem components at the process boundary.
+    let args = ["doctor", "--json", "."];
+    let capture = invoke(runner, &args)?;
+    let code = capture.code;
+    let value = expect_json(&capture, &args, &[0, 1])?;
+    let conformant = value.get("conformant").and_then(Value::as_bool);
     let valid = schema_object(&value)
         && object_has(&value, "checks", Value::is_array)
         && object_has(&value, "summary", Value::is_object)
-        && object_has(&value, "conformant", Value::is_boolean);
+        && value.get("exit_code").and_then(Value::as_i64) == Some(i64::from(code))
+        && matches!((code, conformant), (0, Some(true)) | (1, Some(false)));
     if valid {
         Ok("doctor --json is present with checks, summary, and conformance verdict".to_string())
     } else {
@@ -1466,6 +1676,12 @@ mod tests {
                 "probe id {id:?} missing from the mechanical_probe registry"
             );
         }
+        for id in RUNTIME_PROBE_IDS {
+            assert!(
+                model.dimension(id).is_some(),
+                "runtime probe id {id:?} no longer exists in the model"
+            );
+        }
     }
 
     #[test]
@@ -1798,11 +2014,11 @@ mod tests {
         let target = executable_script("runtime-gaps", "printf '{}\\n'");
         let runner = RuntimeRunner {
             binary: target.path.join("probe-target"),
-            timeout: Duration::from_millis(500),
+            timeout: Duration::from_secs(2),
             current_dir: target.path.clone(),
         };
         for id in RUNTIME_PROBE_IDS {
-            let outcome = probe_runtime_section(id, &runner, &target.path);
+            let outcome = probe_runtime_section(id, &runner);
             assert_eq!(
                 outcome.status,
                 RuntimeProbeStatus::Gap,
@@ -1853,6 +2069,102 @@ mod tests {
         assert!(started.elapsed() < Duration::from_secs(2));
         assert_eq!(outcomes[0].status, RuntimeProbeStatus::CouldNotProbe);
         assert!(outcomes[0].message.contains("timed out"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn descendants_holding_capture_pipes_cannot_bypass_the_timeout() {
+        let state = TmpRepo::new("runtime-descendant-state");
+        let pid_file = state.path.join("descendant.pid");
+        let target = executable_script(
+            "runtime-descendant",
+            &format!("sleep 10 &\necho $! > {:?}\nexit 0", pid_file),
+        );
+        let runner = RuntimeRunner {
+            binary: target.path.join("probe-target"),
+            timeout: Duration::from_secs(2),
+            current_dir: target.path.clone(),
+        };
+        let started = Instant::now();
+        assert!(matches!(runner.run(&[]), Err(RunFailure::Timeout)));
+        assert!(started.elapsed() < Duration::from_secs(3));
+        let pid: i32 = std::fs::read_to_string(pid_file)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        let state = std::process::Command::new("ps")
+            .args(["-o", "state=", "-p", &pid.to_string()])
+            .output()
+            .unwrap();
+        let state = String::from_utf8_lossy(&state.stdout);
+        assert!(
+            state.trim().is_empty() || state.trim_start().starts_with('Z'),
+            "timed-out descendant is still running with state {state:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn successful_probe_cleans_up_redirected_descendants() {
+        let state = TmpRepo::new("runtime-redirected-state");
+        let pid_file = state.path.join("descendant.pid");
+        let target = executable_script(
+            "runtime-redirected",
+            &format!(
+                "sleep 10 >/dev/null 2>&1 &\necho $! > {:?}\nprintf '{{}}\\n'",
+                pid_file
+            ),
+        );
+        let runner = RuntimeRunner {
+            binary: target.path.join("probe-target"),
+            timeout: Duration::from_secs(2),
+            current_dir: target.path.clone(),
+        };
+        assert!(runner.run(&[]).is_ok());
+        let pid: i32 = std::fs::read_to_string(pid_file)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        let state = std::process::Command::new("ps")
+            .args(["-o", "state=", "-p", &pid.to_string()])
+            .output()
+            .unwrap();
+        let state = String::from_utf8_lossy(&state.stdout);
+        assert!(
+            state.trim().is_empty() || state.trim_start().starts_with('Z'),
+            "probe descendant is still running with state {state:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_section_local_crash_does_not_suppress_later_probes() {
+        let body = r#"
+if [ "$1" = "--help" ]; then
+  printf '%s\n' '{"schema_version":1,"exit_codes":[{"code":"0"},{"code":"1"},{"code":"2"}]}'
+  exit 0
+fi
+if [ "$1" = "__project_canon_probe_unknown_subcommand__" ]; then
+  printf '%s\n' '{"schema_version":1,"error":{"code":"usage_error","message":"unknown"}}' >&2
+  exit 1
+fi
+if [ "$1" = "config" ]; then
+  kill -9 $$
+fi
+printf '{}\n'
+"#;
+        let target = executable_script("runtime-local-crash", body);
+        let outcomes = runtime_probes_with_timeout(
+            &target.path.join("probe-target"),
+            &target.path,
+            Duration::from_secs(2),
+        );
+        assert_eq!(outcomes[0].status, RuntimeProbeStatus::Pass);
+        assert_eq!(outcomes[1].status, RuntimeProbeStatus::CouldNotProbe);
+        assert_eq!(outcomes[2].status, RuntimeProbeStatus::Gap);
+        assert!(!outcomes[2].message.contains("not attempted"));
     }
 
     #[cfg(unix)]

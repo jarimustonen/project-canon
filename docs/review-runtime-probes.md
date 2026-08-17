@@ -8,13 +8,14 @@ project-canon review --run ./target/debug/example-tool --json .
 ```
 
 `--assume-defaults` remains the explicit static-only mode and cannot be combined with
-`--run`.
+`--run`. Runtime probes inspect CLI surfaces, so `--run` requires `--profile cli`.
 
 ## Safety contract
 
 Runtime review invokes exactly the path supplied to `--run`. It does not search for or build a
 binary. Each invocation uses a direct process call, never a shell, with null stdin, captured output,
-a 1 MiB capture limit, and a three-second timeout. A timeout kills the child. Missing,
+a 1 MiB capture limit, and a three-second timeout. On the supported macOS and Linux targets, a timeout kills the child's
+process group so ordinary descendants cannot keep running or hold capture pipes open. Missing,
 non-executable, hanging, or crashing targets produce `could-not-probe`; they are never counted as a
 pass or a conformance gap.
 

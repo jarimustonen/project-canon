@@ -104,7 +104,23 @@ pub fn run(args: &[String]) -> ExitCode {
     // Runtime execution is strictly opt-in. Resolve a relative --run value against review's own
     // working directory before children use the audited repo as cwd; a missing/non-executable
     // path remains a reported could-not-probe outcome rather than aborting the advisory report.
-    let runtime_binary = parsed.run.as_deref().map(absolute_lexical);
+    let runtime_binary = match parsed.run.as_deref() {
+        Some(binary) => match absolute_lexical(binary) {
+            Ok(path) => Some(path),
+            Err(error) => {
+                return fail(
+                    parsed.json,
+                    CliError::system(
+                        "io_error",
+                        format!(
+                            "review: cannot resolve --run path against current directory: {error}"
+                        ),
+                    ),
+                )
+            }
+        },
+        None => None,
+    };
     let runtime = runtime_binary
         .as_deref()
         .map(|binary| runtime_probes(binary, Path::new(&target)))
@@ -266,9 +282,17 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
         );
     }
 
+    let profile = profile.unwrap_or(Archetype::Cli);
+    if run.is_some() && profile != Archetype::Cli {
+        return Err(format!(
+            "--run probes CLI surfaces and requires --profile cli (got {:?})",
+            profile.slug()
+        ));
+    }
+
     Ok(Command::Run(ReviewArgs {
         repo: repo.unwrap_or_else(|| ".".to_string()),
-        profile: profile.unwrap_or(Archetype::Cli),
+        profile,
         json,
         verbose,
         assume_defaults,
@@ -886,14 +910,12 @@ fn triage(
     }
 }
 
-fn absolute_lexical(path: &str) -> PathBuf {
+fn absolute_lexical(path: &str) -> std::io::Result<PathBuf> {
     let path = PathBuf::from(path);
     if path.is_absolute() {
-        path
+        Ok(path)
     } else {
-        std::env::current_dir()
-            .map(|cwd| cwd.join(&path))
-            .unwrap_or(path)
+        std::env::current_dir().map(|cwd| cwd.join(path))
     }
 }
 
@@ -1008,6 +1030,9 @@ mod tests {
             .unwrap_err()
             .contains("does not take a value"));
         assert!(parse(&["--profile="]).is_err());
+        assert!(parse(&["--profile", "service", "--run", "/bin/tool"])
+            .unwrap_err()
+            .contains("requires --profile cli"));
     }
 
     #[test]

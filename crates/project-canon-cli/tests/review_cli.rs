@@ -325,11 +325,14 @@ fn a_missing_run_target_is_an_honest_could_not_probe_report() {
         .unwrap()
         .iter()
         .all(|outcome| outcome["status"] == "could-not-probe"));
-    assert!(payload["findings"]
+    let could_not = payload["findings"]
         .as_array()
         .unwrap()
         .iter()
-        .any(|finding| finding["kind"] == "could-not-probe"));
+        .filter(|finding| finding["kind"] == "could-not-probe")
+        .count();
+    assert_eq!(could_not, 8);
+    assert_eq!(payload["staged_commands"].as_array().unwrap().len(), 0);
 }
 
 #[cfg(unix)]

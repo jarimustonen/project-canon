@@ -9,6 +9,9 @@ labels:
 - via:agent-homebase-wrapup
 lane: canon-rollout
 lane_seq: 30
+commits:
+- hash: 82324d3
+  summary: add opt-in timeout-bounded runtime probes
 ---
 
 # review: execute the built binary to auto-verify runtime canon checks in…

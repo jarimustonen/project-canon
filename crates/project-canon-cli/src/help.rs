@@ -409,7 +409,7 @@ const REVIEW: Command = Command {
         },
         Flag {
             name: "--run",
-            summary: "Opt in to timeout-bounded read-only probes of the explicitly named binary.",
+            summary: "Opt in to timeout-bounded read-only probes of the named binary; requires profile cli and conflicts with --assume-defaults.",
             value_name: Some("binary"),
             default: None,
             accepted_values: &[],
