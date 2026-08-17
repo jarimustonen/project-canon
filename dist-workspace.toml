@@ -18,6 +18,7 @@ ci = "github"
 installers = ["shell", "homebrew"]
 tap = "jarimustonen/homebrew-project-canon"
 publish-jobs = ["homebrew"]
+formula = "project-canon"
 # x86_64-apple-darwin is deliberately ABSENT: macOS builds run on the self-hosted
 # runner below, which uses Homebrew Rust (no rustup) and therefore cannot
 # cross-compile the Intel target. Intel-mac users install via
