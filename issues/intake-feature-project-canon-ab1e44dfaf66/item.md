@@ -3,7 +3,7 @@ created: 2026-08-16
 updated: 2026-08-17
 type: feature
 reporter: jari
-status: in-progress
+status: done
 priority: normal
 labels:
 - via:agent-homebase-wrapup
@@ -12,6 +12,10 @@ lane_seq: 30
 commits:
 - hash: 82324d3
   summary: add opt-in timeout-bounded runtime probes
+- hash: 614c52a
+  summary: harden process lifecycle and apply review findings
+closed: 2026-08-17
+closed_by: agent
 ---
 
 # review: execute the built binary to auto-verify runtime canon checks in…
