@@ -284,3 +284,74 @@ fn json_envelope_is_well_formed_advisory_and_carries_findings() {
     // Data on stdout only; diagnostics (if any) on stderr (§2).
     assert!(String::from_utf8_lossy(&out.stderr).is_empty());
 }
+
+#[test]
+fn run_against_project_canons_built_binary_passes_every_runtime_probe() {
+    let f = Fixture::conformant("self-runtime");
+    let binary = env!("CARGO_BIN_EXE_project-canon");
+    let before = f.snapshot();
+    let out = run_review(&["--run", binary, "--json", f.path.to_str().unwrap()]);
+    assert_eq!(code(&out), 0, "{}", String::from_utf8_lossy(&out.stderr));
+    let payload: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let outcomes = payload["runtime_probe"]["outcomes"].as_array().unwrap();
+    assert_eq!(outcomes.len(), 8);
+    assert!(
+        outcomes.iter().all(|outcome| outcome["status"] == "pass"),
+        "{outcomes:?}"
+    );
+    assert_eq!(payload["summary"]["could_not_probe"], 0);
+    assert_eq!(
+        before,
+        f.snapshot(),
+        "runtime review must remain target-read-only"
+    );
+}
+
+#[test]
+fn a_missing_run_target_is_an_honest_could_not_probe_report() {
+    let f = Fixture::conformant("missing-runtime");
+    let missing = f.path.join("missing-binary");
+    let out = run_review(&[
+        "--run",
+        missing.to_str().unwrap(),
+        "--json",
+        f.path.to_str().unwrap(),
+    ]);
+    assert_eq!(code(&out), 0, "review remains advisory");
+    let payload: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(payload["summary"]["could_not_probe"], 8);
+    assert!(payload["runtime_probe"]["outcomes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|outcome| outcome["status"] == "could-not-probe"));
+    assert!(payload["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|finding| finding["kind"] == "could-not-probe"));
+}
+
+#[cfg(unix)]
+#[test]
+fn assume_defaults_cannot_be_combined_with_run_and_executes_nothing() {
+    use std::os::unix::fs::PermissionsExt;
+    let f = Fixture::conformant("assume-static");
+    let sentinel = f.path.join("executed");
+    let binary = f.path.join("target-binary");
+    std::fs::write(
+        &binary,
+        format!("#!/bin/sh\ntouch {:?}\n", sentinel.to_str().unwrap()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = run_review(&[
+        "--assume-defaults",
+        "--run",
+        binary.to_str().unwrap(),
+        f.path.to_str().unwrap(),
+    ]);
+    assert_eq!(code(&out), 1);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("static-only"));
+    assert!(!sentinel.exists());
+}

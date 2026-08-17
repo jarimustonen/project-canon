@@ -1,19 +1,23 @@
 //! The shared **mechanical-probe substrate** — file-existence / repo-shape checks that both the
 //! `doctor` gate and the `review` audit run over a target repo.
 //!
-//! A mechanical probe is a *decidable* check (grep / file-existence / repo-shape); it never
-//! builds or runs the target tool, so anything needing the target's binary or prose judgment is
-//! intentionally absent (those dimensions are `deferred-to-review` in `doctor` and become
-//! `manual-verify` coverage notes in `review`). Extracting them here keeps the two verbs reading
-//! the *same* substrate — a mechanically-confirmed gap carries identical evidence in both — and
-//! keeps `doctor`/`review` disjoint (both depend on `probes`, neither on the other).
+//! A static mechanical probe is a *decidable* check (grep / file-existence / repo-shape); it never
+//! builds or runs the target tool. This module also owns review's separate, explicitly opt-in
+//! runtime probes. Doctor consumes only the static registry; `review --run` invokes the runtime
+//! registry with timeout-bounded, captured, read-only calls. Extracting both here keeps probe
+//! mechanics out of verb rendering and keeps `doctor`/`review` disjoint.
 //!
 //! A probe returns `io::Result<ProbeOutcome>`: `Ok(ProbeOutcome)` is a decidable pass/miss, an
 //! `Err` is an *operational* I/O fault (permission denied, transient error) that each verb wraps
 //! into its own exit-2 fault — keeping "could not evaluate" distinct from "the check missed".
 
 use std::collections::BTreeSet;
+use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
+
+use serde_json::Value;
 
 /// User-configured inputs for probes whose answer depends on operator knowledge.
 pub struct ProbeContext<'a> {
@@ -46,6 +50,514 @@ impl ProbeOutcome {
     }
 }
 
+/// Runtime sections that `review --run` can decide using read-only target invocations.
+pub const RUNTIME_PROBE_IDS: [&str; 8] = [
+    "canon.s02",
+    "canon.s08",
+    "canon.s10",
+    "canon.s14",
+    "canon.s15",
+    "canon.s16",
+    "canon.s17",
+    "canon.s18",
+];
+
+/// The three-state result of an opt-in runtime probe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeProbeStatus {
+    Pass,
+    Gap,
+    CouldNotProbe,
+}
+
+impl RuntimeProbeStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Pass => "pass",
+            Self::Gap => "gap",
+            Self::CouldNotProbe => "could-not-probe",
+        }
+    }
+}
+
+/// Evidence for one runtime-observable canon section.
+#[derive(Debug, Clone)]
+pub struct RuntimeProbeOutcome {
+    pub id: &'static str,
+    pub status: RuntimeProbeStatus,
+    pub message: String,
+}
+
+pub const RUNTIME_TIMEOUT_MS: u64 = 3000;
+const DEFAULT_RUNTIME_TIMEOUT: Duration = Duration::from_millis(RUNTIME_TIMEOUT_MS);
+const MAX_CAPTURE_BYTES: u64 = 1_048_576;
+
+/// Execute the explicitly named target binary using only fixed, read-only argument vectors.
+///
+/// Every child has null stdin, captured and size-bounded output, and a timeout. No shell is used.
+/// An infrastructure failure blocks later probes so one hanging binary costs one timeout rather
+/// than one timeout per section; every unattempted row is still reported as `could-not-probe`.
+pub fn runtime_probes(binary: &Path, repo: &Path) -> Vec<RuntimeProbeOutcome> {
+    runtime_probes_with_timeout(binary, repo, DEFAULT_RUNTIME_TIMEOUT)
+}
+
+fn runtime_probes_with_timeout(
+    binary: &Path,
+    repo: &Path,
+    timeout: Duration,
+) -> Vec<RuntimeProbeOutcome> {
+    let runner = RuntimeRunner {
+        binary: binary.to_path_buf(),
+        timeout,
+        current_dir: repo.to_path_buf(),
+    };
+    let mut outcomes = Vec::with_capacity(RUNTIME_PROBE_IDS.len());
+    let mut blocked: Option<String> = None;
+    for id in RUNTIME_PROBE_IDS {
+        let outcome = if let Some(reason) = &blocked {
+            RuntimeProbeOutcome {
+                id,
+                status: RuntimeProbeStatus::CouldNotProbe,
+                message: format!("not attempted after target execution failure: {reason}"),
+            }
+        } else {
+            probe_runtime_section(id, &runner, repo)
+        };
+        if outcome.status == RuntimeProbeStatus::CouldNotProbe {
+            blocked = Some(outcome.message.clone());
+        }
+        outcomes.push(outcome);
+    }
+    outcomes
+}
+
+struct RuntimeRunner {
+    binary: PathBuf,
+    timeout: Duration,
+    current_dir: PathBuf,
+}
+
+struct ChildCapture {
+    code: i32,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+    output_truncated: bool,
+}
+
+#[derive(Debug)]
+enum RunFailure {
+    Start(String),
+    Timeout,
+    Crash,
+    Wait(String),
+}
+
+impl RuntimeRunner {
+    fn run(&self, args: &[&str]) -> Result<ChildCapture, RunFailure> {
+        let mut child = Command::new(&self.binary)
+            .args(args)
+            .current_dir(&self.current_dir)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| RunFailure::Start(error.to_string()))?;
+
+        let stdout = child.stdout.take().expect("piped stdout");
+        let stderr = child.stderr.take().expect("piped stderr");
+        let stdout_reader = std::thread::spawn(move || read_bounded(stdout));
+        let stderr_reader = std::thread::spawn(move || read_bounded(stderr));
+        let started = Instant::now();
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) if started.elapsed() < self.timeout => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Ok(None) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    // A target may have spawned descendants that still hold inherited pipe FDs.
+                    // Dropping the reader handles avoids turning the child's timeout into an
+                    // unbounded join; the detached bounded readers exit when those FDs close.
+                    drop(stdout_reader);
+                    drop(stderr_reader);
+                    return Err(RunFailure::Timeout);
+                }
+                Err(error) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    drop(stdout_reader);
+                    drop(stderr_reader);
+                    return Err(RunFailure::Wait(error.to_string()));
+                }
+            }
+        };
+        let (stdout, stdout_truncated) = stdout_reader
+            .join()
+            .map_err(|_| RunFailure::Wait("stdout capture thread failed".to_string()))?;
+        let (stderr, stderr_truncated) = stderr_reader
+            .join()
+            .map_err(|_| RunFailure::Wait("stderr capture thread failed".to_string()))?;
+        let code = status.code().ok_or(RunFailure::Crash)?;
+        Ok(ChildCapture {
+            code,
+            stdout,
+            stderr,
+            output_truncated: stdout_truncated || stderr_truncated,
+        })
+    }
+}
+
+fn read_bounded(reader: impl Read) -> (Vec<u8>, bool) {
+    let mut bytes = Vec::new();
+    let _ = reader.take(MAX_CAPTURE_BYTES + 1).read_to_end(&mut bytes);
+    let truncated = bytes.len() as u64 > MAX_CAPTURE_BYTES;
+    bytes.truncate(MAX_CAPTURE_BYTES as usize);
+    (bytes, truncated)
+}
+
+fn probe_runtime_section(
+    id: &'static str,
+    runner: &RuntimeRunner,
+    repo: &Path,
+) -> RuntimeProbeOutcome {
+    let result = match id {
+        "canon.s02" => probe_exit_contract(runner),
+        "canon.s08" => probe_config_surface(runner),
+        "canon.s10" => probe_version_surface(runner),
+        "canon.s14" => probe_help_surface(runner),
+        "canon.s15" => {
+            probe_skill_list(runner).map(|_| "skill list --json has the required shape".to_string())
+        }
+        "canon.s16" => probe_skill_print(runner),
+        "canon.s17" => probe_skill_sync(runner),
+        "canon.s18" => probe_doctor_surface(runner, repo),
+        _ => unreachable!("runtime probe id registry is closed"),
+    };
+    match result {
+        Ok(message) => RuntimeProbeOutcome {
+            id,
+            status: RuntimeProbeStatus::Pass,
+            message,
+        },
+        Err(RuntimeCheckError::Gap(message)) => RuntimeProbeOutcome {
+            id,
+            status: RuntimeProbeStatus::Gap,
+            message,
+        },
+        Err(RuntimeCheckError::Unavailable(message)) => RuntimeProbeOutcome {
+            id,
+            status: RuntimeProbeStatus::CouldNotProbe,
+            message,
+        },
+    }
+}
+
+enum RuntimeCheckError {
+    Gap(String),
+    Unavailable(String),
+}
+
+type RuntimeCheck<T = String> = Result<T, RuntimeCheckError>;
+
+fn invoke(runner: &RuntimeRunner, args: &[&str]) -> RuntimeCheck<ChildCapture> {
+    match runner.run(args) {
+        Ok(capture) if capture.output_truncated => Err(RuntimeCheckError::Gap(format!(
+            "{} produced more than the 1 MiB capture limit",
+            display_args(args)
+        ))),
+        Ok(capture) => Ok(capture),
+        Err(RunFailure::Start(error)) => Err(RuntimeCheckError::Unavailable(format!(
+            "could not start explicitly named binary for {}: {error}",
+            display_args(args)
+        ))),
+        Err(RunFailure::Timeout) => Err(RuntimeCheckError::Unavailable(format!(
+            "{} timed out after {} ms and was killed",
+            display_args(args),
+            runner.timeout.as_millis()
+        ))),
+        Err(RunFailure::Crash) => Err(RuntimeCheckError::Unavailable(format!(
+            "{} terminated without an exit code",
+            display_args(args)
+        ))),
+        Err(RunFailure::Wait(error)) => Err(RuntimeCheckError::Unavailable(format!(
+            "could not wait for {}: {error}",
+            display_args(args)
+        ))),
+    }
+}
+
+fn display_args(args: &[&str]) -> String {
+    if args.is_empty() {
+        "<binary>".to_string()
+    } else {
+        format!("<binary> {}", args.join(" "))
+    }
+}
+
+fn expect_json(
+    capture: &ChildCapture,
+    args: &[&str],
+    allowed_codes: &[i32],
+) -> RuntimeCheck<Value> {
+    if !allowed_codes.contains(&capture.code) {
+        return Err(RuntimeCheckError::Gap(format!(
+            "{} exited {} (expected {})",
+            display_args(args),
+            capture.code,
+            allowed_codes
+                .iter()
+                .map(i32::to_string)
+                .collect::<Vec<_>>()
+                .join(" or ")
+        )));
+    }
+    serde_json::from_slice(&capture.stdout).map_err(|_| {
+        RuntimeCheckError::Gap(format!(
+            "{} did not emit one valid JSON payload on stdout",
+            display_args(args)
+        ))
+    })
+}
+
+fn object_has(value: &Value, key: &str, predicate: impl FnOnce(&Value) -> bool) -> bool {
+    value.get(key).is_some_and(predicate)
+}
+
+fn schema_object(value: &Value) -> bool {
+    value.is_object() && object_has(value, "schema_version", Value::is_i64)
+}
+
+fn probe_exit_contract(runner: &RuntimeRunner) -> RuntimeCheck {
+    let args = ["__project_canon_probe_unknown_subcommand__", "--json"];
+    let capture = invoke(runner, &args)?;
+    if capture.code != 1 || !capture.stdout.is_empty() {
+        return Err(RuntimeCheckError::Gap(
+            "caller-actionable unknown-command probe must exit 1 with empty stdout".to_string(),
+        ));
+    }
+    let error: Value = serde_json::from_slice(&capture.stderr).map_err(|_| {
+        RuntimeCheckError::Gap(
+            "caller-actionable error did not use a JSON envelope on stderr".to_string(),
+        )
+    })?;
+    if !schema_object(&error)
+        || !object_has(&error, "error", |v| {
+            v.is_object()
+                && object_has(v, "code", Value::is_string)
+                && object_has(v, "message", Value::is_string)
+        })
+    {
+        return Err(RuntimeCheckError::Gap(
+            "caller-actionable error envelope lacks schema_version/error.code/error.message"
+                .to_string(),
+        ));
+    }
+    let help_args = ["--help", "--json"];
+    let help = expect_json(&invoke(runner, &help_args)?, &help_args, &[0])?;
+    let advertised = help
+        .get("exit_codes")
+        .and_then(Value::as_array)
+        .is_some_and(|rows| {
+            ["0", "1", "2"].iter().all(|wanted| {
+                rows.iter()
+                    .any(|row| row.get("code").and_then(Value::as_str) == Some(*wanted))
+            })
+        });
+    if !advertised {
+        return Err(RuntimeCheckError::Gap(
+            "structured help does not advertise distinct exit codes 0, 1, and 2".to_string(),
+        ));
+    }
+    Ok("caller error exits 1 with the central JSON envelope; help advertises distinct 0/1/2 mapping".to_string())
+}
+
+fn probe_config_surface(runner: &RuntimeRunner) -> RuntimeCheck {
+    let path_args = ["config", "path", "--json"];
+    let path = expect_json(&invoke(runner, &path_args)?, &path_args, &[0])?;
+    if !schema_object(&path)
+        || !object_has(&path, "config_path", Value::is_string)
+        || !object_has(&path, "exists", Value::is_boolean)
+    {
+        return Err(RuntimeCheckError::Gap(
+            "config path --json lacks schema_version/config_path/exists".to_string(),
+        ));
+    }
+    let show_args = ["config", "show", "--json"];
+    let show = expect_json(&invoke(runner, &show_args)?, &show_args, &[0])?;
+    if !schema_object(&show) || !object_has(&show, "values", Value::is_object) {
+        return Err(RuntimeCheckError::Gap(
+            "config show --json lacks schema_version/values".to_string(),
+        ));
+    }
+    Ok("config path/show --json are present with structured inspection payloads".to_string())
+}
+
+fn version_json(runner: &RuntimeRunner) -> RuntimeCheck<Value> {
+    let args = ["version", "--json"];
+    let value = expect_json(&invoke(runner, &args)?, &args, &[0])?;
+    let valid = schema_object(&value)
+        && object_has(&value, "supported_schemas", |v| {
+            v.as_array().is_some_and(|a| !a.is_empty())
+        })
+        && object_has(&value, "skills", Value::is_array)
+        && object_has(&value, "version", Value::is_string)
+        && value.get("commit").is_some_and(|commit| {
+            commit.is_null()
+                || commit
+                    .as_str()
+                    .is_some_and(|s| s.len() == 40 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+        });
+    if valid {
+        Ok(value)
+    } else {
+        Err(RuntimeCheckError::Gap(
+            "version --json lacks a valid schema_version/supported_schemas/skills/version/commit envelope"
+                .to_string(),
+        ))
+    }
+}
+
+fn probe_version_surface(runner: &RuntimeRunner) -> RuntimeCheck {
+    version_json(runner)?;
+    Ok("version --json carries schema, compatibility, provenance, and skill metadata".to_string())
+}
+
+fn probe_help_surface(runner: &RuntimeRunner) -> RuntimeCheck {
+    let args = ["--help", "--json"];
+    let value = expect_json(&invoke(runner, &args)?, &args, &[0])?;
+    let valid = schema_object(&value)
+        && object_has(&value, "command_path", Value::is_array)
+        && object_has(&value, "subcommands", Value::is_array)
+        && object_has(&value, "examples", |v| {
+            v.as_array().is_some_and(|a| !a.is_empty())
+        });
+    if valid {
+        Ok("--help --json has command_path, subcommands, and examples".to_string())
+    } else {
+        Err(RuntimeCheckError::Gap(
+            "--help --json lacks schema_version/command_path/subcommands/examples".to_string(),
+        ))
+    }
+}
+
+fn probe_skill_list(runner: &RuntimeRunner) -> RuntimeCheck<Vec<(String, String, i64)>> {
+    let args = ["skill", "list", "--json"];
+    let value = expect_json(&invoke(runner, &args)?, &args, &[0])?;
+    if !schema_object(&value) {
+        return Err(RuntimeCheckError::Gap(
+            "skill list --json lacks schema_version".to_string(),
+        ));
+    }
+    let skills = value
+        .get("skills")
+        .and_then(Value::as_array)
+        .filter(|skills| !skills.is_empty())
+        .ok_or_else(|| RuntimeCheckError::Gap("skill list --json has no skills[]".to_string()))?;
+    skills
+        .iter()
+        .map(|skill| {
+            let name = skill.get("name").and_then(Value::as_str).filter(|name| {
+                !name.is_empty()
+                    && name.len() <= 64
+                    && name
+                        .bytes()
+                        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+            });
+            let version = skill.get("cli_version").and_then(Value::as_str);
+            let schema = skill.get("skill_schema_version").and_then(Value::as_i64);
+            match (name, version, schema) {
+                (Some(name), Some(version), Some(schema)) => {
+                    Ok((name.to_string(), version.to_string(), schema))
+                }
+                _ => Err(RuntimeCheckError::Gap(
+                    "skill list --json has an invalid name/version/schema row".to_string(),
+                )),
+            }
+        })
+        .collect()
+}
+
+fn print_skill_json(runner: &RuntimeRunner, name: &str) -> RuntimeCheck<Value> {
+    let args = ["skill", "print", name, "--json"];
+    let value = expect_json(&invoke(runner, &args)?, &args, &[0])?;
+    let valid = schema_object(&value)
+        && value.get("name").and_then(Value::as_str) == Some(name)
+        && object_has(&value, "cli_version", Value::is_string)
+        && object_has(&value, "skill_schema_version", Value::is_i64)
+        && object_has(&value, "content", Value::is_string);
+    if valid {
+        Ok(value)
+    } else {
+        Err(RuntimeCheckError::Gap(
+            "skill print <name> --json lacks the required metadata/content shape".to_string(),
+        ))
+    }
+}
+
+fn probe_skill_print(runner: &RuntimeRunner) -> RuntimeCheck {
+    let skills = probe_skill_list(runner)?;
+    print_skill_json(runner, &skills[0].0)?;
+    Ok("skill print <listed-name> --json is structured and read-only".to_string())
+}
+
+fn probe_skill_sync(runner: &RuntimeRunner) -> RuntimeCheck {
+    let version = version_json(runner)?;
+    let listed = probe_skill_list(runner)?;
+    let cli_version = version
+        .get("version")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let version_skills = version
+        .get("skills")
+        .and_then(Value::as_array)
+        .ok_or_else(|| RuntimeCheckError::Gap("version --json lacks skills[]".to_string()))?;
+    for (name, listed_version, listed_schema) in &listed {
+        let metadata_matches = version_skills.iter().any(|skill| {
+            skill.get("name").and_then(Value::as_str) == Some(name.as_str())
+                && skill.get("cli_version").and_then(Value::as_str) == Some(listed_version.as_str())
+                && skill.get("schema_version").and_then(Value::as_i64) == Some(*listed_schema)
+        });
+        if !metadata_matches || listed_version != cli_version {
+            return Err(RuntimeCheckError::Gap(format!(
+                "skill metadata for {name:?} is not synchronized across version and skill list"
+            )));
+        }
+        let printed = print_skill_json(runner, name)?;
+        let content = printed
+            .get("content")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if printed.get("cli_version").and_then(Value::as_str) != Some(cli_version)
+            || !content.contains("cli_version:")
+            || !content.contains("schema_version:")
+        {
+            return Err(RuntimeCheckError::Gap(format!(
+                "printed skill {name:?} lacks synchronized version frontmatter"
+            )));
+        }
+    }
+    Ok("version, skill list, and printed skill frontmatter are synchronized".to_string())
+}
+
+fn probe_doctor_surface(runner: &RuntimeRunner, repo: &Path) -> RuntimeCheck {
+    let target = repo.to_string_lossy();
+    let args = ["doctor", "--json", target.as_ref()];
+    let value = expect_json(&invoke(runner, &args)?, &args, &[0, 1])?;
+    let valid = schema_object(&value)
+        && object_has(&value, "checks", Value::is_array)
+        && object_has(&value, "summary", Value::is_object)
+        && object_has(&value, "conformant", Value::is_boolean);
+    if valid {
+        Ok("doctor --json is present with checks, summary, and conformance verdict".to_string())
+    } else {
+        Err(RuntimeCheckError::Gap(
+            "doctor --json lacks schema_version/checks/summary/conformant".to_string(),
+        ))
+    }
+}
+
 /// Follow-symlinks metadata, treating only `NotFound` as "absent" (`Ok(None)`); any other error
 /// (permission denied, transient I/O) propagates so it can become an operational fault.
 fn stat(path: &Path) -> std::io::Result<Option<std::fs::Metadata>> {
@@ -65,9 +577,9 @@ fn lstat(path: &Path) -> std::io::Result<Option<std::fs::Metadata>> {
     }
 }
 
-/// Map a dimension id → its mechanical probe, or `None` when the dimension has no
-/// mechanically-decidable check at v0. Only file-existence / repo-shape checks live here; anything
-/// needing the built binary or prose judgment is intentionally absent. Every id here is asserted
+/// Map a dimension id → its static mechanical probe, or `None` when the dimension has no
+/// filesystem-decidable check. Runtime probes use the separate [`runtime_probes`] registry and
+/// prose judgment remains intentionally absent. Every id here is asserted
 /// to resolve in `Model::standard` by `probe_ids_exist_in_model`, so a core-side rename can't
 /// silently turn an enforced MUST into a deferred/verify skip.
 pub fn mechanical_probe(
@@ -1260,6 +1772,124 @@ mod tests {
         let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let outcome = verify_deferrals(&workspace);
         assert!(outcome.passed, "{}", outcome.message);
+    }
+
+    #[cfg(unix)]
+    fn executable_script(tag: &str, body: &str) -> TmpRepo {
+        use std::os::unix::fs::PermissionsExt;
+        let repo = TmpRepo::new(tag);
+        repo.touch("probe-target");
+        std::fs::write(
+            repo.path.join("probe-target"),
+            format!("#!/bin/sh\n{body}\n"),
+        )
+        .unwrap();
+        std::fs::set_permissions(
+            repo.path.join("probe-target"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        repo
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn every_runtime_section_rejects_an_absent_or_unstructured_surface() {
+        let target = executable_script("runtime-gaps", "printf '{}\\n'");
+        let runner = RuntimeRunner {
+            binary: target.path.join("probe-target"),
+            timeout: Duration::from_millis(500),
+            current_dir: target.path.clone(),
+        };
+        for id in RUNTIME_PROBE_IDS {
+            let outcome = probe_runtime_section(id, &runner, &target.path);
+            assert_eq!(
+                outcome.status,
+                RuntimeProbeStatus::Gap,
+                "{id}: {}",
+                outcome.message
+            );
+        }
+    }
+
+    #[test]
+    fn a_missing_runtime_binary_is_reported_not_panicked() {
+        let repo = TmpRepo::new("runtime-missing");
+        let outcomes = runtime_probes_with_timeout(
+            &repo.path.join("missing-binary"),
+            &repo.path,
+            Duration::from_millis(50),
+        );
+        assert!(outcomes
+            .iter()
+            .all(|outcome| outcome.status == RuntimeProbeStatus::CouldNotProbe));
+        assert!(outcomes[0].message.contains("could not start"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_non_executable_runtime_binary_is_reported() {
+        let repo = TmpRepo::new("runtime-nonexec");
+        repo.touch("binary");
+        let outcomes = runtime_probes_with_timeout(
+            &repo.path.join("binary"),
+            &repo.path,
+            Duration::from_millis(50),
+        );
+        assert_eq!(outcomes[0].status, RuntimeProbeStatus::CouldNotProbe);
+        assert!(outcomes[0].message.contains("could not start"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_hanging_runtime_binary_is_killed_at_the_timeout() {
+        let target = executable_script("runtime-timeout", "while :; do :; done");
+        let started = Instant::now();
+        let outcomes = runtime_probes_with_timeout(
+            &target.path.join("probe-target"),
+            &target.path,
+            Duration::from_millis(50),
+        );
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert_eq!(outcomes[0].status, RuntimeProbeStatus::CouldNotProbe);
+        assert!(outcomes[0].message.contains("timed out"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn runtime_invocation_passes_literal_arguments_without_a_shell() {
+        let target = executable_script("runtime-argv", "printf '%s\\n' \"$1\"");
+        let runner = RuntimeRunner {
+            binary: target.path.join("probe-target"),
+            timeout: Duration::from_secs(2),
+            current_dir: target.path.clone(),
+        };
+        let sentinel = target.path.join("shell-injection");
+        let argument = format!("; touch {}", sentinel.display());
+        let capture = runner.run(&[&argument]).unwrap();
+        assert_eq!(capture.stdout, format!("{argument}\n").as_bytes());
+        assert!(!sentinel.exists(), "argument was interpreted by a shell");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn runtime_suite_selects_only_read_only_verbs() {
+        let target = TmpRepo::new("runtime-readonly");
+        let log = target.path.join("argv.log");
+        let body = format!("printf '%s\\n' \"$*\" >> {:?}\nprintf '{{}}\\n'", log);
+        let script = executable_script("runtime-readonly-bin", &body);
+        let _ = runtime_probes_with_timeout(
+            &script.path.join("probe-target"),
+            &target.path,
+            Duration::from_secs(2),
+        );
+        let calls = std::fs::read_to_string(log).unwrap();
+        assert!(!calls.contains("skill install"), "{calls}");
+        assert!(
+            !calls.lines().any(|line| line.starts_with("new ")),
+            "{calls}"
+        );
+        assert!(!calls.contains("--fix"), "{calls}");
     }
 
     #[test]

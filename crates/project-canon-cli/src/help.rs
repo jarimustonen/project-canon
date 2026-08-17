@@ -408,6 +408,15 @@ const REVIEW: Command = Command {
             deprecated: false,
         },
         Flag {
+            name: "--run",
+            summary: "Opt in to timeout-bounded read-only probes of the explicitly named binary.",
+            value_name: Some("binary"),
+            default: None,
+            accepted_values: &[],
+            env_var: None,
+            deprecated: false,
+        },
+        Flag {
             name: "--json",
             summary: "Emit the structured advisory review report.",
             value_name: None,
@@ -435,10 +444,23 @@ const REVIEW: Command = Command {
             deprecated: false,
         },
     ],
-    examples: &[Example {
-        description: "Audit the current repository.",
-        argv: &["project-canon", "review", "--json", "."],
-    }],
+    examples: &[
+        Example {
+            description: "Audit the current repository without executing a target.",
+            argv: &["project-canon", "review", "--json", "."],
+        },
+        Example {
+            description: "Also run read-only runtime probes against an explicitly named binary.",
+            argv: &[
+                "project-canon",
+                "review",
+                "--run",
+                "./target/debug/example-tool",
+                "--json",
+                ".",
+            ],
+        },
+    ],
     subcommands: NO_SUBCOMMANDS,
     exit_codes: &[
         ("0", "review completed, regardless of findings"),

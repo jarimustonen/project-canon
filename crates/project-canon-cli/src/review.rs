@@ -16,7 +16,7 @@
 //! Verb logic lives at the CLI edge (not the I/O-free core) because probing reads the filesystem.
 //! The core model is consumed unchanged.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use project_canon_core::{
@@ -26,7 +26,10 @@ use project_canon_core::{
 
 use crate::error::{fail, json_requested, write_stdout, CliError};
 use crate::json::Json;
-use crate::probes::{mechanical_probe, ProbeContext};
+use crate::probes::{
+    mechanical_probe, runtime_probes, ProbeContext, RuntimeProbeOutcome, RuntimeProbeStatus,
+    RUNTIME_TIMEOUT_MS,
+};
 use crate::shell::shell_quote;
 
 /// The `--json` payload schema version (§10). Bump on any breaking shape change.
@@ -98,7 +101,23 @@ pub fn run(args: &[String]) -> ExitCode {
     let probe_context = ProbeContext {
         user_specific_deny_list: &env_config.user_specific_deny_list,
     };
-    let report = match build_report(&model, &resolution, parsed.profile, &target, &probe_context) {
+    // Runtime execution is strictly opt-in. Resolve a relative --run value against review's own
+    // working directory before children use the audited repo as cwd; a missing/non-executable
+    // path remains a reported could-not-probe outcome rather than aborting the advisory report.
+    let runtime_binary = parsed.run.as_deref().map(absolute_lexical);
+    let runtime = runtime_binary
+        .as_deref()
+        .map(|binary| runtime_probes(binary, Path::new(&target)))
+        .unwrap_or_default();
+    let report = match build_report(
+        &model,
+        &resolution,
+        parsed.profile,
+        &target,
+        &probe_context,
+        runtime_binary.as_deref(),
+        &runtime,
+    ) {
         Ok(r) => r,
         Err(fault) => {
             return fail(
@@ -137,8 +156,9 @@ struct ReviewArgs {
     profile: Archetype,
     json: bool,
     verbose: bool,
-    #[allow(dead_code)] // Accepted & validated; a no-op affirmation of the v0 default mode.
+    #[allow(dead_code)] // Accepted & validated; a no-op affirmation of the static default mode.
     assume_defaults: bool,
+    run: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -155,6 +175,7 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut json = false;
     let mut verbose = false;
     let mut assume_defaults = false;
+    let mut run: Option<String> = None;
 
     // `--` stops flag parsing so a repo path beginning with `-` can still be addressed.
     let mut positional_only = false;
@@ -190,6 +211,28 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
                 reject_inline("--assume-defaults", inline)?;
                 set_flag(&mut assume_defaults, "--assume-defaults")?;
             }
+            "--run" => {
+                if run.is_some() {
+                    return Err("repeated flag: --run".to_string());
+                }
+                let value = match inline {
+                    Some(value) if !value.is_empty() => value.to_string(),
+                    Some(_) => return Err("--run requires a non-empty path".to_string()),
+                    None => {
+                        let value = iter
+                            .next()
+                            .cloned()
+                            .ok_or_else(|| "--run requires a path to a binary".to_string())?;
+                        if value.starts_with('-') {
+                            return Err(format!(
+                                "--run requires a path, got flag-like token {value:?}"
+                            ));
+                        }
+                        value
+                    }
+                };
+                run = Some(value);
+            }
             "--profile" => {
                 if profile.is_some() {
                     return Err("repeated flag: --profile".to_string());
@@ -217,12 +260,19 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
         }
     }
 
+    if assume_defaults && run.is_some() {
+        return Err(
+            "--assume-defaults is static-only and cannot be combined with --run".to_string(),
+        );
+    }
+
     Ok(Command::Run(ReviewArgs {
         repo: repo.unwrap_or_else(|| ".".to_string()),
         profile: profile.unwrap_or(Archetype::Cli),
         json,
         verbose,
         assume_defaults,
+        run,
     }))
 }
 
@@ -271,21 +321,23 @@ const HELP: &str = "\
 project-canon review — recommending conformance audit (advisory; recommends & stages, never acts)
 
 USAGE:
-    project-canon review [--profile <archetype>] [--assume-defaults] [--json] [--verbose] [<repo>]
+    project-canon review [--profile <archetype>] [--assume-defaults | --run <binary>] [--json] [--verbose] [<repo>]
 
 ARGS:
     <repo>                  Target repo to audit (default: current directory). Read-only.
 
 FLAGS:
     --profile <archetype>   cli | service | library | release  (default: cli)
-    --assume-defaults       Characterize non-interactively with conservative defaults (v0 default).
+    --assume-defaults       Static-only conservative characterization; never executes a target.
+    --run <binary>          Opt in to read-only runtime probes of this explicitly named binary.
     --json                  Emit the structured §10 report on stdout.
     --verbose               Also list manual-verify coverage notes, passing, and n/a rows.
     --help                  Show this help.
 
 SIDE EFFECTS:
-    None. review NEVER edits the target repo and NEVER files an issue. Every gap's issue command
-    is PRINTED for you to run (scoped to the target repo) — review never executes it or shells out.
+    review NEVER edits the target repo and NEVER files an issue. Without --run it executes nothing.
+    With --run it invokes only the named binary, directly (no shell), with read-only probe arguments,
+    captured output, null stdin, and a per-invocation timeout. Every issue command is only PRINTED.
 
 EXIT CODES:
     0   review ran and produced its report — regardless of how many gaps it found (advisory)
@@ -302,6 +354,9 @@ enum FindingKind {
     /// The dimension applies but has no mechanical probe (a behavioral section). The review-mode
     /// `unknown`: a manual-verify coverage note, carrying the probe's how-to. **Never staged.**
     ManualVerify,
+    /// An explicitly requested runtime probe could not execute (missing/non-executable, timeout,
+    /// crash, or wait failure). Never treated as either a pass or a gap and never staged.
+    CouldNotProbe,
     /// A mechanical probe exists and **passed** — not a finding; listed only under `--verbose`.
     Pass,
     /// A conditional whose trigger is off — n/a, never a gap; listed only under `--verbose`.
@@ -362,9 +417,10 @@ impl Finding {
     fn sort_key(&self) -> (u8, u8, u16, &'static str) {
         let kind_rank = match self.kind {
             FindingKind::ConfirmedGap => 0,
-            FindingKind::ManualVerify => 1,
-            FindingKind::Pass => 2,
-            FindingKind::NotApplicable => 3,
+            FindingKind::CouldNotProbe => 1,
+            FindingKind::ManualVerify => 2,
+            FindingKind::Pass => 3,
+            FindingKind::NotApplicable => 4,
         };
         let fix_rank = match self.fix_class {
             FixClass::MustFix => 0,
@@ -383,6 +439,8 @@ struct Report {
     target: String,
     profile: Archetype,
     surface_shape: Option<SurfaceShape>,
+    runtime_binary: Option<String>,
+    runtime_probes: Vec<RuntimeProbeOutcome>,
     findings: Vec<Finding>,
 }
 
@@ -415,7 +473,7 @@ impl Report {
         self.findings.iter().filter(|f| {
             matches!(
                 f.kind,
-                FindingKind::ConfirmedGap | FindingKind::ManualVerify
+                FindingKind::ConfirmedGap | FindingKind::CouldNotProbe | FindingKind::ManualVerify
             )
         })
     }
@@ -469,6 +527,10 @@ impl Report {
                 Json::Int(self.confirmed_of(FixClass::ShouldFix) as i64),
             ),
             (
+                "could_not_probe".into(),
+                Json::Int(self.count(FindingKind::CouldNotProbe) as i64),
+            ),
+            (
                 "manual_verify".into(),
                 Json::Int(self.count(FindingKind::ManualVerify) as i64),
             ),
@@ -493,6 +555,29 @@ impl Report {
             (
                 "surface_shape".into(),
                 Json::opt_str(self.surface_shape.map(surface_shape_str)),
+            ),
+            (
+                "runtime_probe".into(),
+                Json::Object(vec![
+                    ("enabled".into(), Json::Bool(self.runtime_binary.is_some())),
+                    ("binary".into(), Json::opt_str(self.runtime_binary.clone())),
+                    ("timeout_ms".into(), Json::Int(RUNTIME_TIMEOUT_MS as i64)),
+                    (
+                        "outcomes".into(),
+                        Json::Array(
+                            self.runtime_probes
+                                .iter()
+                                .map(|probe| {
+                                    Json::Object(vec![
+                                        ("id".into(), Json::str(probe.id)),
+                                        ("status".into(), Json::str(probe.status.as_str())),
+                                        ("message".into(), Json::str(probe.message.clone())),
+                                    ])
+                                })
+                                .collect(),
+                        ),
+                    ),
+                ]),
             ),
             ("findings".into(), Json::Array(findings)),
             ("staged_commands".into(), Json::Array(staged)),
@@ -520,6 +605,7 @@ impl Report {
         for f in &self.findings {
             let listed = match f.kind {
                 FindingKind::ConfirmedGap => true,
+                FindingKind::CouldNotProbe => true,
                 FindingKind::ManualVerify | FindingKind::Pass | FindingKind::NotApplicable => {
                     verbose
                 }
@@ -556,7 +642,7 @@ impl Report {
 
         out.push_str(&format!(
             "\nsummary: {} confirmed gap{} ({} must-fix, {} should-fix), \
-             {} manual-verify, {} pass, {} n/a  \u{2192}  advisory (exit 0)\n",
+             {} could-not-probe, {} manual-verify, {} pass, {} n/a  \u{2192}  advisory (exit 0)\n",
             self.count(FindingKind::ConfirmedGap),
             if self.count(FindingKind::ConfirmedGap) == 1 {
                 ""
@@ -565,6 +651,7 @@ impl Report {
             },
             self.confirmed_of(FixClass::MustFix),
             self.confirmed_of(FixClass::ShouldFix),
+            self.count(FindingKind::CouldNotProbe),
             self.count(FindingKind::ManualVerify),
             self.count(FindingKind::Pass),
             self.count(FindingKind::NotApplicable),
@@ -577,6 +664,7 @@ impl Report {
 fn render_finding_row(f: &Finding) -> String {
     let tag = match f.kind {
         FindingKind::ConfirmedGap => f.fix_class.as_str(),
+        FindingKind::CouldNotProbe => "could-not",
         FindingKind::ManualVerify => "verify",
         FindingKind::Pass => "pass",
         FindingKind::NotApplicable => "n/a",
@@ -595,6 +683,10 @@ fn render_finding_row(f: &Finding) -> String {
             if let Some(cmd) = &f.staged_command {
                 row.push_str(&format!("      stage:    {cmd}\n"));
             }
+        }
+        FindingKind::CouldNotProbe => {
+            row.push_str(&format!("      outcome:  {}\n", f.observed));
+            row.push_str("      status:   could-not-probe (not pass, not gap)\n");
         }
         FindingKind::ManualVerify => {
             row.push_str(&format!(
@@ -646,6 +738,7 @@ fn surface_shape_str(shape: SurfaceShape) -> &'static str {
 fn kind_str(kind: FindingKind) -> &'static str {
     match kind {
         FindingKind::ConfirmedGap => "confirmed-gap",
+        FindingKind::CouldNotProbe => "could-not-probe",
         FindingKind::ManualVerify => "manual-verify",
         FindingKind::Pass => "pass",
         FindingKind::NotApplicable => "not-applicable",
@@ -671,6 +764,8 @@ fn build_report(
     profile: Archetype,
     target: &str,
     probe_context: &ProbeContext<'_>,
+    runtime_binary: Option<&Path>,
+    runtime: &[RuntimeProbeOutcome],
 ) -> Result<Report, ProbeFault> {
     let repo = Path::new(target);
     let mut findings = Vec::with_capacity(resolution.entries().len());
@@ -678,7 +773,14 @@ fn build_report(
         let dim = model
             .dimension(rd.id)
             .expect("resolution ids resolve in the model");
-        findings.push(triage(dim, rd.status, repo, target, probe_context)?);
+        findings.push(triage(
+            dim,
+            rd.status,
+            repo,
+            target,
+            probe_context,
+            runtime.iter().find(|probe| probe.id == dim.id),
+        )?);
     }
     findings.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
 
@@ -687,6 +789,8 @@ fn build_report(
         target: target.to_string(),
         profile,
         surface_shape: resolution.surface_shape(),
+        runtime_binary: runtime_binary.map(|path| path.display().to_string()),
+        runtime_probes: runtime.to_vec(),
         findings,
     })
 }
@@ -701,6 +805,7 @@ fn triage(
     repo: &Path,
     target: &str,
     probe_context: &ProbeContext<'_>,
+    runtime: Option<&RuntimeProbeOutcome>,
 ) -> Result<Finding, ProbeFault> {
     let fix_class = FixClass::from_severity(dim.severity);
     let base = |kind, observed: String, staged_command| Finding {
@@ -718,6 +823,23 @@ fn triage(
         command_hint: dim.probe.command_hint,
         staged_command,
     };
+
+    // An explicit runtime probe is stronger evidence than the conservative questionnaire. This
+    // intentionally lets §8 be decided when --run observes a config surface even though Q2 is off
+    // under static defaults.
+    if let Some(runtime) = runtime {
+        return Ok(match runtime.status {
+            RuntimeProbeStatus::Pass => base(FindingKind::Pass, runtime.message.clone(), None),
+            RuntimeProbeStatus::Gap => base(
+                FindingKind::ConfirmedGap,
+                runtime.message.clone(),
+                Some(stage_command(dim, target)),
+            ),
+            RuntimeProbeStatus::CouldNotProbe => {
+                base(FindingKind::CouldNotProbe, runtime.message.clone(), None)
+            }
+        });
+    }
 
     // Out of scope for this repo (a conditional gated off) — never a gap.
     if let AppStatus::NotApplicable { gated_by } = status {
@@ -761,6 +883,17 @@ fn triage(
                 Ok(base(FindingKind::ConfirmedGap, observed, Some(staged)))
             }
         }
+    }
+}
+
+fn absolute_lexical(path: &str) -> PathBuf {
+    let path = PathBuf::from(path);
+    if path.is_absolute() {
+        path
+    } else {
+        std::env::current_dir()
+            .map(|cwd| cwd.join(&path))
+            .unwrap_or(path)
     }
 }
 
@@ -828,6 +961,7 @@ mod tests {
                 json: false,
                 verbose: false,
                 assume_defaults: false,
+                run: None,
             })
         );
     }
@@ -851,6 +985,7 @@ mod tests {
                 json: true,
                 verbose: true,
                 assume_defaults: true,
+                run: None,
             })
         );
     }
@@ -945,7 +1080,16 @@ mod tests {
         let context = ProbeContext {
             user_specific_deny_list: &deny_list,
         };
-        build_report(&model, &resolution, profile, &repo.target(), &context).expect("no I/O fault")
+        build_report(
+            &model,
+            &resolution,
+            profile,
+            &repo.target(),
+            &context,
+            None,
+            &[],
+        )
+        .expect("no I/O fault")
     }
 
     fn find<'a>(report: &'a Report, id: &str) -> &'a Finding {
@@ -1004,6 +1148,8 @@ mod tests {
             Archetype::Cli,
             &repo.target(),
             &context,
+            None,
+            &[],
         )
         .unwrap();
         let s23 = find(&report, "canon.s23");

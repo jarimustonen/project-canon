@@ -28,7 +28,8 @@ Three verbs over the resolved conformance model, for the `cli` profile today:
 - **`new`** — scaffold a new repo that conforms to the canon. Generate-only: external
   bootstrap steps are *rendered and printed*, never executed.
 - **`review`** — a recommending audit against the canon: severity-triaged findings plus
-  staged (printed) issue-tracker commands. It advises; it never acts.
+  staged (printed) issue-tracker commands. It is static-only by default; explicit `--run <binary>`
+  adds timeout-bounded, read-only runtime probes.
 
 The AI-first CLI canon (`AGENTS-AI-FIRST-CLI.md`, §1–§24) is carried as the `cli` profile, and
 this repo is its maintained home.
@@ -67,11 +68,15 @@ project-canon-core`) for embedding the conformance model.
 project-canon --help              # all verbs and flags
 project-canon doctor --json       # conformance gate (non-zero exit on a MUST gap)
 project-canon new <name>          # scaffold a conformant repo (prints external steps)
-project-canon review              # advisory audit; severity-triaged findings
+project-canon review              # advisory, static-only audit
+project-canon review --run ./target/debug/my-tool --json .  # opt-in runtime checks
 ```
 
 Every verb speaks the AI-first CLI conventions: strict input validation, `--json` output, and
-informative, non-interactive errors.
+informative, non-interactive errors. Runtime review executes only the explicitly named binary,
+without a shell, and invokes only read-only surfaces. Missing, non-executable, crashing, or timed-out
+targets are reported as `could-not-probe`, never as a pass or gap. See
+[`docs/review-runtime-probes.md`](docs/review-runtime-probes.md) for the safety and JSON contracts.
 
 ## Configuration
 
