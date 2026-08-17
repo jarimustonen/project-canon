@@ -2,7 +2,7 @@
 created: 2026-08-16
 updated: 2026-08-17
 type: feature
-status: in-progress
+status: done
 priority: high
 labels: [canon]
 lane: canon-rollout
@@ -13,6 +13,8 @@ commits:
   summary: mark issue in progress
 - hash: 26596a40d2f00fbb222b5dc61a999d69636e066c
   summary: enforce neutral public artifacts with canon section 23
+closed: 2026-08-17
+closed_by: agent
 ---
 
 # Canon rule: public artifacts must not embed user-specific facts
