@@ -13,6 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 <!-- oss-changelog:unreleased-end -->
 
+## [0.3.3] - 2026-08-17
+
+### Fixed
+
+- The Homebrew formula is published as `project-canon` again. `0.3.2` enabled the automatic
+  formula publisher, but cargo-dist names the formula after the *package*, so it wrote
+  `Formula/project-canon-cli.rb` while the canonical `Formula/project-canon.rb` — the name
+  the tool is installed with — was left behind at `0.3.0` with nothing updating it. Users on
+  `brew install <tap>/project-canon` now track releases again.
+- Removed an internal environment name from the shipped crate. A planned CI-release pattern
+  was referenced by its internal name in `project-canon-core` doc comments and a test
+  fixture, which put an unreleased internal concept into a public package. The configuration
+  seam itself is unchanged — `CiReleaseHook::pattern` still carries a configured pattern name
+  and still defaults to `None` — only the hardcoded name is gone.
+
 ## [0.3.2] - 2026-08-17
 
 Completes the distribution repair started in `0.3.1`. That release fixed the build profile —
