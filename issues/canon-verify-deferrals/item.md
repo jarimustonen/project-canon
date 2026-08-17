@@ -7,6 +7,9 @@ priority: high
 related: ['@canon-no-user-specifics']
 lane: canon-rollout
 lane_seq: 20
+commits:
+- hash: c8f22b58e05e09677c8541cf1888f3042a810614
+  summary: mark canon-verify-deferrals in progress
 ---
 
 # Canon rule: a deferral justification must be verified, not inherited
