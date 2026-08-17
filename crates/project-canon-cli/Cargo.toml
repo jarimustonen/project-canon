@@ -18,12 +18,12 @@ libc = "0.2"
 # Exact pin: the CLI and core release in lockstep — `project_canon_core::CANON` is *data* the CLI
 # stamps its provenance against (skill `cli_version`), so a caret range that let a newer core's
 # canon bytes flow into an unchanged CLI would silently diverge the stamp from the content.
-project-canon-core = { path = "../project-canon-core", version = "=0.4.0" }
+project-canon-core = { path = "../project-canon-core", version = "=0.5.0" }
 
 [dev-dependencies]
 # The integration tests assert scaffolded/installed canon equals `project_canon_core::CANON`
 # directly — self-contained inside the published tarball, no repo-layout / root-symlink coupling.
-project-canon-core = { path = "../project-canon-core", version = "=0.4.0" }
+project-canon-core = { path = "../project-canon-core", version = "=0.5.0" }
 
 [lints]
 workspace = true

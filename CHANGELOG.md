@@ -13,6 +13,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 <!-- oss-changelog:unreleased-end -->
 
+## [0.5.0] - 2026-08-17
+
+`review` stops asking a human to check what it can check itself, and the `--version` flag
+becomes a first-class way to ask for the version payload.
+
+### Added
+
+- **`review --run <binary>`** — opt-in runtime probes that execute a built CLI to auto-confirm
+  the canon sections that are only observable at runtime (§2 exit-code mapping, §8 `config
+  path` / `config show --json`, §10 `version --json`, §14 `--help --json`, §15/§16/§17 the
+  skill surface, §18 `doctor`). On this repository the probes move seven sections out of
+  manual-verify: 16 manual / 6 pass becomes 9 manual / 14 pass.
+
+  The execution path is deliberately conservative. It is opt-in only — `--assume-defaults`
+  remains static and never executes anything — and it invokes the named binary directly rather
+  than through a shell, with a per-call timeout, bounded output capture, and read-only argument
+  vectors (`skill list` and `skill print`, never `skill install`). Outcomes distinguish `pass`,
+  `gap`, and **`could-not-probe`**; a missing, non-executable, or hanging target is reported as
+  unprobed and is never silently counted as either a pass or a gap. Under-reporting is what
+  made the previous behaviour untrustworthy, so the report says what it could not determine.
+
+### Changed
+
+- **`--version` is now a full alias of the `version` verb.** Both spellings produce identical
+  output and the same exit code in every mode, including `--json`, and argument order does not
+  matter: `--version --json` and `--json --version` behave alike. Previously the flag was
+  text-only and `--version --json` returned a usage error steering the caller to the verb.
+  The verb remains the canonical form that agents should prefer; it is no longer the only form
+  that works.
+- **Canon §10 amended to match.** The section had mandated the old behaviour, justifying it on
+  the grounds that the flag "cannot honor `--json`". That rationale was wrong: it is true of
+  clap's built-in version action, but a tool can declare `--version` as an ordinary flag and
+  dispatch it itself, which this one already did. The false rationale is dropped and the flag
+  is now specified as a full alias. Sibling family CLIs that implement the old rule will begin
+  reporting a §10 gap; that is the intended alignment signal, not a regression.
+
 ## [0.4.0] - 2026-08-17
 
 Two canon sections that turn hard-won operating rules into machinery. Both follow the same
