@@ -24,7 +24,7 @@ Implement agent-readable help JSON for top-level and subcommand help per canon �
 
 Comparative audit evidence:
 
-- `project-canon review --assume-defaults /Users/jari/Sources/project-canon` left §14 as manual-verify.
+- `project-canon review --assume-defaults <personal-repo-root>/project-canon` left §14 as manual-verify.
 - Manual probe: `project-canon doctor --help --json` exits 0 but prints prose help rather than JSON.
 - Manual probe: `project-canon --help --json` likewise prints prose startup/help text.
 

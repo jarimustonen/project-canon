@@ -1,4 +1,4 @@
-# Conformance probes — `AGENTS-AI-FIRST-CLI.md` §1–§22
+# Conformance probes — `AGENTS-AI-FIRST-CLI.md` §1–§23
 
 This is the operational checklist. **Read the canon fresh first** — it is the source
 of truth and grows (`§19+` append over time); this table is a probe index into it, not
@@ -263,6 +263,21 @@ step has bound it to a real, read-only command.
   for a genuinely small tool as a **documented** choice.
 - **Probe:** read `Cargo.toml` `members`; grep core for clap/I/O imports.
 - **Fail:** — never a readiness failure; report as a `SHOULD` recommendation only.
+
+### §23 Public artifacts contain no user-specific facts · **MUST**
+- **Applies:** every publicly distributed repository, package, scaffold, skill, fixture, and
+  documentation set. Internal-only artifacts are outside this rule's binding scope.
+- **Signal:** shipped defaults are neutral or absent; exact private markers come only from the
+  §8 `user_specific_deny_list` / `PROJECT_CANON_USER_SPECIFIC_DENY_LIST`; the target's git
+  remote and package metadata derive known-good own coordinates; generated output and fixtures
+  remain fictional. The project's own URL, badge, tap, install coordinate, and genuine public
+  dependencies are allowed.
+- **Probe:** `$TOOL doctor --json | jq '.checks[] | select(.id == "canon.s23")'`; inspect
+  `config show --json` for deny-list provenance; then use `review` to judge hostnames, internal
+  URLs, borderline names, public-dependency legitimacy, and generated deployment assumptions.
+- **Fail:** a configured private marker in shipped text; a personal path/account/private repo in
+  a built-in default, fixture, scaffold, skill, or generated output; a heuristic scanner that
+  flags the project's own README install line or public coordinates.
 
 ---
 

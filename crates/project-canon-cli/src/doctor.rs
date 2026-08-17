@@ -13,13 +13,13 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use project_canon_core::{
-    AppStatus, Archetype, Dimension, EnvConfigLayer, Layer, Model, Questionnaire, Resolution,
-    Severity, SurfaceShape,
+    AppStatus, Archetype, Dimension, Layer, Model, Questionnaire, Resolution, Severity,
+    SurfaceShape,
 };
 
 use crate::error::{fail, json_requested, write_stdout, CliError};
 use crate::json::Json;
-use crate::probes::mechanical_probe;
+use crate::probes::{mechanical_probe, ProbeContext};
 
 /// The `--json` payload schema version (§10). Bump on any breaking shape change.
 const SCHEMA_VERSION: i64 = 1;
@@ -48,17 +48,12 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     };
 
-    // Strict §1 validation of the env override layer, uniform with the rest of the family: a
-    // malformed `PROJECT_CANON_*` value is a usage error, never a silent coerce. Doctor consumes
-    // no env field itself (it probes an explicit target path), but it still refuses to run on a
-    // broken environment override rather than ignoring it. Runs *after* `--help` so help never
-    // requires a clean environment.
-    if let Err(err) = EnvConfigLayer::from_env_vars(&std::env::vars().collect()) {
-        return fail(
-            parsed.json,
-            CliError::actionable("validation_error", format!("doctor: {err}")),
-        );
-    }
+    // Resolve the §8 user-config layer because §23's deny-list is operator knowledge, never a
+    // shipped default. Help remains independent of configuration.
+    let env_config = match crate::config::resolve() {
+        Ok(config) => config,
+        Err(error) => return fail(parsed.json, error.into_cli()),
+    };
 
     // Read-only target validation (§1): the repo must be an existing directory.
     let repo = Path::new(&parsed.repo);
@@ -94,7 +89,17 @@ pub fn run(args: &[String]) -> ExitCode {
 
     // An operational I/O fault while probing (permission denied, transient error, target vanished)
     // is not a conformance gap: it means doctor could not evaluate the repo → exit 2, never exit 1.
-    let report = match build_report(&model, &resolution, parsed.profile, &target, repo) {
+    let probe_context = ProbeContext {
+        user_specific_deny_list: &env_config.user_specific_deny_list,
+    };
+    let report = match build_report(
+        &model,
+        &resolution,
+        parsed.profile,
+        &target,
+        repo,
+        &probe_context,
+    ) {
         Ok(r) => r,
         Err(fault) => {
             return fail(
@@ -534,13 +539,14 @@ fn build_report(
     profile: Archetype,
     target: &str,
     repo: &Path,
+    probe_context: &ProbeContext<'_>,
 ) -> Result<Report, ProbeFault> {
     let mut checks = Vec::with_capacity(resolution.entries().len());
     for rd in resolution.entries() {
         let dim = model
             .dimension(rd.id)
             .expect("resolution ids resolve in the model");
-        checks.push(grade(dim, rd.status, repo)?);
+        checks.push(grade(dim, rd.status, repo, probe_context)?);
     }
 
     Ok(Report {
@@ -553,7 +559,12 @@ fn build_report(
 }
 
 /// Grade one resolved dimension into a [`Check`], propagating an operational probe fault as `Err`.
-fn grade(dim: &Dimension, status: AppStatus, repo: &Path) -> Result<Check, ProbeFault> {
+fn grade(
+    dim: &Dimension,
+    status: AppStatus,
+    repo: &Path,
+    probe_context: &ProbeContext<'_>,
+) -> Result<Check, ProbeFault> {
     let base = |status, gates, message, skip_reason| Check {
         id: dim.id,
         title: dim.title,
@@ -588,7 +599,7 @@ fn grade(dim: &Dimension, status: AppStatus, repo: &Path) -> Result<Check, Probe
         Some(probe) => {
             let gates = is_gating_severity(dim.severity);
             // A miss (`Ok(false)`) is a conformance result; an I/O error is an operational fault.
-            let outcome = probe(repo).map_err(|source| ProbeFault {
+            let outcome = probe(repo, probe_context).map_err(|source| ProbeFault {
                 dim_id: dim.id,
                 source,
             })?;
@@ -758,7 +769,11 @@ mod tests {
     fn report_for(repo: &Path, profile: Archetype) -> Report {
         let model = Model::standard();
         let resolution = model.resolve(&Questionnaire::builder(profile).build());
-        build_report(&model, &resolution, profile, "target", repo).expect("no I/O fault")
+        let deny_list = std::collections::BTreeSet::new();
+        let context = ProbeContext {
+            user_specific_deny_list: &deny_list,
+        };
+        build_report(&model, &resolution, profile, "target", repo, &context).expect("no I/O fault")
     }
 
     #[test]

@@ -1,4 +1,4 @@
-//! The `AGENTS-AI-FIRST-CLI.md` §1–§22 sections as [`Dimension`]s — the `cli` profile's
+//! The `AGENTS-AI-FIRST-CLI.md` §1–§23 sections as [`Dimension`]s — the `cli` profile's
 //! section-set, plus the repo-general canon sections routed to base.
 //!
 //! Each entry is a **reference**, not a re-copy: the compact [`Probe`] is lifted from
@@ -8,9 +8,10 @@
 //!
 //! **Layer routing.** §10 (schema/versioning contract), §15–§17 (companion-skill
 //! install/print/sync), and §22 (internal `core`/`cli` layout) are repo-general — homebase's
-//! `create-project` applies them to every repo — so they are rooted in [`Layer::Base`]. The
-//! remaining 17 sections shape the CLI surface and are rooted in [`Layer::Profile`]`(Cli)`.
-//! Their union is the full §1–§22 (asserted by test).
+//! `create-project` applies them to every repo — so they are rooted in [`Layer::Base`]. §23 is
+//! likewise repo-general because it governs every publicly distributed artifact. The remaining
+//! 17 sections shape the CLI surface and are rooted in [`Layer::Profile`]`(Cli)`. Their union is
+//! the full §1–§23 (asserted by test).
 
 use crate::dimension::{
     Applicability, Archetype, Dimension, DimensionSource, EffectClass, Layer, Probe, Severity,
@@ -18,7 +19,7 @@ use crate::dimension::{
 use crate::questionnaire::Question;
 
 /// The canon sections routed to the base layer (repo-general, archetype-invariant).
-const BASE_SECTIONS: [u8; 5] = [10, 15, 16, 17, 22];
+const BASE_SECTIONS: [u8; 6] = [10, 15, 16, 17, 22, 23];
 
 /// True if §N is routed to base (vs. the `cli` profile).
 pub(crate) fn is_base_section(section: u8) -> bool {
@@ -27,7 +28,7 @@ pub(crate) fn is_base_section(section: u8) -> bool {
 
 /// The stable registry id for canon §N, e.g. `"canon.s10"`.
 ///
-/// Section numbers are **zero-padded** (`canon.s01`..`canon.s22`) so that lexicographic id
+/// Section numbers are **zero-padded** (`canon.s01`..`canon.s23`) so that lexicographic id
 /// order — the order the `BTreeMap` registry and every sorted id list use — equals canon
 /// section order. Without the pad, `canon.s10` sorts before `canon.s2`, scrambling downstream
 /// doctor/review listings.
@@ -56,10 +57,11 @@ pub(crate) const fn canon_id(section: u8) -> &'static str {
         20 => "canon.s20",
         21 => "canon.s21",
         22 => "canon.s22",
-        // §N is 1..=22 (a closed citation surface). A section outside that range is a
+        23 => "canon.s23",
+        // §N is 1..=23 (a closed citation surface). A section outside that range is a
         // programming error at edit time, not a runtime input — fail loudly rather than
         // aliasing to a bogus shared id that would collide in the registry.
-        _ => panic!("canon section out of the 1..=22 range"),
+        _ => panic!("canon section out of the 1..=23 range"),
     }
 }
 
@@ -91,7 +93,7 @@ fn section(
     }
 }
 
-/// All §1–§22 canon sections as dimensions.
+/// All §1–§23 canon sections as dimensions.
 pub(crate) fn canon_dimensions() -> Vec<Dimension> {
     use Applicability::{Always, Conditional};
     use EffectClass::{ExecRo, SandboxWrite, Static};
@@ -367,6 +369,18 @@ pub(crate) fn canon_dimensions() -> Vec<Dimension> {
                 signal: "crates/<tool>-core (pure domain, no clap/I/O) + <tool>-cli; injected Clock in core; shared plumbing in a thin <family>-cli-common",
                 command_hint: "read Cargo.toml members; grep core for clap/I/O imports",
                 fail: "never a readiness failure; report as a SHOULD recommendation only",
+            },
+        ),
+        section(
+            23,
+            "Public artifacts contain no user-specific facts",
+            Must,
+            Always,
+            Probe {
+                effect: Static,
+                signal: "public shipped defaults/templates/skills are neutral; configured private markers absent; own public coordinates exempt; judgment remainder reviewed",
+                command_hint: "$TOOL doctor --json | jq '.checks[] | select(.id == \"canon.s23\")'  ·  review hostnames/internal URLs by hand",
+                fail: "a configured private marker in distributed text; a maintainer path/account/private repo shipped as a default, fixture, scaffold, or skill",
             },
         ),
     ]

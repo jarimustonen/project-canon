@@ -24,7 +24,7 @@ Normalize `project-canon`'s machine-facing error contract to match the shipped A
 
 Comparative audit evidence:
 
-- `project-canon review --assume-defaults /Users/jari/Sources/project-canon` reported no confirmed gaps, but left §2/§10 as manual-verify.
+- `project-canon review --assume-defaults <personal-repo-root>/project-canon` reported no confirmed gaps, but left §2/§10 as manual-verify.
 - Manual probe: `project-canon --json --version` exits 2 with prose stderr (`project-canon: unknown subcommand or flag: "--json"`), not a JSON error envelope.
 - Manual probe: `project-canon config show --json` exits with prose stderr, not `{"error":{"code":...,"message":...}}`.
 

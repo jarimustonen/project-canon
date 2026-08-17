@@ -20,13 +20,13 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use project_canon_core::{
-    AppStatus, Archetype, Dimension, EffectClass, EnvConfigLayer, Layer, Model, Questionnaire,
-    Resolution, Severity, SurfaceShape,
+    AppStatus, Archetype, Dimension, EffectClass, Layer, Model, Questionnaire, Resolution,
+    Severity, SurfaceShape,
 };
 
 use crate::error::{fail, json_requested, write_stdout, CliError};
 use crate::json::Json;
-use crate::probes::mechanical_probe;
+use crate::probes::{mechanical_probe, ProbeContext};
 use crate::shell::shell_quote;
 
 /// The `--json` payload schema version (§10). Bump on any breaking shape change.
@@ -54,16 +54,12 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     };
 
-    // Strict §1 validation of the env override layer, uniform with doctor/new: a malformed
-    // `PROJECT_CANON_*` value is a usage error, never a silent coerce. review consumes no env
-    // field itself (it audits an explicit target and scopes the staged command to it), but it
-    // still refuses to run on a broken environment override. Runs *after* `--help`.
-    if let Err(err) = EnvConfigLayer::from_env_vars(&std::env::vars().collect()) {
-        return fail(
-            parsed.json,
-            CliError::actionable("validation_error", format!("review: {err}")),
-        );
-    }
+    // Resolve the §8 user-config layer because §23's deny-list is operator knowledge, never a
+    // shipped default. Help remains independent of configuration.
+    let env_config = match crate::config::resolve() {
+        Ok(config) => config,
+        Err(error) => return fail(parsed.json, error.into_cli()),
+    };
 
     // Read-only target validation (§1): the repo must be an existing directory.
     let repo = Path::new(&parsed.repo);
@@ -99,7 +95,10 @@ pub fn run(args: &[String]) -> ExitCode {
 
     // An operational I/O fault while probing (permission denied, transient error, target vanished)
     // means review could not evaluate a dimension → exit 2, never a fabricated finding.
-    let report = match build_report(&model, &resolution, parsed.profile, &target) {
+    let probe_context = ProbeContext {
+        user_specific_deny_list: &env_config.user_specific_deny_list,
+    };
+    let report = match build_report(&model, &resolution, parsed.profile, &target, &probe_context) {
         Ok(r) => r,
         Err(fault) => {
             return fail(
@@ -671,6 +670,7 @@ fn build_report(
     resolution: &Resolution,
     profile: Archetype,
     target: &str,
+    probe_context: &ProbeContext<'_>,
 ) -> Result<Report, ProbeFault> {
     let repo = Path::new(target);
     let mut findings = Vec::with_capacity(resolution.entries().len());
@@ -678,7 +678,7 @@ fn build_report(
         let dim = model
             .dimension(rd.id)
             .expect("resolution ids resolve in the model");
-        findings.push(triage(dim, rd.status, repo, target)?);
+        findings.push(triage(dim, rd.status, repo, target, probe_context)?);
     }
     findings.sort_by(|a, b| a.sort_key().cmp(&b.sort_key()));
 
@@ -700,6 +700,7 @@ fn triage(
     status: AppStatus,
     repo: &Path,
     target: &str,
+    probe_context: &ProbeContext<'_>,
 ) -> Result<Finding, ProbeFault> {
     let fix_class = FixClass::from_severity(dim.severity);
     let base = |kind, observed: String, staged_command| Finding {
@@ -736,18 +737,34 @@ fn triage(
             None,
         )),
         Some(probe) => {
-            let outcome = probe(repo).map_err(|source| ProbeFault {
+            let outcome = probe(repo, probe_context).map_err(|source| ProbeFault {
                 dim_id: dim.id,
                 source,
             })?;
-            if outcome.passed {
+            if outcome.passed && dim.id == "canon.s23" {
+                Ok(base(
+                    FindingKind::ManualVerify,
+                    format!(
+                        "{}; review hostnames, internal URLs, borderline names, and dependency legitimacy",
+                        outcome.message
+                    ),
+                    None,
+                ))
+            } else if outcome.passed {
                 Ok(base(FindingKind::Pass, outcome.message, None))
             } else {
                 // A confirmed gap: stage (print, never run) an issuectl command scoped to the repo.
                 let staged = stage_command(dim, target);
                 Ok(base(
                     FindingKind::ConfirmedGap,
-                    outcome.message,
+                    if dim.id == "canon.s23" {
+                        format!(
+                            "{}; also review hostnames, internal URLs, borderline names, and dependency legitimacy",
+                            outcome.message
+                        )
+                    } else {
+                        outcome.message
+                    },
                     Some(staged),
                 ))
             }
@@ -920,7 +937,11 @@ mod tests {
     fn report_for(repo: &TmpRepo, profile: Archetype) -> Report {
         let model = Model::standard();
         let resolution = model.resolve(&Questionnaire::builder(profile).build());
-        build_report(&model, &resolution, profile, &repo.target()).expect("no I/O fault")
+        let deny_list = std::collections::BTreeSet::new();
+        let context = ProbeContext {
+            user_specific_deny_list: &deny_list,
+        };
+        build_report(&model, &resolution, profile, &repo.target(), &context).expect("no I/O fault")
     }
 
     fn find<'a>(report: &'a Report, id: &str) -> &'a Finding {
@@ -961,6 +982,39 @@ mod tests {
         let report = report_for(&repo, Archetype::Cli);
         assert_eq!(find(&report, "base.doc-pattern").kind, FindingKind::Pass);
         assert_eq!(report.count(FindingKind::ConfirmedGap), 0);
+    }
+
+    #[test]
+    fn public_artifact_gap_also_surfaces_the_judgment_remainder() {
+        let repo = conformant_repo("s23-gap-judgment");
+        std::fs::write(repo.path.join("README.md"), "private-widget").unwrap();
+        let model = Model::standard();
+        let resolution = model.resolve(&Questionnaire::builder(Archetype::Cli).build());
+        let deny_list = std::collections::BTreeSet::from(["private-widget".to_string()]);
+        let context = ProbeContext {
+            user_specific_deny_list: &deny_list,
+        };
+        let report = build_report(
+            &model,
+            &resolution,
+            Archetype::Cli,
+            &repo.target(),
+            &context,
+        )
+        .unwrap();
+        let s23 = find(&report, "canon.s23");
+        assert_eq!(s23.kind, FindingKind::ConfirmedGap);
+        assert!(s23.observed.contains("hostnames"));
+    }
+
+    #[test]
+    fn public_artifact_check_surfaces_the_judgment_remainder_after_mechanical_pass() {
+        let repo = conformant_repo("s23-judgment");
+        let report = report_for(&repo, Archetype::Cli);
+        let s23 = find(&report, "canon.s23");
+        assert_eq!(s23.kind, FindingKind::ManualVerify);
+        assert!(s23.observed.contains("hostnames"));
+        assert!(s23.staged_command.is_none());
     }
 
     #[test]

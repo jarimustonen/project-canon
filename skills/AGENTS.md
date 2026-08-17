@@ -8,7 +8,7 @@ than the reverse.
 ## Contents
 
 - `cli-canon/` — the companion skill for the `cli` profile's canon
-  ([`AGENTS-AI-FIRST-CLI.md`](../AGENTS-AI-FIRST-CLI.md), §1–§22). It is the reviewer/generator
+  ([`AGENTS-AI-FIRST-CLI.md`](../AGENTS-AI-FIRST-CLI.md), §1–§23). It is the reviewer/generator
   that *applies* the canon: **review** an existing family CLI against the canon (conformance
   matrix + prioritized recommendations) or **generate** canon-conformant surface scaffolding
   inside an existing repo. This is the §15 companion skill, version-synced with the canon per

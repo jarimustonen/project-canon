@@ -150,8 +150,8 @@ fn json_output_is_well_formed_and_matches_the_gate() {
     assert!(stdout.contains("\"profile\":\"cli\""));
     assert!(stdout.contains("\"conformant\":true"));
     assert!(stdout.contains("\"exit_code\":0"));
-    // Every §1–§22 canon check id is present in the matrix.
-    for section in ["canon.s01", "canon.s18", "canon.s22"] {
+    // Every §1–§23 canon check id is present in the matrix.
+    for section in ["canon.s01", "canon.s18", "canon.s22", "canon.s23"] {
         assert!(stdout.contains(section), "missing {section}");
     }
 
@@ -167,15 +167,60 @@ fn json_output_is_well_formed_and_matches_the_gate() {
 }
 
 #[test]
-fn profile_cli_resolves_all_22_canon_sections() {
+fn profile_cli_resolves_all_23_canon_sections() {
     let f = Fixture::conformant("resolve");
     let out = run_doctor(&["--profile", "cli", "--json", f.path.to_str().unwrap()]);
     assert_eq!(code(&out), 0);
     let stdout = String::from_utf8_lossy(&out.stdout);
-    for n in 1u8..=22 {
+    for n in 1u8..=23 {
         let id = format!("canon.s{n:02}");
         assert!(stdout.contains(&id), "cli profile should resolve {id}");
     }
+}
+
+#[test]
+fn configured_private_marker_is_a_must_gap_but_own_coordinates_are_allowed() {
+    let f = Fixture::conformant("s23");
+    std::fs::write(
+        f.path.join(".git/config"),
+        "[remote \"origin\"]\n    url = git@github.com:example-owner/example-tool.git\n",
+    )
+    .unwrap();
+    std::fs::write(
+        f.path.join("README.md"),
+        "[![CI](https://github.com/example-owner/example-tool/actions/badge.svg)]\n\
+         brew install example-owner/example-tool/example-tool\n",
+    )
+    .unwrap();
+
+    let out = base_command()
+        .env(
+            "PROJECT_CANON_USER_SPECIFIC_DENY_LIST",
+            "example-owner,example-tool,private-widget",
+        )
+        .args(["doctor", "--json", f.path.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert_eq!(code(&out), 0, "own coordinates must be known-good");
+
+    std::fs::write(
+        f.path.join("AGENTS.md"),
+        "repo_default = \"private-widget\"\n",
+    )
+    .unwrap();
+    let out = base_command()
+        .env(
+            "PROJECT_CANON_USER_SPECIFIC_DENY_LIST",
+            "example-owner,example-tool,private-widget",
+        )
+        .args(["doctor", "--json", f.path.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert_eq!(code(&out), 1);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("canon.s23"), "{stdout}");
+    assert!(stdout.contains("AGENTS.md:1"), "{stdout}");
+    assert!(!stdout.contains("private-widget"), "{stdout}");
 }
 
 #[test]

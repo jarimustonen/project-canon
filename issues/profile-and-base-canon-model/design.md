@@ -198,7 +198,7 @@ crates/project-canon-cli/               # thin binary `project-canon` — verbs 
 ## 7. No homebase-specific paths (seam for `env-config-hook-layer`)
 
 The base scaffold dimensions are declared **abstractly** — "the repo has a consolidated
-`AGENTS.md` with a `CLAUDE.md` symlink", not `~/Sources/...` or a `projects.conf` path.
+`AGENTS.md` with a `CLAUDE.md` symlink", not `<personal-repo-root>/...` or a `projects.conf` path.
 *Probing* an actual repo for these (and the homebase env specifics: `tw`, `gh` account,
 `.workmux` emoji) is the job of the later `env-config-hook-layer` issue and its config/hook
 layer. This model hardcodes **no** filesystem path, account, or host. The `Probe.command_hint`

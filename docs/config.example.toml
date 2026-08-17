@@ -4,6 +4,8 @@
 gh_account = "example-user"
 repo_root = "~/Projects"
 family_tools = ["alpha-tool", "beta-tool"]
+# Add exact private names that §23 doctor must reject from publicly distributed text.
+user_specific_deny_list = []
 tw_enabled = false
 
 # Optional explicit paths for tools outside repo_root.

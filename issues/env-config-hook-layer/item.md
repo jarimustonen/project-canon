@@ -20,4 +20,4 @@ closed: 2026-08-13
 
 ## Description
 
-From commit one, externalize the non-portable homebase env specifics to a config/hook layer: the ~/Sources family-repo map (also cli-canon's hard-coded map), gh account jarimustonen, ~/Sources/<name> location, tw/projects.conf registration, .workmux.yaml emoji prefix, and (future) hauis CI release pattern. homebase's create-project skill becomes a THIN wrapper delegating scaffold to project-canon new. Per ADR 0009 §2/§5/§6.
+From commit one, externalize the non-portable homebase env specifics to a config/hook layer: the <personal-repo-root> family-repo map (also cli-canon's hard-coded map), a maintainer account, <personal-repo-root>/<name> location, tw/projects.conf registration, .workmux.yaml emoji prefix, and (future) hauis CI release pattern. homebase's create-project skill becomes a THIN wrapper delegating scaffold to project-canon new. Per ADR 0009 §2/§5/§6.

@@ -12,7 +12,14 @@
 //! `Err` is an *operational* I/O fault (permission denied, transient error) that each verb wraps
 //! into its own exit-2 fault — keeping "could not evaluate" distinct from "the check missed".
 
-use std::path::Path;
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
+
+/// User-configured inputs for probes whose answer depends on operator knowledge.
+pub struct ProbeContext<'a> {
+    /// Exact, case-insensitive markers known to identify the operator's private environment.
+    pub user_specific_deny_list: &'a BTreeSet<String>,
+}
 
 /// The outcome of running one mechanical probe: a decidable pass/miss. An operational I/O error is
 /// *not* an outcome — probes return `io::Result<ProbeOutcome>`, and an `Err` is the caller's to
@@ -63,14 +70,17 @@ fn lstat(path: &Path) -> std::io::Result<Option<std::fs::Metadata>> {
 /// needing the built binary or prose judgment is intentionally absent. Every id here is asserted
 /// to resolve in `Model::standard` by `probe_ids_exist_in_model`, so a core-side rename can't
 /// silently turn an enforced MUST into a deferred/verify skip.
-pub fn mechanical_probe(id: &str) -> Option<fn(&Path) -> std::io::Result<ProbeOutcome>> {
+pub fn mechanical_probe(
+    id: &str,
+) -> Option<fn(&Path, &ProbeContext<'_>) -> std::io::Result<ProbeOutcome>> {
     match id {
-        "base.doc-pattern" => Some(probe_doc_pattern),
-        "base.issue-tracking" => Some(probe_issue_tracking),
-        "base.git-hygiene" => Some(probe_git_hygiene),
-        "base.readme" => Some(probe_readme),
-        "base.gitignore" => Some(probe_gitignore),
-        "canon.s22" => Some(probe_core_cli_split),
+        "base.doc-pattern" => Some(|repo, _| probe_doc_pattern(repo)),
+        "base.issue-tracking" => Some(|repo, _| probe_issue_tracking(repo)),
+        "base.git-hygiene" => Some(|repo, _| probe_git_hygiene(repo)),
+        "base.readme" => Some(|repo, _| probe_readme(repo)),
+        "base.gitignore" => Some(|repo, _| probe_gitignore(repo)),
+        "canon.s22" => Some(|repo, _| probe_core_cli_split(repo)),
+        "canon.s23" => Some(probe_public_artifact_specifics),
         _ => None,
     }
 }
@@ -79,13 +89,14 @@ pub fn mechanical_probe(id: &str) -> Option<fn(&Path) -> std::io::Result<ProbeOu
 /// lockstep with [`mechanical_probe`] and cross-checked against the model by
 /// `every_mechanical_probe_id_exists_in_the_model`.
 #[cfg(test)]
-const MECHANICAL_PROBE_IDS: [&str; 6] = [
+const MECHANICAL_PROBE_IDS: [&str; 7] = [
     "base.doc-pattern",
     "base.issue-tracking",
     "base.git-hygiene",
     "base.readme",
     "base.gitignore",
     "canon.s22",
+    "canon.s23",
 ];
 
 /// `AGENTS.md` and `CLAUDE.md` both present as files at the repo root (§ base.doc-pattern).
@@ -184,6 +195,276 @@ fn probe_core_cli_split(repo: &Path) -> std::io::Result<ProbeOutcome> {
         (true, true) => ProbeOutcome::pass("crates/*-core + *-cli split present"),
         _ => ProbeOutcome::fail("missing a crates/*-core and/or crates/*-cli directory"),
     })
+}
+
+/// §23's mechanically decidable subset. The operator names private markers; doctor scans the
+/// distributed tree without guessing what a username looks like. The target's own public
+/// coordinates are derived from its git remote and exempted.
+fn probe_public_artifact_specifics(
+    repo: &Path,
+    context: &ProbeContext<'_>,
+) -> std::io::Result<ProbeOutcome> {
+    if context.user_specific_deny_list.is_empty() {
+        return Ok(ProbeOutcome::pass(
+            "no user-specific markers configured; set user_specific_deny_list or PROJECT_CANON_USER_SPECIFIC_DENY_LIST to enable the §23 scan",
+        ));
+    }
+
+    let own = own_coordinates(repo)?;
+    let markers: Vec<String> = context
+        .user_specific_deny_list
+        .iter()
+        .map(|marker| marker.to_lowercase())
+        .collect();
+    let files = distributed_text_candidates(repo)?;
+    for file in files {
+        let rel = file.strip_prefix(repo).unwrap_or(&file);
+        if std::fs::metadata(&file)?.len() > 1_048_576 {
+            use std::io::Read;
+            let mut prefix = [0u8; 8192];
+            let mut handle = std::fs::File::open(&file)?;
+            let read = handle.read(&mut prefix)?;
+            if prefix[..read].contains(&0) {
+                continue;
+            }
+            return Ok(ProbeOutcome::fail(format!(
+                "text-like distributed file {} exceeds the 1 MiB §23 scan limit",
+                rel.display()
+            )));
+        }
+        let bytes = std::fs::read(&file)?;
+        let Ok(text) = std::str::from_utf8(&bytes) else {
+            if bytes.contains(&0) {
+                continue;
+            }
+            return Ok(ProbeOutcome::fail(format!(
+                "text-like distributed file {} is not UTF-8 and could not be scanned",
+                rel.display()
+            )));
+        };
+        for (line_index, line) in text.lines().enumerate() {
+            let searchable = line.to_lowercase();
+            for (marker_index, marker) in markers.iter().enumerate() {
+                let leaked = searchable.match_indices(marker).any(|(start, _)| {
+                    !own.is_allowed_occurrence(&searchable, marker, start, start + marker.len())
+                });
+                if leaked {
+                    return Ok(ProbeOutcome::fail(format!(
+                        "configured user-specific marker #{} found in {}:{}",
+                        marker_index + 1,
+                        rel.display(),
+                        line_index + 1
+                    )));
+                }
+            }
+        }
+    }
+    Ok(ProbeOutcome::pass(format!(
+        "no configured user-specific markers found ({} marker(s)); own public coordinates exempt",
+        context.user_specific_deny_list.len()
+    )))
+}
+
+#[derive(Default)]
+struct OwnCoordinates {
+    owner: Option<String>,
+    repo: Option<String>,
+}
+
+impl OwnCoordinates {
+    fn is_allowed_occurrence(&self, line: &str, marker: &str, start: usize, end: usize) -> bool {
+        let (Some(owner), Some(repo)) = (&self.owner, &self.repo) else {
+            return false;
+        };
+        let owner = owner.to_lowercase();
+        let repo = repo.to_lowercase();
+
+        // The repository/package name is intrinsically this project's public identity, including
+        // package suffixes such as `<repo>-cli`.
+        if marker == repo {
+            return true;
+        }
+        // An owner is allowed only as the owner segment of a coordinate. A separately configured
+        // private repository marker on the same line remains visible and still fails.
+        if marker == owner && line.as_bytes().get(end) == Some(&b'/') {
+            return true;
+        }
+
+        // For markers that overlap an own coordinate, exempt only this specific occurrence. Never
+        // delete text before scanning: deletion can concatenate or erase unrelated private names.
+        for coordinate in [
+            format!("{owner}/{repo}"),
+            format!("{owner}/homebrew-{repo}"),
+        ] {
+            for (coordinate_start, _) in line.match_indices(&coordinate) {
+                let coordinate_end = coordinate_start + coordinate.len();
+                if start >= coordinate_start && end <= coordinate_end {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}
+
+fn own_coordinates(repo: &Path) -> std::io::Result<OwnCoordinates> {
+    let dot_git = repo.join(".git");
+    let config = if dot_git.is_dir() {
+        Some(dot_git.join("config"))
+    } else if dot_git.is_file() {
+        let pointer = std::fs::read_to_string(&dot_git)?;
+        pointer
+            .trim()
+            .strip_prefix("gitdir:")
+            .map(str::trim)
+            .map(|path| {
+                let gitdir = PathBuf::from(path);
+                let gitdir = if gitdir.is_absolute() {
+                    gitdir
+                } else {
+                    repo.join(gitdir)
+                };
+                let local = gitdir.join("config");
+                if local.is_file() {
+                    local
+                } else {
+                    let common = std::fs::read_to_string(gitdir.join("commondir"))
+                        .unwrap_or_else(|_| ".".to_string());
+                    gitdir.join(common.trim()).join("config")
+                }
+            })
+    } else {
+        None
+    };
+
+    if let Some(config) = config {
+        if let Ok(contents) = std::fs::read_to_string(config) {
+            let mut in_origin = false;
+            for line in contents.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with('[') {
+                    in_origin = trimmed == "[remote \"origin\"]";
+                    continue;
+                }
+                if !in_origin {
+                    continue;
+                }
+                let Some((key, value)) = trimmed.split_once('=') else {
+                    continue;
+                };
+                if key.trim() == "url" {
+                    if let Some((owner, name)) = parse_github_coordinate(value.trim()) {
+                        return Ok(OwnCoordinates {
+                            owner: Some(owner),
+                            repo: Some(name),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(coordinates_from_manifest(repo).unwrap_or_default())
+}
+
+fn coordinates_from_manifest(repo: &Path) -> Option<OwnCoordinates> {
+    let contents = std::fs::read_to_string(repo.join("Cargo.toml")).ok()?;
+    let manifest: toml::Value = contents.parse().ok()?;
+    let repository = manifest
+        .get("package")
+        .and_then(|package| package.get("repository"))
+        .or_else(|| {
+            manifest
+                .get("workspace")
+                .and_then(|workspace| workspace.get("package"))
+                .and_then(|package| package.get("repository"))
+        })?
+        .as_str()?;
+    let (owner, repo) = parse_github_coordinate(repository)?;
+    Some(OwnCoordinates {
+        owner: Some(owner),
+        repo: Some(repo),
+    })
+}
+
+fn parse_github_coordinate(url: &str) -> Option<(String, String)> {
+    let path = url
+        .strip_prefix("git@github.com:")
+        .or_else(|| url.strip_prefix("https://github.com/"))
+        .or_else(|| url.strip_prefix("ssh://git@github.com/"))?;
+    let mut parts = path
+        .trim_end_matches('/')
+        .trim_end_matches(".git")
+        .split('/');
+    let owner = parts.next()?.to_string();
+    let repo = parts.next()?.to_string();
+    (!owner.is_empty() && !repo.is_empty()).then_some((owner, repo))
+}
+
+fn distributed_text_candidates(repo: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let output = std::process::Command::new("git")
+        .args(["-C", repo.to_string_lossy().as_ref(), "ls-files", "-z"])
+        .output();
+    if let Ok(output) = output {
+        if output.status.success() {
+            let mut files = output
+                .stdout
+                .split(|byte| *byte == 0)
+                .filter(|path| !path.is_empty())
+                .filter_map(|path| std::str::from_utf8(path).ok())
+                .map(PathBuf::from)
+                .filter(|path| {
+                    !path.is_absolute()
+                        && path
+                            .components()
+                            .all(|component| matches!(component, std::path::Component::Normal(_)))
+                })
+                .map(|path| repo.join(path))
+                .filter(|path| {
+                    std::fs::symlink_metadata(path)
+                        .is_ok_and(|metadata| metadata.file_type().is_file())
+                })
+                .collect::<Vec<_>>();
+            files.sort();
+            return Ok(files);
+        }
+    }
+
+    // Synthetic fixtures and source archives may not have a functioning git command. Fall back
+    // to a bounded tree walk with component-level exclusions.
+    let mut files = Vec::new();
+    collect_text_candidates(repo, repo, &mut files)?;
+    Ok(files)
+}
+
+fn collect_text_candidates(
+    root: &Path,
+    dir: &Path,
+    files: &mut Vec<PathBuf>,
+) -> std::io::Result<()> {
+    let mut entries = std::fs::read_dir(dir)?.collect::<Result<Vec<_>, _>>()?;
+    entries.sort_by_key(std::fs::DirEntry::file_name);
+    for entry in entries {
+        let path = entry.path();
+        let rel = path.strip_prefix(root).unwrap_or(&path);
+        // The source-archive fallback excludes metadata/build/scratch components at any depth.
+        let excluded_component = rel.components().any(|component| {
+            matches!(
+                component.as_os_str().to_str(),
+                Some(".git" | "target" | "node_modules" | "history")
+            )
+        });
+        if excluded_component {
+            continue;
+        }
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            collect_text_candidates(root, &path, files)?;
+        } else if kind.is_file() {
+            files.push(path);
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -324,6 +605,94 @@ mod tests {
                 "probe id {id:?} missing from the mechanical_probe registry"
             );
         }
+    }
+
+    #[test]
+    fn public_artifact_probe_flags_a_configured_private_marker() {
+        let repo = TmpRepo::new("private-marker");
+        repo.touch("src/defaults.rs");
+        std::fs::write(
+            repo.path.join("src/defaults.rs"),
+            "const DEFAULT_REPO: &str = \"private-widget\";",
+        )
+        .unwrap();
+        let deny = BTreeSet::from(["private-widget".to_string()]);
+        let context = ProbeContext {
+            user_specific_deny_list: &deny,
+        };
+        let outcome = probe_public_artifact_specifics(&repo.path, &context).unwrap();
+        assert!(!outcome.passed);
+        assert!(outcome.message.contains("src/defaults.rs:1"));
+    }
+
+    #[test]
+    fn public_artifact_probe_exempts_the_projects_own_public_coordinates() {
+        let repo = TmpRepo::new("own-coordinates");
+        repo.mkdir(".git");
+        std::fs::write(
+            repo.path.join(".git/config"),
+            "[remote \"origin\"]\n    url = git@github.com:example-owner/example-tool.git\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo.path.join("README.md"),
+            "[![CI](https://github.com/example-owner/example-tool/actions/badge.svg)]\n\
+             brew install example-owner/example-tool/example-tool\n\
+             https://github.com/example-owner/homebrew-example-tool\n\
+             https://github.com/example-owner/public-dependency\n",
+        )
+        .unwrap();
+        let deny = BTreeSet::from(["example-owner".to_string(), "example-tool".to_string()]);
+        let context = ProbeContext {
+            user_specific_deny_list: &deny,
+        };
+        let outcome = probe_public_artifact_specifics(&repo.path, &context).unwrap();
+        assert!(outcome.passed, "{}", outcome.message);
+    }
+
+    #[test]
+    fn public_artifact_probe_derives_own_coordinates_from_a_package_manifest_without_git() {
+        let repo = TmpRepo::new("manifest-coordinates");
+        std::fs::write(
+            repo.path.join("Cargo.toml"),
+            "[package]\nname = \"example-tool\"\nversion = \"0.1.0\"\nrepository = \"https://github.com/example-owner/example-tool\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo.path.join("README.md"),
+            "https://github.com/example-owner/example-tool\n",
+        )
+        .unwrap();
+        let deny = BTreeSet::from(["example-owner".to_string(), "example-tool".to_string()]);
+        let context = ProbeContext {
+            user_specific_deny_list: &deny,
+        };
+        let outcome = probe_public_artifact_specifics(&repo.path, &context).unwrap();
+        assert!(outcome.passed, "{}", outcome.message);
+    }
+
+    #[test]
+    fn public_artifact_probe_still_flags_an_other_private_repo_under_the_owner() {
+        let repo = TmpRepo::new("other-private-coordinate");
+        repo.mkdir(".git");
+        std::fs::write(
+            repo.path.join(".git/config"),
+            "[remote \"origin\"]\n    url = https://github.com/example-owner/example-tool.git\n",
+        )
+        .unwrap();
+        std::fs::write(
+            repo.path.join("README.md"),
+            "https://github.com/example-owner/private-widget\n",
+        )
+        .unwrap();
+        let deny = BTreeSet::from(["example-owner".to_string(), "private-widget".to_string()]);
+        let context = ProbeContext {
+            user_specific_deny_list: &deny,
+        };
+        let outcome = probe_public_artifact_specifics(&repo.path, &context).unwrap();
+        assert!(!outcome.passed);
+        assert!(outcome.message.contains("README.md:1"));
+        assert!(!outcome.message.contains("private-widget"));
     }
 
     #[test]

@@ -45,10 +45,10 @@ can't drift → **§8** `config path` + `config show --json` with per-value prov
 **238 tests green.** Note: the `cli-canon` lane duplicated `canon-rollout` (two audits filed the same
 §8/§14 work under different slugs) — collapsed into one lane, each unit closed both twins._
 
-_**🔒 PUBLICNESS DEFECT — found, fixed, made a RULE.** `0.1.1`/`0.2.0` shipped **one user's
-environment as built-in defaults** to crates.io: `gh_account: "jarimustonen"`, `repo_root:
-"~/Sources"`, and a 7-tool family list naming **three PRIVATE repos** (`crmctl`, `tilictl`,
-`intakectl`). Fixed in **`portable-neutral-defaults`**: `gh_account`/`repo_root` are now
+_**🔒 PUBLICNESS DEFECT: found, fixed, made a RULE.** `0.1.1`/`0.2.0` shipped **one user's
+environment as built-in defaults** to crates.io: a maintainer account, a personal repository-root
+convention, and a family-tool list naming **three private repos**. Fixed in
+**`portable-neutral-defaults`**: `gh_account`/`repo_root` are now
 `Option<String>` and `None` by default, `family_tools` defaults empty, `tw` off; the environment
 comes from `~/.config/project-canon/config.toml` **outside** the repo (`config show --json` proves it
 — every value reports `"source": "file"`). `crates/` greps clean for every user-specific token.
@@ -135,7 +135,7 @@ design the "actually execute/probe the target" mechanics once, for both.
 **Also open:** `project-canon-v0` epic looks finishable — worth a close pass.
 
 **v0 scope discipline (ADR 0009 §6): a LIFT, not a greenfield canon — ✅ COMPLETE, ✅ RELEASED (0.1.1).**
-✅ `cli` profile (§1–§22 lift); ✅ base canon seeded; ✅ `service`/`library`/`release` named-but-empty
+✅ `cli` profile (§1–§23 lift); ✅ base canon seeded; ✅ `service`/`library`/`release` named-but-empty
 extension points; ✅ env specifics externalized; ✅ `new`/`doctor`/`review` + skill-install shipped;
 ✅ **first release cut & public**. **Path to adoption:** ✅ release → ✅ **`homebase-canon-cutover`** (homebase repo) → selected active repos switched over.
 

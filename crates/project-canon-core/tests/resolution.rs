@@ -1,14 +1,14 @@
 //! Done-criteria integration tests for the base-canon + archetype-profile model.
 //!
 //! These assert the contract the issue's Done criteria name, against the public API only:
-//! - the `cli` profile resolves to the §1–§22 section-set;
+//! - the `cli` profile resolves to the §1–§23 section-set;
 //! - the base canon resolves to its seeded sections;
 //! - `service`/`library`/`release` exist as named-but-empty profiles that resolve empty.
 
 use project_canon_core::{AppStatus, Archetype, Model, Question, Questionnaire};
 
 #[test]
-fn cli_profile_resolves_to_sections_1_through_22() {
+fn cli_profile_resolves_to_sections_1_through_23() {
     let model = Model::standard();
     let q = Questionnaire::builder(Archetype::Cli)
         .all_conditionals_yes()
@@ -18,24 +18,24 @@ fn cli_profile_resolves_to_sections_1_through_22() {
     // The section-set membership is exactly §1..=§22.
     assert_eq!(
         resolution.canon_section_set(&model),
-        (1u8..=22).collect::<Vec<_>>()
+        (1u8..=23).collect::<Vec<_>>()
     );
     // With every conditional satisfied, all of §1..=§22 apply.
     assert_eq!(
         resolution.applicable_canon_sections(&model),
-        (1u8..=22).collect::<Vec<_>>()
+        (1u8..=23).collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn base_canon_resolves_to_its_seeded_sections() {
     let model = Model::standard();
-    // Seeded repo-general canon sections: §10, §15, §16, §17, §22.
+    // Seeded repo-general canon sections: §10, §15, §16, §17, §22, §23.
     let q = Questionnaire::builder(Archetype::Service).build();
     let base_only = model.resolve(&q);
     assert_eq!(
         base_only.canon_section_set(&model),
-        vec![10u8, 15, 16, 17, 22]
+        vec![10u8, 15, 16, 17, 22, 23]
     );
 
     // Plus the create-project scaffold dims, all Always-applicable.
@@ -69,7 +69,7 @@ fn service_library_release_are_named_but_empty_extension_points() {
         let resolution = model.resolve(&Questionnaire::builder(archetype).build());
         assert_eq!(
             resolution.canon_section_set(&model),
-            vec![10u8, 15, 16, 17, 22],
+            vec![10u8, 15, 16, 17, 22, 23],
             "{} must resolve to base canon only",
             archetype.slug()
         );

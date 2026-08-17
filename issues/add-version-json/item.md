@@ -24,7 +24,7 @@ Add the canon §10 `version --json` drift contract for `project-canon`.
 
 Comparative audit evidence:
 
-- `project-canon review --assume-defaults /Users/jari/Sources/project-canon` left §10 as manual-verify.
+- `project-canon review --assume-defaults <personal-repo-root>/project-canon` left §10 as manual-verify.
 - Manual probe: `project-canon --version --json` prints human prose and ignores the requested JSON shape.
 - Manual probe: `project-canon version --json` is not implemented.
 

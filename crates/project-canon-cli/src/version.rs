@@ -2,7 +2,7 @@
 
 use std::process::ExitCode;
 
-use project_canon_core::Archetype;
+use project_canon_core::{Archetype, CANON_SECTION_COUNT, CANON_VERSION};
 
 use crate::error::{fail, json_requested, write_stdout, CliError};
 use crate::json::Json;
@@ -113,6 +113,15 @@ fn payload() -> Json {
             "supported_schemas".into(),
             Json::Array(vec![Json::Int(SCHEMA_VERSION)]),
         ),
+        ("canon_version".into(), Json::Int(i64::from(CANON_VERSION))),
+        (
+            "canon_sections".into(),
+            Json::Array(
+                (1..=CANON_SECTION_COUNT)
+                    .map(|section| Json::Int(i64::from(section)))
+                    .collect(),
+            ),
+        ),
         (
             "supported_profiles".into(),
             Json::Array(
@@ -163,6 +172,8 @@ mod tests {
             "commit",
             "build_provenance",
             "supported_schemas",
+            "canon_version",
+            "canon_sections",
             "supported_profiles",
             "supported_surfaces",
             "skills",

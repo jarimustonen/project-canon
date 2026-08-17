@@ -2,7 +2,7 @@
 
 Project-scoped conformance tool for the AI-first CLI / project family. Ships a **base
 project canon** plus **per-archetype profiles** (`cli`, `service`, …), with the AI-first CLI
-canon (`AGENTS-AI-FIRST-CLI.md` §1–§22) as the `cli` profile. Intended verb surface:
+canon (`AGENTS-AI-FIRST-CLI.md` §1–§23) as the `cli` profile. Intended verb surface:
 `new` (scaffold a conformant repo), `doctor` (machine conformance gate for CI), `review`
 (recommending audit). Consumes an expanding dimension-discovery registry. See homebase
 **ADR 0009** (`docs/decisions/0009-project-canon-scope.md`) for the scope/subsumption/name
@@ -70,8 +70,8 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
   never a guess at someone's environment. Fixtures and examples use obviously fictional
   values. **Check this before every publish**, and treat any new default, scaffold template,
   or `config`-surfaced value as a place this can regress. This rule was written after
-  `0.1.1`/`0.2.0` shipped `gh_account: "jarimustonen"`, `repo_root: "~/Sources"`, and a
-  family-tool list naming three *private* repos to crates.io — see `portable-neutral-defaults`
+  `0.1.1`/`0.2.0` shipped a maintainer account, a personal repository-root convention, and a
+  family-tool list naming three *private* repos to crates.io: see `portable-neutral-defaults`
   (the cleanup) and `canon-no-user-specifics` (making it a `doctor`-enforced canon section).
 - **Green gate** (must pass before a unit counts as landed):
   - `cargo fmt --all --check`

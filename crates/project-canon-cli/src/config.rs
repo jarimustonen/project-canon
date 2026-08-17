@@ -157,6 +157,7 @@ fn parse_file(path: &PathBuf) -> Result<EnvConfigLayer, ConfigError> {
                 | "tw_projects_conf"
                 | "workmux_emoji_prefix"
                 | "ci_release_pattern"
+                | "user_specific_deny_list"
                 | "repo_overrides"
         ) {
             return Err(ConfigError::Validation(format!(
@@ -222,6 +223,10 @@ fn parse_file(path: &PathBuf) -> Result<EnvConfigLayer, ConfigError> {
                 .collect::<Result<_, _>>()?,
         ),
     };
+    let user_specific_deny_list = match table.get("user_specific_deny_list") {
+        None => None,
+        Some(value) => Some(parse_string_set(value, "user_specific_deny_list", path)?),
+    };
     let repo_overrides = match table.get("repo_overrides") {
         None => BTreeMap::new(),
         Some(value) => value
@@ -272,7 +277,40 @@ fn parse_file(path: &PathBuf) -> Result<EnvConfigLayer, ConfigError> {
             string("ci_release_pattern")?,
             path,
         )?,
+        user_specific_deny_list,
     })
+}
+
+fn parse_string_set(
+    value: &toml::Value,
+    key: &str,
+    path: &Path,
+) -> Result<std::collections::BTreeSet<String>, ConfigError> {
+    value
+        .as_array()
+        .ok_or_else(|| {
+            ConfigError::Validation(format!(
+                "config: {key} in {} must be an array of strings",
+                path.display()
+            ))
+        })?
+        .iter()
+        .map(|value| {
+            let item = value.as_str().ok_or_else(|| {
+                ConfigError::Validation(format!(
+                    "config: {key} in {} must be an array of strings",
+                    path.display()
+                ))
+            })?;
+            if item.trim().is_empty() {
+                return Err(ConfigError::Validation(format!(
+                    "config: {key} in {} must not contain empty values",
+                    path.display()
+                )));
+            }
+            Ok(item.trim().to_string())
+        })
+        .collect()
 }
 
 fn non_empty_file_value(
@@ -350,6 +388,10 @@ fn show_payload(resolved: &ResolvedConfig) -> Json {
     let ci_source = source(
         file.ci_release_pattern.is_some(),
         env.ci_release_pattern.is_some(),
+    );
+    let deny_source = source(
+        file.user_specific_deny_list.is_some(),
+        env.user_specific_deny_list.is_some(),
     );
     let family_repos = cfg
         .family_repos()
@@ -468,6 +510,19 @@ fn show_payload(resolved: &ResolvedConfig) -> Json {
                     "PROJECT_CANON_CI_RELEASE_PATTERN",
                 ),
                 false,
+            ),
+        ),
+        (
+            "user_specific_deny_list".into(),
+            value(
+                Json::Array(cfg.user_specific_deny_list.iter().map(Json::str).collect()),
+                deny_source,
+                detail(
+                    deny_source,
+                    &resolved.path,
+                    "PROJECT_CANON_USER_SPECIFIC_DENY_LIST",
+                ),
+                true,
             ),
         ),
     ]);

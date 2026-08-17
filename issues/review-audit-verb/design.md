@@ -96,7 +96,7 @@ candidate list (`discovery_candidates: []`) plus a printed pointer explaining th
 candidates are staged against homebase's `cli-canon-consolidate`:
 
 ```bash
-( cd ~/Sources/homebase && issuectl new --type task \
+( cd /tmp/example-repo && issuectl new --type task \
     --title 'cli-canon dimension: <practice>' --label cli-canon )
 ```
 

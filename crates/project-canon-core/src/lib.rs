@@ -10,9 +10,9 @@
 //! - A [`Dimension`] is the unit of conformance — a canon §N section or a create-project scaffold
 //!   requirement, unified so base and profiles are plain id-sets.
 //! - The **base canon** holds the repo-invariant dimensions: the repo-general canon sections
-//!   (§10, §15–§17, §22) plus the create-project scaffold dims.
+//!   (§10, §15–§17, §22–§23) plus the create-project scaffold dims.
 //! - A [`Profile`] is a named section-set + a probe registry. Only [`Archetype::Cli`] has content
-//!   at v0 (the `AGENTS-AI-FIRST-CLI.md` §1–§22 lift); `service`/`library`/`release` are
+//!   at v0 (the `AGENTS-AI-FIRST-CLI.md` §1–§23 lift); `service`/`library`/`release` are
 //!   named-but-empty extension points.
 //! - The [`Questionnaire`] *characterizes* a repo (archetype + the eight yes/no questions,
 //!   mirrored from `cli-canon`) and [`Model::resolve`](profile::Model::resolve) turns it into a
@@ -52,6 +52,11 @@ pub use routing::{suggested_layer, Breadth};
 /// Every canon consumer (the `new` scaffolder, the `skill` installer, both here and in the CLI)
 /// reads exactly these bytes, so no second copy can drift.
 pub const CANON: &str = include_str!("../AGENTS-AI-FIRST-CLI.md");
+
+/// Current normative canon revision.
+pub const CANON_VERSION: u8 = 3;
+/// Highest stable §N citation included in [`CANON`].
+pub const CANON_SECTION_COUNT: u8 = 23;
 
 #[cfg(test)]
 mod canon_tests {

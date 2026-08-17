@@ -29,8 +29,8 @@ merge itself is infallible.
 ## Types (all in `env.rs`, `Layer`-pure — zero I/O in core)
 
 - **`EnvConfig`** — the fully-resolved values a verb consumes:
-  - `gh_account: String` — the gh account (default `"jarimustonen"`).
-  - `repo_root: String` — the `~/Sources/<name>` location convention's base (default `"~/Sources"`);
+  - `gh_account: String` — the gh account (default `"<maintainer-account>"`).
+  - `repo_root: String` — the `<personal-repo-root>/<name>` location convention's base (default `"<personal-repo-root>"`);
     `repo_location(name) -> "<repo_root>/<name>"` computes the convention in **one** place.
   - `family_tools: BTreeSet<String>` + `repo_overrides: BTreeMap<String,String>` — the family-repo
     map. Known tools resolve by convention (`repo_location`); an override pins an off-convention

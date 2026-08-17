@@ -93,6 +93,8 @@ pub struct EnvConfig {
     pub workmux_emoji_prefix: Option<String>,
     /// Extension point for a named CI release pattern supplied by configuration.
     pub ci_release: CiReleaseHook,
+    /// Operator-supplied markers for the §23 public-artifact scan. Empty is the neutral default.
+    pub user_specific_deny_list: BTreeSet<String>,
 }
 
 impl EnvConfig {
@@ -109,6 +111,7 @@ impl EnvConfig {
             },
             workmux_emoji_prefix: None,
             ci_release: CiReleaseHook::default(),
+            user_specific_deny_list: BTreeSet::new(),
         }
     }
 
@@ -156,6 +159,9 @@ impl EnvConfig {
         }
         if let Some(v) = &layer.ci_release_pattern {
             self.ci_release.pattern = Some(v.clone());
+        }
+        if let Some(v) = &layer.user_specific_deny_list {
+            self.user_specific_deny_list = v.clone();
         }
     }
 
@@ -239,6 +245,8 @@ pub struct EnvConfigLayer {
     pub workmux_emoji_prefix: Option<String>,
     /// Override for the CI release pattern extension point.
     pub ci_release_pattern: Option<String>,
+    /// Full replacement for the §23 user-specific marker deny-list.
+    pub user_specific_deny_list: Option<BTreeSet<String>>,
 }
 
 impl EnvConfigLayer {
@@ -259,6 +267,7 @@ impl EnvConfigLayer {
     /// - `PROJECT_CANON_TW_PROJECTS_CONF`
     /// - `PROJECT_CANON_WORKMUX_EMOJI_PREFIX`
     /// - `PROJECT_CANON_CI_RELEASE_PATTERN`
+    /// - `PROJECT_CANON_USER_SPECIFIC_DENY_LIST` (comma-separated)
     ///
     /// **Strict (§1/§4), consistently:** a malformed `_ENABLED` value, an empty/whitespace-only
     /// scalar value, or a `FAMILY_TOOLS` list with an empty element are all [`EnvConfigError`]s
@@ -283,6 +292,10 @@ impl EnvConfigLayer {
             tw_projects_conf: non_empty("TW_PROJECTS_CONF", get("TW_PROJECTS_CONF"))?,
             workmux_emoji_prefix: non_empty("WORKMUX_EMOJI_PREFIX", get("WORKMUX_EMOJI_PREFIX"))?,
             ci_release_pattern: non_empty("CI_RELEASE_PATTERN", get("CI_RELEASE_PATTERN"))?,
+            user_specific_deny_list: match get("USER_SPECIFIC_DENY_LIST") {
+                None => None,
+                Some(raw) => Some(parse_non_empty_list("USER_SPECIFIC_DENY_LIST", raw)?),
+            },
         })
     }
 }
@@ -304,16 +317,20 @@ fn non_empty(suffix: &str, raw: Option<&str>) -> Result<Option<String>, EnvConfi
 /// as list syntax; an empty element (`foo,,bar`, a bare `,`, or an empty string) is an error, not
 /// a silent drop (§1).
 fn parse_family_tools(raw: &str) -> Result<BTreeSet<String>, EnvConfigError> {
+    parse_non_empty_list("FAMILY_TOOLS", raw)
+}
+
+fn parse_non_empty_list(suffix: &str, raw: &str) -> Result<BTreeSet<String>, EnvConfigError> {
     let mut set = BTreeSet::new();
     for part in raw.split(',') {
-        let tool = part.trim();
-        if tool.is_empty() {
+        let item = part.trim();
+        if item.is_empty() {
             return Err(EnvConfigError::InvalidList {
-                var: format!("{ENV_PREFIX}FAMILY_TOOLS"),
+                var: format!("{ENV_PREFIX}{suffix}"),
                 value: raw.to_string(),
             });
         }
-        set.insert(tool.to_string());
+        set.insert(item.to_string());
     }
     Ok(set)
 }
@@ -384,6 +401,7 @@ mod tests {
         assert_eq!(cfg.workmux_emoji_prefix, None);
         // The extension point is present but unpopulated at v0.
         assert_eq!(cfg.ci_release.pattern, None);
+        assert!(cfg.user_specific_deny_list.is_empty());
     }
 
     #[test]
@@ -501,6 +519,10 @@ mod tests {
                 "PROJECT_CANON_CI_RELEASE_PATTERN".to_string(),
                 "example-ci-pattern".to_string(),
             ),
+            (
+                "PROJECT_CANON_USER_SPECIFIC_DENY_LIST".to_string(),
+                "private-widget, workstation-label".to_string(),
+            ),
             // An unrelated var is ignored.
             ("HOME".to_string(), "/home/x".to_string()),
         ]);
@@ -518,6 +540,13 @@ mod tests {
         assert_eq!(
             cfg.ci_release.pattern.as_deref(),
             Some("example-ci-pattern")
+        );
+        assert_eq!(
+            cfg.user_specific_deny_list,
+            BTreeSet::from([
+                "private-widget".to_string(),
+                "workstation-label".to_string()
+            ])
         );
     }
 

@@ -38,13 +38,17 @@ fn config_show_json_matches_the_provenance_golden() {
     let config_path = config_dir.join("config.toml");
     fs::write(
         &config_path,
-        "gh_account = \"file-account\"\nrepo_root = \"/file/root\"\nfamily_tools = [\"alpha\", \"beta\"]\ntw_enabled = false\ntw_projects_conf = \"/file/tw.conf\"\nworkmux_emoji_prefix = \"🧪\"\nci_release_pattern = \"file-ci\"\n\n[repo_overrides]\nalpha = \"/override/alpha\"\n",
+        "gh_account = \"file-account\"\nrepo_root = \"/file/root\"\nfamily_tools = [\"alpha\", \"beta\"]\nuser_specific_deny_list = [\"file-private-marker\"]\ntw_enabled = false\ntw_projects_conf = \"/file/tw.conf\"\nworkmux_emoji_prefix = \"🧪\"\nci_release_pattern = \"file-ci\"\n\n[repo_overrides]\nalpha = \"/override/alpha\"\n",
     )
     .unwrap();
     let out = command(&xdg)
         .env("PROJECT_CANON_GH_ACCOUNT", "env-account")
         .env("PROJECT_CANON_REPO_ROOT", "/env/root")
         .env("PROJECT_CANON_FAMILY_TOOLS", "beta,gamma")
+        .env(
+            "PROJECT_CANON_USER_SPECIFIC_DENY_LIST",
+            "env-private-marker,workstation-label",
+        )
         .args(["config", "show", "--json"])
         .output()
         .unwrap();

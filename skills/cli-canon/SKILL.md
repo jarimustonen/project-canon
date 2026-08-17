@@ -1,10 +1,10 @@
 ---
 name: cli-canon
-description: Apply the AI-first CLI canon (AGENTS-AI-FIRST-CLI.md, §1–§22) to a family CLI — REVIEW an existing CLI against the canon and emit a conformance matrix + prioritized, per-tool recommendation findings, or GENERATE canon-conformant surface scaffolding/guidance inside an existing repo. Reads the canon fresh (it grows §19+). Use for "review/audit tool X against AGENTS-AI-FIRST-CLI", "check ossctl/issuectl/orchestratectl against the CLI canon", "which canon sections is this CLI missing", "scaffold the CLI surface for a new family tool (inside an existing repo)". Review recommends, never fixes; it stages issue commands, it does not auto-file. NOT a generic code review (/llm-review), NOT a SKILL.md review (/llm-skill-review), NOT a domain-lens audit (/review-lens-audit), NOT new-repo bootstrap (/create-project — run it first, then generate the surface).
+description: Apply the AI-first CLI canon (AGENTS-AI-FIRST-CLI.md, §1–§23) to a family CLI — REVIEW an existing CLI against the canon and emit a conformance matrix + prioritized, per-tool recommendation findings, or GENERATE canon-conformant surface scaffolding/guidance inside an existing repo. Reads the canon fresh (it grows §19+). Use for "review/audit tool X against AGENTS-AI-FIRST-CLI", "check ossctl/issuectl/orchestratectl against the CLI canon", "which canon sections is this CLI missing", "scaffold the CLI surface for a new family tool (inside an existing repo)". Review recommends, never fixes; it stages issue commands, it does not auto-file. NOT a generic code review (/llm-review), NOT a SKILL.md review (/llm-skill-review), NOT a domain-lens audit (/review-lens-audit), NOT new-repo bootstrap (/create-project — run it first, then generate the surface).
 allowed-tools: Bash, Glob, Grep, Read, Write
 ---
 
-Operationalize the **AI-first CLI canon** — `AGENTS-AI-FIRST-CLI.md`, sections §1–§22 — as
+Operationalize the **AI-first CLI canon** — `AGENTS-AI-FIRST-CLI.md`, sections §1–§23 — as
 an active **reviewer/generator** for family CLI tools. The canon is a *document*; this skill is
 the *tool* that applies it: given a family CLI (a repo or a
 binary), it either **reviews** the tool against the canon and produces actionable findings,
@@ -242,7 +242,7 @@ Follow `templates/generate-plan.md` (which uses the same eight questions above):
   §14's `--help --json` which is a known family-wide gap, §22 internal layout). Report as a
   recommendation, never a MUST failure.
 
-Canon v2 is **deliberately aspirational** — several mandates (mandatory `config`, real
+Canon v3 remains **deliberately aspirational** — several mandates (mandatory `config`, real
 provenance, the exit-code remap) make existing tools non-conformant *by design*. That gap is
 the backlog the findings populate; a `fail` against an aspirational mandate is expected and
 correct. Because such a gap recurs on **every** run, default known-aspirational fails to
@@ -271,7 +271,7 @@ correct. Because such a gap recurs on **every** run, default known-aspirational 
 
 ## Templates (the refinement surface)
 
-- `templates/conformance-probes.md` — the §1–§22 probe index (Applies / Signal / Probe / Fail
+- `templates/conformance-probes.md` — the §1–§23 probe index (Applies / Signal / Probe / Fail
   / Severity + an effect-class per probe), shared by both modes, plus the dimension-discovery
   hook. Refine probes here. (This prose index is the **seed for the Phase-4 machine-readable
   registry** — see the epic note; it is deliberately still prose so the skill stays readable.)

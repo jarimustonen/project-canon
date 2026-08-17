@@ -20,4 +20,4 @@ closed: 2026-08-14
 
 ## Description
 
-project-canon new: scaffold a repo that starts conformant — git, private GitHub, doc structure, issuectl init, base-canon files, and the selected profile's surface scaffolding (cli-canon's generate mode folded in). Subsumes create-project's generator half. Env specifics (tw/projects.conf, gh account, ~/Sources, .workmux emoji) live in the config/hook layer, NOT here. Per ADR 0009 §2/§6.
+project-canon new: scaffold a repo that starts conformant — git, private GitHub, doc structure, issuectl init, base-canon files, and the selected profile's surface scaffolding (cli-canon's generate mode folded in). Subsumes create-project's generator half. Env specifics (tw/projects.conf, gh account, <personal-repo-root>, .workmux emoji) live in the config/hook layer, NOT here. Per ADR 0009 §2/§6.

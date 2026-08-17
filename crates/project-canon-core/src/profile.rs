@@ -52,10 +52,10 @@ pub struct Model {
 impl Model {
     /// Build the standard, seeded v0 model:
     ///
-    /// - **base canon** = the repo-general canon sections (§10, §15–§17, §22) + the
+    /// - **base canon** = the repo-general canon sections (§10, §15–§17, §22–§23) + the
     ///   create-project scaffold dimensions;
-    /// - **`cli` profile** = the 17 CLI-surface canon sections (the §1–§22 sections not rooted
-    ///   in base); together with base, `cli` resolves to the full §1–§22;
+    /// - **`cli` profile** = the 17 CLI-surface canon sections (the §1–§23 sections not rooted
+    ///   in base); together with base, `cli` resolves to the full §1–§23;
     /// - **`service` / `library` / `release`** = named-but-empty extension points.
     pub fn standard() -> Self {
         let mut registry: BTreeMap<&'static str, Dimension> = BTreeMap::new();
@@ -146,7 +146,7 @@ impl Model {
     }
 
     /// The canon §N numbers a resolution of `archetype` would cover — the union of base and the
-    /// profile's canon sections. For `cli` this is the full `1..=22`.
+    /// profile's canon sections. For `cli` this is the full `1..=23`.
     pub fn canon_sections_for(&self, archetype: Archetype) -> Vec<u8> {
         let mut sections: Vec<u8> = self
             .member_ids_for(archetype)
@@ -182,7 +182,7 @@ impl Default for Model {
 /// extension-point contract (an empty profile resolves to exactly these).
 #[cfg(test)]
 pub(crate) fn base_canon_sections() -> Vec<u8> {
-    (1u8..=22)
+    (1u8..=23)
         .filter(|&n| crate::canon::is_base_section(n))
         .collect()
 }
@@ -201,7 +201,7 @@ mod tests {
     fn base_canon_holds_the_seeded_sections_and_scaffold_dims() {
         let model = Model::standard();
         // The repo-general canon sections routed to base.
-        for section in [10u8, 15, 16, 17, 22] {
+        for section in [10u8, 15, 16, 17, 22, 23] {
             let id = crate::canon::canon_id(section);
             assert!(
                 model.base_members().contains(&id),
@@ -231,11 +231,11 @@ mod tests {
     }
 
     #[test]
-    fn cli_profile_plus_base_covers_all_of_1_to_22() {
+    fn cli_profile_plus_base_covers_all_of_1_to_23() {
         let model = Model::standard();
         assert_eq!(
             model.canon_sections_for(Archetype::Cli),
-            (1u8..=22).collect::<Vec<_>>()
+            (1u8..=23).collect::<Vec<_>>()
         );
     }
 

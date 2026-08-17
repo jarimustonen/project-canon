@@ -6,10 +6,10 @@ canon. Per homebase ADR 0009 §2/§6, `project-canon` is now the maintained home
 document; homebase and other consumers are to copy this file FROM here rather than the reverse.
 Edit the canon here. The homebase-side cutover (making homebase copy from here and retiring its
 own master copy) is a documented FOLLOW-UP, tracked separately — until it lands, avoid editing
-the homebase copy so the two do not diverge. §1–§22 are a stable citation surface (never
+the homebase copy so the two do not diverge. §1–§23 are a stable citation surface (never
 renumbered); this note is the ONLY addition to the lifted content. -->
 
-**Canon version: 2** (2026-08-10). These principles apply to all CLI tools in
+**Canon version: 3** (2026-08-16). These principles apply to all CLI tools in
 this repo unless otherwise mentioned. The primary caller is often an AI agent
 (Claude Code), not a human typing in a terminal. Some conventions differ from
 human-oriented software — follow these deliberately.
@@ -1037,3 +1037,61 @@ and embedded elsewhere, and it is the precondition for factoring the canon's
 own boilerplate (envelope, `version`, `config`, `doctor`, `skill`) into one
 shared crate instead of seven near-copies. Naming it as canon means new tools
 inherit the testable, convergence-friendly shape from commit one.
+
+## 23. Public artifacts contain no user-specific facts
+
+**Applies when** any part of a tool is publicly distributed: a public repository,
+published package, generated scaffold, installed skill, documentation, test fixture,
+or other shipped content. This rule is deliberately scoped to public distribution,
+not stated unconditionally. An internal-only tool may intentionally encode its own
+organization's deployment layout; making that a universal prohibition would reject
+useful, controlled internal policy. Public distribution is the binding boundary because
+a recipient must not inherit the maintainer's private environment.
+
+A publicly distributed artifact **MUST NOT** embed facts that describe a particular
+user's or deployment's environment: personal filesystem-layout conventions, private
+repository or project names, private hostnames, internal URLs, personal account handles
+used as environment defaults, or organization-internal identifiers.
+
+- **Built-in defaults MUST be neutral.** A §8 default is shipped behavior. Making a
+  maintainer-specific default overridable does not make it portable: when unset, the
+  private value still wins. If no neutral default exists, leave the value absent and
+  return an actionable error naming the config key or environment variable to set.
+- **User and site facts MUST enter through user configuration.** Put them in §8's file,
+  environment, or explicit flag layers, outside the distributed artifact. A mechanical
+  checker MUST take its private-name deny-list from those layers; the checker itself
+  MUST ship with an empty, neutral list and MUST NOT guess from a "looks like a username"
+  heuristic.
+- **Generated and supporting content is included.** Scaffold templates and installed skill
+  text inherit the same rule. Examples, fixtures, golden files, and tests MUST use
+  obviously fictional values rather than real private accounts, paths, hosts, or projects.
+- **The project's own published coordinates are explicitly allowed.** Its public GitHub URL,
+  owner/repository coordinate, Homebrew tap, CI badge, README install command, and the public
+  coordinates of tools it genuinely depends on are not leaks. The distinguishing question is
+  whose environment the fact describes: this project's public address is valid project
+  metadata; the maintainer's other projects, private repositories, or machine layout are not.
+  Mechanical checks MUST derive the target's known-good owner and coordinates from repository
+  metadata such as its git remote and package manifests, and MUST NOT flag those coordinates.
+
+**Mechanical gate:** `doctor` MUST scan distributed text for an operator-supplied exact
+private-marker deny-list, treating each configured entry as a case-insensitive literal substring,
+and fail on a match after exempting the target project's derived
+known-good public coordinates. The deny-list itself belongs in §8 user config, never in source,
+defaults, fixtures, or generated output. With no configured markers, `doctor` reports that the
+scan is unconfigured and names the key to set; it does not invent identities.
+
+**Judgment remainder:** `review` MUST surface the cases an exact-marker scan cannot settle,
+including hostnames, internal URLs, borderline naming, whether a referenced external project is
+a genuine public dependency, and whether a generated artifact exposes deployment assumptions.
+These remain MUST-level review questions even when the mechanical subset passes.
+
+**Look for:** neutral or absent defaults; an inspectable §8 deny-list with file/env provenance;
+a `doctor` result for the exact-marker scan; derived exemptions for the repository's own public
+coordinates; fictional fixtures; and a `review` prompt covering the judgment remainder.
+
+Rationale: configuration precedence controls where a value comes from, but not whether a shipped
+fallback is safe to publish. Public packages are copied into environments the maintainer does not
+control, and defaults, templates, skills, and fixtures all travel with them. Keeping private facts
+in user config prevents accidental disclosure and prevents a public tool from silently assuming
+one person's machines, while the coordinate carve-out keeps the rule precise enough to stay
+enabled in real repositories.

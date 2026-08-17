@@ -25,7 +25,7 @@ Expose an inspectable `config` surface for the environment/project defaults that
 Comparative audit evidence:
 
 - The shipped canon §8 requires `config show` / path inspection when a tool has configuration, environment resolution, or data roots.
-- `project-canon --version` reports an env layer (`gh: jarimustonen; repo root: /Users/jari/Sources; 7 family repos`), so the tool does have resolved configuration-like state.
+- `project-canon --version` reports an env layer (`a configured account, personal repository root, and family-repo map`), so the tool does have resolved configuration-like state.
 - Manual probe: `project-canon config show --json` is not implemented.
 
 Acceptance:

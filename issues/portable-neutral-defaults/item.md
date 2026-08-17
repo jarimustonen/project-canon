@@ -28,8 +28,8 @@ user-specific facts at all; those belong in user configuration.
 ### Leaked values (all in `crates/project-canon-core/src/env.rs`)
 
 ```rust
-gh_account: "jarimustonen".to_string(),          // EnvConfig::builtin_defaults
-repo_root:  "~/Sources".to_string(),
+gh_account: "<maintainer-account>".to_string(),          // EnvConfig::builtin_defaults
+repo_root:  "<personal-repo-root>".to_string(),
 const DEFAULT_FAMILY_TOOLS: [&str; 7] = [
     "issuectl", "orchestratectl", "crmctl", "tilictl", "ossctl", "intakectl", "glasspad",
 ];

@@ -28,7 +28,7 @@ outright a rule.
 
 ### Motivation
 
-`project-canon` itself shipped `gh_account: "jarimustonen"`, `repo_root: "~/Sources"`, and a
+`project-canon` itself shipped `gh_account: "<maintainer-account>"`, `repo_root: "<personal-repo-root>"`, and a
 7-tool family list naming three **private** repositories as built-in defaults, in a public
 crate published to crates.io (see `portable-neutral-defaults`). The tool that audits the
 family's conformance violated the rule the family needed. That is exactly the class of defect
@@ -109,4 +109,22 @@ remote / package manifest), plus an operator-supplied deny-list of their own pri
 the §8 user-config layer — which keeps the check itself free of user specifics.
 
 See the refined wording in `AGENTS.md` (Operating policy, first bullet).
+
+### 2026-08-17T17:44:28Z · @agent
+
+**Implementation decisions.** §23 is binding specifically for publicly distributed artifacts,
+rather than an unconditional ban. Internal-only tools may intentionally encode controlled
+organization policy; public distribution is the precise boundary where a recipient must not
+inherit the maintainer's environment. The section is routed through the base layer because it
+governs repository and shipped-artifact content, so the `cli` profile receives it through
+`BASE ∪ PROFILE[cli]` and non-CLI profiles inherit the same publicness obligation.
+
+The mechanical subset uses the neutral `user_specific_deny_list` config key and
+`PROJECT_CANON_USER_SPECIFIC_DENY_LIST` environment override. The built-in list is empty. Matching
+is exact and case-insensitive, with no username-shape heuristic. The scanner derives the target's
+owner/repository from its git remote, exempts that project's own GitHub, badge, Homebrew, and
+install coordinates, and still flags another configured private project name under the same
+owner. `review` always retains a §23 manual-verification row after the mechanical subset passes,
+covering hostnames, internal URLs, borderline names, dependency legitimacy, and generated
+artifact assumptions.
 

@@ -30,7 +30,7 @@ Three verbs over the resolved conformance model, for the `cli` profile today:
 - **`review`** — a recommending audit against the canon: severity-triaged findings plus
   staged (printed) issue-tracker commands. It advises; it never acts.
 
-The AI-first CLI canon (`AGENTS-AI-FIRST-CLI.md`, §1–§22) is carried as the `cli` profile, and
+The AI-first CLI canon (`AGENTS-AI-FIRST-CLI.md`, §1–§23) is carried as the `cli` profile, and
 this repo is its maintained home.
 
 ## Installation
@@ -77,7 +77,9 @@ informative, non-interactive errors.
 
 Built-in environment defaults are deliberately neutral. Before using a command that creates a
 GitHub repository, configure `gh_account` in the file printed by `project-canon config path`, or
-set `PROJECT_CANON_GH_ACCOUNT`. A complete fictional family configuration is available at
+set `PROJECT_CANON_GH_ACCOUNT`. Configure §23's exact private-name scan with
+`user_specific_deny_list` or `PROJECT_CANON_USER_SPECIFIC_DENY_LIST`; the built-in list is
+intentionally empty. A complete fictional family configuration is available at
 [`docs/config.example.toml`](docs/config.example.toml); inspect the resolved values with
 `project-canon config show --json`.
 
