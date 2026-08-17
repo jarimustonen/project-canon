@@ -13,6 +13,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 <!-- oss-changelog:unreleased-end -->
 
+## [0.3.1] - 2026-08-17
+
+Repairs binary distribution. No library or CLI behaviour changes.
+
+### Fixed
+
+- The workspace manifest was missing the `[profile.dist]` Cargo profile that cargo-dist
+  builds with, so the tag-triggered release workflow failed on every target with
+  `error: profile 'dist' is not defined` → `failed to find bin project-canon`. **No release
+  since `0.2.0` attached any prebuilt binary**, which meant the shell installer URL
+  (`.../releases/download/v<ver>/project-canon-installer.sh`) 404'd and Linux installs could
+  not work at all. macOS was unaffected: crates.io publishing succeeded throughout, and the
+  Homebrew formula builds from source.
+
+### Changed
+
+- The release target matrix now covers all four required platforms — `x86_64-apple-darwin`
+  was previously absent, so Intel macOS had no prebuilt binary.
+- macOS builds run on hosted runners. A self-hosted runner override for
+  `aarch64-apple-darwin` was removed: it tied releases to one personal machine being online,
+  and it was the reason Intel macOS could not be cross-compiled.
+
 ## [0.3.0] - 2026-08-16
 
 Removes user-specific facts from the shipped artifact. `0.1.1` and `0.2.0` carried one

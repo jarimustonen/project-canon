@@ -7,10 +7,15 @@ resolver = "2"
 members = ["crates/project-canon-core", "crates/project-canon-cli"]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/jarimustonen/project-canon"
+
+# oss-dist:managed — cargo-dist build profile; refresh with /oss-dist.
+[profile.dist]
+inherits = "release"
+lto = "thin"
 
 [workspace.lints.clippy]
 # Keep the model legible; the downstream verbs copy this keel.
