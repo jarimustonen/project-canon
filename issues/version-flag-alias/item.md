@@ -2,7 +2,7 @@
 created: 2026-08-17
 updated: 2026-08-17
 type: improvement
-status: in-progress
+status: done
 priority: normal
 labels: [canon]
 lane: canon-rollout
@@ -12,6 +12,8 @@ commits:
   summary: make --version a full version verb alias
 - hash: bd566a4
   summary: scope version alias dispatch and enforce text/json runtime equivalence
+closed: 2026-08-17
+closed_by: agent
 ---
 
 # --version must be a full alias of the version verb
