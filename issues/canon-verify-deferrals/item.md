@@ -2,7 +2,7 @@
 created: 2026-08-17
 updated: 2026-08-17
 type: improvement
-status: in-progress
+status: done
 priority: high
 related: ['@canon-no-user-specifics']
 lane: canon-rollout
@@ -14,6 +14,8 @@ commits:
   summary: record canon deferral work start
 - hash: c1c5239
   summary: verify deferral issue ownership with canon section 24
+closed: 2026-08-17
+closed_by: agent
 ---
 
 # Canon rule: a deferral justification must be verified, not inherited
