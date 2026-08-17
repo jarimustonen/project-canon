@@ -73,7 +73,8 @@ const ROOT: Command = Command {
         },
         Flag {
             name: "--version",
-            summary: "Full alias of the version verb; honors --json.",
+            summary:
+                "Full alias of the version verb; honors --json. Prefer `version` in automation.",
             value_name: None,
             default: None,
             accepted_values: &[],

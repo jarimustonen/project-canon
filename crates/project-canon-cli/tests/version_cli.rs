@@ -25,6 +25,22 @@ fn code(output: &Output) -> i32 {
     output.status.code().expect("exited with a code")
 }
 
+fn assert_same_output(alias_args: &[&str], verb_args: &[&str]) {
+    let alias = run(alias_args);
+    let verb = run(verb_args);
+    assert_eq!(code(&alias), code(&verb), "alias args: {alias_args:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&alias.stdout),
+        String::from_utf8_lossy(&verb.stdout),
+        "stdout; alias args: {alias_args:?}"
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&alias.stderr),
+        String::from_utf8_lossy(&verb.stderr),
+        "stderr; alias args: {alias_args:?}"
+    );
+}
+
 /// Normalize values which legitimately change between builds, while preserving the complete
 /// shape, stable keys, ordering, and every non-volatile value in the golden contract.
 fn normalize_json(output: &str) -> String {
@@ -119,16 +135,49 @@ fn version_json_has_valid_commit_or_explicit_null_provenance() {
 #[test]
 fn version_text_spellings_are_identical_and_human_readable() {
     let verb = run(&["version"]);
-    let alias = run(&["--version"]);
-    assert_eq!(code(&alias), code(&verb));
-    assert_eq!(alias.stdout, verb.stdout);
-    assert_eq!(alias.stderr, verb.stderr);
+    assert_same_output(&["--version"], &["version"]);
     assert_eq!(code(&verb), 0);
     assert!(verb.stderr.is_empty());
     let stdout = String::from_utf8(verb.stdout).unwrap();
     assert_eq!(
         stdout,
         format!("project-canon {}\n", env!("CARGO_PKG_VERSION"))
+    );
+}
+
+#[test]
+fn alias_uses_the_version_parser_for_help_and_errors() {
+    for (alias, verb) in [
+        (
+            ["--version", "--help"].as_slice(),
+            ["version", "--help"].as_slice(),
+        ),
+        (
+            ["--version", "--unknown"].as_slice(),
+            ["version", "--unknown"].as_slice(),
+        ),
+        (
+            ["--version", "--version"].as_slice(),
+            ["version", "--version"].as_slice(),
+        ),
+        (
+            ["--json", "--version", "--unknown"].as_slice(),
+            ["version", "--json", "--unknown"].as_slice(),
+        ),
+    ] {
+        assert_same_output(alias, verb);
+    }
+}
+
+#[test]
+fn version_flag_after_a_selected_verb_is_not_hijacked() {
+    let out = run(&["review", "--version"]);
+    assert_eq!(code(&out), 1);
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(stderr.contains("unknown flag: --version"), "{stderr}");
+    assert!(
+        !stderr.contains("unexpected argument: \"review\""),
+        "{stderr}"
     );
 }
 

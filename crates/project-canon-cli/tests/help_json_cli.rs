@@ -81,6 +81,7 @@ fn root_help_json_matches_the_golden_shape_and_lists_verbs() {
         "{summary}"
     );
     assert!(summary.contains("honors --json"), "{summary}");
+    assert!(summary.contains("Prefer `version`"), "{summary}");
     assert!(!summary.contains("text-only"), "{summary}");
 }
 

@@ -384,12 +384,15 @@ accordingly:
   global `--json`. `version` is the canonical instance of this rule (it is
   the one an agent reaches for first and the one most often left as an
   `--output`-only special case), but the rule is general: one JSON switch,
-  honored everywhere. The global **`--version` flag is a full alias of the
-  `version` subcommand**: both spellings produce identical output and exit
-  codes in text and JSON modes, and flag order does not matter (`<tool>
-  --version --json` equals `<tool> --json --version` equals `<tool> version
-  --json`). The `version` verb remains the canonical form agents should
-  prefer; the flag is equally capable, but less preferred
+  honored everywhere. The top-level **`--version` flag is a full alias of
+  the `version` subcommand**: both spellings produce byte-identical stdout
+  and stderr plus the same exit code in text and JSON modes. It is recognized
+  as the first token, or immediately after a leading `--json`; once a
+  subcommand or `--` has been seen, that parser owns the remaining flags.
+  Thus `<tool> --version --json` equals `<tool> --json --version` equals
+  `<tool> version --json`. The `version` verb remains the canonical form
+  agents should prefer; structured help presents `--version` as its equally
+  capable alias rather than as a lesser version surface
 - The `commit` field must be **real build provenance, not a placeholder.**
   Stamp the git SHA the binary was built from at build time (a `build.rs`
   that reads the SHA, or the equivalent for the toolchain). Two concrete,

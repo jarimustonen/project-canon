@@ -53,15 +53,19 @@ fn main() -> ExitCode {
     }
 }
 
-/// Rewrite the global `--version` compatibility spelling to the canonical `version` verb.
+/// Rewrite the top-level `--version` compatibility spelling to the canonical `version` verb.
 ///
-/// Moving the verb to the front makes global-flag order immaterial: both `--version --json` and
-/// `--json --version` enter exactly the same parser path as `version --json`. Leaving any second
-/// `--version` in place preserves strict repeated/unknown-flag validation in [`version::run`].
-fn normalize_version_alias(args: &mut Vec<String>) {
-    if let Some(index) = args.iter().position(|arg| arg == "--version") {
-        args.remove(index);
-        args.insert(0, "version".to_string());
+/// Only the two alias positions defined by canon §10 are normalized: first in argv, or immediately
+/// after a leading `--json`. Once a verb or `--` has been seen, that parser owns every remaining
+/// token, so a subcommand argument spelled `--version` is never stolen by top-level dispatch.
+fn normalize_version_alias(args: &mut [String]) {
+    match args {
+        [json, alias, ..] if json == "--json" && alias == "--version" => {
+            *json = "version".to_string();
+            *alias = "--json".to_string();
+        }
+        [alias, ..] if alias == "--version" => *alias = "version".to_string(),
+        _ => {}
     }
 }
 

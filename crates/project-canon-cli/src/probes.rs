@@ -533,24 +533,7 @@ fn probe_config_surface(runner: &RuntimeRunner) -> RuntimeCheck {
 
 fn version_json(runner: &RuntimeRunner) -> RuntimeCheck<Value> {
     let args = ["version", "--json"];
-    let verb = invoke(runner, &args)?;
-    for alias_args in [
-        ["--version", "--json"].as_slice(),
-        ["--json", "--version"].as_slice(),
-    ] {
-        let alias = invoke(runner, alias_args)?;
-        if alias.code != verb.code
-            || alias.stdout.as_slice() != verb.stdout.as_slice()
-            || alias.stderr.as_slice() != verb.stderr.as_slice()
-        {
-            return Err(RuntimeCheckError::Gap(format!(
-                "{} output or exit code differs from {}",
-                display_args(alias_args),
-                display_args(&args)
-            )));
-        }
-    }
-    let value = expect_json(&verb, &args, &[0])?;
+    let value = expect_json(&invoke(runner, &args)?, &args, &[0])?;
     let schema = value.get("schema_version").and_then(Value::as_i64);
     let valid = schema_object(&value)
         && object_has(&value, "supported_schemas", |v| {
@@ -587,9 +570,59 @@ fn version_json(runner: &RuntimeRunner) -> RuntimeCheck<Value> {
     }
 }
 
+fn require_same_capture(
+    canonical_args: &[&str],
+    canonical: &ChildCapture,
+    alias_args: &[&str],
+    alias: &ChildCapture,
+) -> RuntimeCheck<()> {
+    let mismatch = if alias.code != canonical.code {
+        Some(format!("exit code {} != {}", alias.code, canonical.code))
+    } else if alias.stdout != canonical.stdout {
+        Some(format!(
+            "stdout differs ({} bytes != {} bytes)",
+            alias.stdout.len(),
+            canonical.stdout.len()
+        ))
+    } else if alias.stderr != canonical.stderr {
+        Some(format!(
+            "stderr differs ({} bytes != {} bytes)",
+            alias.stderr.len(),
+            canonical.stderr.len()
+        ))
+    } else {
+        None
+    };
+    if let Some(detail) = mismatch {
+        Err(RuntimeCheckError::Gap(format!(
+            "{} is not a full alias of {}: {detail}",
+            display_args(alias_args),
+            display_args(canonical_args)
+        )))
+    } else {
+        Ok(())
+    }
+}
+
 fn probe_version_surface(runner: &RuntimeRunner) -> RuntimeCheck {
+    let text_args = ["version"];
+    let text = invoke(runner, &text_args)?;
+    let text_alias_args = ["--version"];
+    let text_alias = invoke(runner, &text_alias_args)?;
+    require_same_capture(&text_args, &text, &text_alias_args, &text_alias)?;
+
+    let json_args = ["version", "--json"];
+    let json = invoke(runner, &json_args)?;
+    for alias_args in [
+        ["--version", "--json"].as_slice(),
+        ["--json", "--version"].as_slice(),
+    ] {
+        let alias = invoke(runner, alias_args)?;
+        require_same_capture(&json_args, &json, alias_args, &alias)?;
+    }
+    // Validate the canonical payload after proving all aliases emitted the same bytes and status.
     version_json(runner)?;
-    Ok("version --json carries schema, compatibility, provenance, and skill metadata; --version is a byte-identical full alias in either flag order".to_string())
+    Ok("version/--version are byte-identical in text and JSON modes; the JSON payload carries schema, compatibility, provenance, and skill metadata".to_string())
 }
 
 fn probe_help_surface(runner: &RuntimeRunner) -> RuntimeCheck {

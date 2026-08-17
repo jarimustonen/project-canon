@@ -119,8 +119,11 @@ step has bound it to a real, read-only command.
 - **Signal:** every `--json` payload carries `schema_version`; `$TOOL version --json` →
   `{version, commit, schema_version, supported_schemas, skills[]}`; global `--json` works on
   **every** subcommand incl. `version` (no `--output json`‑only special case); the global
-  `--version` flag is a **full alias** of the verb with identical output and exit code in text
-  and JSON modes regardless of flag order; `commit` is a **real 40‑hex SHA** or exactly `null`
+  top-level `--version` flag is a **full alias** of the verb with byte-identical stdout/stderr
+  and the same exit code in text and JSON modes. It is recognized first or immediately after a
+  leading `--json`; after a subcommand or `--`, the selected parser owns it. Structured help
+  presents it as an alias while agents prefer the canonical verb. `commit` is a **real 40‑hex
+  SHA** or exactly `null`
   + a `build_provenance {kind,note}` object, never `"unknown"`/placeholder; error envelope
   `{schema_version, error:{code,message, invalid_value,expected}}` on **stderr**; non‑fatal
   `warnings:[]` live in the **stdout** payload; deprecations emit a structured warning naming
