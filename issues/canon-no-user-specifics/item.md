@@ -11,6 +11,8 @@ blocked_by: ['@portable-neutral-defaults']
 commits:
 - hash: 2a001154c65774c1aef8b09b0532947276984dc7
   summary: mark issue in progress
+- hash: 26596a40d2f00fbb222b5dc61a999d69636e066c
+  summary: enforce neutral public artifacts with canon section 23
 ---
 
 # Canon rule: public artifacts must not embed user-specific facts
