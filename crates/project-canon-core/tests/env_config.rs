@@ -55,7 +55,7 @@ fn defaults_are_neutral_until_a_user_config_supplies_the_family_map() {
     // .workmux.yaml prefix — portable default (no glyph), overridable.
     assert_eq!(cfg.workmux_emoji_prefix, None);
 
-    // The hauis CI-release extension point exists but is unpopulated at v0.
+    // The configured CI-release-pattern extension point exists but is unpopulated at v0.
     assert_eq!(cfg.ci_release.pattern, None);
 }
 

@@ -4,7 +4,7 @@
 //! public artifact deliberately ships neutral defaults: no GitHub account, repository-root
 //! convention, or family-tool map. Operators supply their own values through configuration when a
 //! verb needs them. The layer also carries tw registration, a `.workmux.yaml` emoji prefix, and a
-//! documented extension point for a future CI release pattern.
+//! documented extension point for a named CI release pattern supplied by configuration.
 //!
 //! This is **orthogonal to [`Model`](crate::Model)**: a verb reads a `Model` (what conformance
 //! means) *and* an [`EnvConfig`] (where this environment's repos/account/registration live). The
@@ -51,16 +51,17 @@ pub struct TwRegistration {
     pub projects_conf: String,
 }
 
-/// **Documented extension point** for the future `hauis` CI release pattern (ADR 0009).
+/// **Documented extension point** for a named CI release pattern supplied by configuration
+/// (ADR 0009).
 ///
-/// Unpopulated at v0 (`pattern == None`). The field exists so the seam is stable when `hauis`
-/// lands. `#[non_exhaustive]` so `hauis` can add fields (workflow, channel, …) without breaking
-/// construction/read sites in the inheriting verbs.
+/// Unpopulated at v0 (`pattern == None`). `CiReleaseHook` can gain fields (such as workflow or
+/// channel) for a configured pattern. `#[non_exhaustive]` permits those additions without
+/// breaking downstream read sites.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub struct CiReleaseHook {
-    /// The CI release pattern name (e.g. `Some("hauis")` in the future), or `None` when no CI
-    /// release pattern is configured — the portable default.
+    /// The configured CI release pattern name. `None` (the portable default) means no CI
+    /// release pattern is configured.
     pub pattern: Option<String>,
 }
 
@@ -90,7 +91,7 @@ pub struct EnvConfig {
     /// The `.workmux.yaml` emoji prefix. `None` = no glyph (the portable default); homebase sets
     /// its own via config.
     pub workmux_emoji_prefix: Option<String>,
-    /// Extension point for the future `hauis` CI release pattern.
+    /// Extension point for a named CI release pattern supplied by configuration.
     pub ci_release: CiReleaseHook,
 }
 
@@ -498,7 +499,7 @@ mod tests {
             ),
             (
                 "PROJECT_CANON_CI_RELEASE_PATTERN".to_string(),
-                "hauis".to_string(),
+                "example-ci-pattern".to_string(),
             ),
             // An unrelated var is ignored.
             ("HOME".to_string(), "/home/x".to_string()),
@@ -514,7 +515,10 @@ mod tests {
         );
         assert!(!cfg.tw.enabled);
         assert_eq!(cfg.workmux_emoji_prefix.as_deref(), Some("🚀"));
-        assert_eq!(cfg.ci_release.pattern.as_deref(), Some("hauis"));
+        assert_eq!(
+            cfg.ci_release.pattern.as_deref(),
+            Some("example-ci-pattern")
+        );
     }
 
     #[test]
@@ -549,6 +553,7 @@ mod tests {
             "PROJECT_CANON_REPO_ROOT",
             "PROJECT_CANON_GH_ACCOUNT",
             "PROJECT_CANON_TW_PROJECTS_CONF",
+            "PROJECT_CANON_CI_RELEASE_PATTERN",
         ] {
             let vars = BTreeMap::from([(var.to_string(), "   ".to_string())]);
             let err = EnvConfigLayer::from_env_vars(&vars).expect_err("empty rejected");
