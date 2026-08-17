@@ -30,7 +30,7 @@ Three verbs over the resolved conformance model, for the `cli` profile today:
 - **`review`** — a recommending audit against the canon: severity-triaged findings plus
   staged (printed) issue-tracker commands. It advises; it never acts.
 
-The AI-first CLI canon (`AGENTS-AI-FIRST-CLI.md`, §1–§23) is carried as the `cli` profile, and
+The AI-first CLI canon (`AGENTS-AI-FIRST-CLI.md`, §1–§24) is carried as the `cli` profile, and
 this repo is its maintained home.
 
 ## Installation

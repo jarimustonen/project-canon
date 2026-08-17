@@ -6,10 +6,10 @@ canon. Per homebase ADR 0009 §2/§6, `project-canon` is now the maintained home
 document; homebase and other consumers are to copy this file FROM here rather than the reverse.
 Edit the canon here. The homebase-side cutover (making homebase copy from here and retiring its
 own master copy) is a documented FOLLOW-UP, tracked separately — until it lands, avoid editing
-the homebase copy so the two do not diverge. §1–§23 are a stable citation surface (never
+the homebase copy so the two do not diverge. §1–§24 are a stable citation surface (never
 renumbered); this note is the ONLY addition to the lifted content. -->
 
-**Canon version: 3** (2026-08-16). These principles apply to all CLI tools in
+**Canon version: 4** (2026-08-17). These principles apply to all CLI tools in
 this repo unless otherwise mentioned. The primary caller is often an AI agent
 (Claude Code), not a human typing in a terminal. Some conventions differ from
 human-oriented software — follow these deliberately.
@@ -1095,3 +1095,49 @@ control, and defaults, templates, skills, and fixtures all travel with them. Kee
 in user config prevents accidental disclosure and prevents a public tool from silently assuming
 one person's machines, while the coordinate carve-out keeps the rule precise enough to stay
 enabled in real repositories.
+
+## 24. A stated blocker is re-verified, never inherited
+
+**Applies when** a tracked configuration file, source comment, or document justifies a disabled
+feature, skipped step, or deferred piece of work by naming a blocker or an owning issue. A
+plausible comment is not evidence merely because earlier work preserved it.
+
+Before building around or preserving such a justification, an agent **MUST** re-verify its claims:
+
+- If a credential, permission, or dependency is said to be missing, check whether it now exists.
+- If an owning issue is named, check that the issue exists in the project's tracker and remains
+  open. A closed issue cannot own unfinished work.
+- If neither claim can be verified, state that explicitly and obtain a verifiable local owner
+  rather than silently propagating the comment.
+
+A cross-repository issue reference does not satisfy the mechanical ownership requirement. A
+read-only, offline check cannot prove another tracker's current state, even when the reference
+names that tracker. Cross-repository work may be linked as supporting evidence, but each named
+issue slug **MUST** have a corresponding open issue in the current project's tracker that can be
+checked locally.
+
+**Mechanical gate:** `doctor` MUST scan tracked configuration, source comments, and documentation
+for the mechanically recognizable `issue <slug>` form and the equivalent `<slug> issue` form in
+an ownership phrase. Every detected slug MUST resolve to an issue whose status remains open. A
+missing or closed issue is a finding. A reference qualified to another repository therefore cannot
+serve as the owner unless the same slug has a corresponding open local issue. The check is
+read-only and uses the target's issue files as its source of truth. Free-form references outside
+these shapes, including numeric tracker URLs, remain part of the judgment check rather than an
+invitation to guess at arbitrary prose.
+
+Historical quotations and examples are not active deferrals. When they would otherwise match the
+mechanical grammar, annotate their logical block with `canon:s24-allow: <reason>` and state why the
+reference is non-normative. This is a narrow suppression for quoted history, not a way to preserve
+an unverified current blocker.
+
+**Judgment remainder:** `review` MUST require re-verification of stated credentials, permissions,
+dependencies, and blockers that prose scanning cannot settle. Passing the issue-reference scan
+does not establish that the stated technical premise remains true.
+
+**Look for:** comments containing deferral language next to an issue slug; an open local owning
+issue; evidence that a named credential, permission, or dependency was checked now; closed or
+missing owners; and cross-repository links with no locally verifiable owner.
+
+Rationale: a deferral justification deserves the same scepticism as a review finding. Both are
+plausible prose with implied authority and no evidence attached. Re-verifying the blocker and its
+owner prevents a stale or invented reason not to do work from hardening into architecture.

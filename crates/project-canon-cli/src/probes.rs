@@ -81,6 +81,7 @@ pub fn mechanical_probe(
         "base.gitignore" => Some(|repo, _| probe_gitignore(repo)),
         "canon.s22" => Some(|repo, _| probe_core_cli_split(repo)),
         "canon.s23" => Some(probe_public_artifact_specifics),
+        "canon.s24" => Some(probe_verified_deferrals),
         _ => None,
     }
 }
@@ -89,7 +90,7 @@ pub fn mechanical_probe(
 /// lockstep with [`mechanical_probe`] and cross-checked against the model by
 /// `every_mechanical_probe_id_exists_in_the_model`.
 #[cfg(test)]
-const MECHANICAL_PROBE_IDS: [&str; 7] = [
+const MECHANICAL_PROBE_IDS: [&str; 8] = [
     "base.doc-pattern",
     "base.issue-tracking",
     "base.git-hygiene",
@@ -97,6 +98,7 @@ const MECHANICAL_PROBE_IDS: [&str; 7] = [
     "base.gitignore",
     "canon.s22",
     "canon.s23",
+    "canon.s24",
 ];
 
 /// `AGENTS.md` and `CLAUDE.md` both present as files at the repo root (§ base.doc-pattern).
@@ -216,7 +218,7 @@ fn probe_public_artifact_specifics(
         .iter()
         .map(|marker| marker.to_lowercase())
         .collect();
-    let files = distributed_text_candidates(repo)?;
+    let files = tracked_text_candidates(repo)?;
     for file in files {
         let rel = file.strip_prefix(repo).unwrap_or(&file);
         if std::fs::metadata(&file)?.len() > 1_048_576 {
@@ -263,6 +265,353 @@ fn probe_public_artifact_specifics(
         "no configured user-specific markers found ({} marker(s)); own public coordinates exempt",
         context.user_specific_deny_list.len()
     )))
+}
+
+/// §24's mechanically decidable subset. Deferral ownership is local: every recognized issue slug
+/// must resolve in this target's issue tracker. A cross-repository issue may be supporting evidence,
+/// but it cannot replace an open local mirror that doctor can verify offline.
+fn probe_verified_deferrals(
+    repo: &Path,
+    _context: &ProbeContext<'_>,
+) -> std::io::Result<ProbeOutcome> {
+    let mut findings = BTreeSet::new();
+    let mut issue_states = std::collections::BTreeMap::<String, IssueState>::new();
+    let mut references_seen = 0usize;
+    let mut skipped_files = 0usize;
+
+    for file in tracked_text_candidates(repo)? {
+        let rel = file.strip_prefix(repo).unwrap_or(&file);
+        let metadata = std::fs::metadata(&file)?;
+        if metadata.len() > 1_048_576 {
+            use std::io::Read;
+            let mut prefix = [0u8; 8192];
+            let mut handle = std::fs::File::open(&file)?;
+            let read = handle.read(&mut prefix)?;
+            if prefix[..read].contains(&0) {
+                skipped_files += 1;
+                continue;
+            }
+            skipped_files += 1;
+            continue;
+        }
+        let bytes = std::fs::read(&file)?;
+        if bytes.contains(&0) {
+            skipped_files += 1;
+            continue;
+        }
+        let Ok(text) = std::str::from_utf8(&bytes) else {
+            skipped_files += 1;
+            continue;
+        };
+        let lines: Vec<&str> = text.lines().collect();
+        let mut seen_in_file = BTreeSet::new();
+        for line_index in 0..lines.len() {
+            let mut context = Vec::new();
+            for (offset, line) in lines[line_index..lines.len().min(line_index + 3)]
+                .iter()
+                .enumerate()
+            {
+                if offset > 0 && line.trim().is_empty() {
+                    break;
+                }
+                if let Some(fragment) = scannable_fragment(rel, line) {
+                    context.push((line_index + offset + 1, fragment));
+                } else if offset > 0 {
+                    // Source code between two comments is a logical boundary, not continuation.
+                    break;
+                }
+            }
+            let suppression_start = line_index.saturating_sub(2);
+            let suppressed = lines[suppression_start..=line_index]
+                .iter()
+                .rev()
+                .take_while(|line| !line.trim().is_empty())
+                .any(|line| line.contains("canon:s24-allow"));
+            if suppressed
+                || context
+                    .iter()
+                    .any(|(_, fragment)| fragment.contains("canon:s24-allow"))
+            {
+                continue;
+            }
+            let tokens = context_tokens(&context);
+            if !looks_like_deferral(&tokens) {
+                continue;
+            }
+            for reference in issue_references(&tokens) {
+                if !seen_in_file.insert((reference.line, reference.slug.clone())) {
+                    continue;
+                }
+                references_seen += 1;
+                let state = match issue_states.get(&reference.slug) {
+                    Some(state) => state.clone(),
+                    None => {
+                        let state = resolve_issue_state(repo, &reference.slug)?;
+                        issue_states.insert(reference.slug.clone(), state.clone());
+                        state
+                    }
+                };
+                let location = format!("{}:{}", rel.display(), reference.line);
+                match state {
+                    IssueState::Open => {}
+                    IssueState::Missing => {
+                        findings.insert(format!(
+                            "deferral at {location} names unresolved local issue {:?}",
+                            reference.slug
+                        ));
+                    }
+                    IssueState::NonOpen(status) => {
+                        findings.insert(format!(
+                            "deferral at {location} names local issue {:?} with non-open status {status:?}",
+                            reference.slug
+                        ));
+                    }
+                    IssueState::Malformed => {
+                        findings.insert(format!(
+                            "deferral at {location} names local issue {:?} with malformed or missing status frontmatter",
+                            reference.slug
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    if findings.is_empty() {
+        Ok(ProbeOutcome::pass(format!(
+            "all {references_seen} detected deferral issue reference(s) resolve to open local issues; {skipped_files} binary/oversized/non-UTF-8 tracked file(s) skipped"
+        )))
+    } else {
+        let total = findings.len();
+        let sample = findings.into_iter().take(5).collect::<Vec<_>>().join("; ");
+        Ok(ProbeOutcome::fail(format!(
+            "{total} unverified deferral reference(s): {sample}"
+        )))
+    }
+}
+
+#[derive(Clone)]
+enum IssueState {
+    Open,
+    NonOpen(String),
+    Missing,
+    Malformed,
+}
+
+struct IssueReference {
+    slug: String,
+    line: usize,
+}
+
+struct ContextToken {
+    text: String,
+    line: usize,
+}
+
+fn scannable_fragment<'a>(path: &Path, line: &'a str) -> Option<&'a str> {
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("");
+    let full_text = matches!(
+        extension,
+        "md" | "mdx"
+            | "rst"
+            | "txt"
+            | "toml"
+            | "yaml"
+            | "yml"
+            | "json"
+            | "jsonc"
+            | "ini"
+            | "cfg"
+            | "conf"
+    );
+    if full_text {
+        return Some(line);
+    }
+
+    let markers: &[&str] = match extension {
+        "rs" | "js" | "jsx" | "ts" | "tsx" | "c" | "cc" | "cpp" | "h" | "hpp" | "java" | "go"
+        | "swift" => &["//", "/*"],
+        "py" | "rb" | "sh" | "bash" | "zsh" => &["#"],
+        "html" | "htm" | "xml" => &["<!--"],
+        "sql" | "lua" => &["-- "],
+        _ => &["//", "#", "/*", "<!--", "-- "],
+    };
+    comment_start_outside_quotes(line, markers)
+        .map(|(index, length)| &line[index + length..])
+        .or_else(|| {
+            line.trim_start()
+                .starts_with('*')
+                .then(|| line.trim_start_matches([' ', '*']))
+        })
+}
+
+fn comment_start_outside_quotes(line: &str, markers: &[&str]) -> Option<(usize, usize)> {
+    let bytes = line.as_bytes();
+    let mut quote = None;
+    let mut escaped = false;
+    let mut index = 0usize;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if escaped {
+            escaped = false;
+            index += 1;
+            continue;
+        }
+        if quote.is_some() && byte == b'\\' {
+            escaped = true;
+            index += 1;
+            continue;
+        }
+        if matches!(byte, b'\'' | b'"') {
+            if quote == Some(byte) {
+                quote = None;
+            } else if quote.is_none() {
+                quote = Some(byte);
+            }
+            index += 1;
+            continue;
+        }
+        if quote.is_none() {
+            if let Some(marker) = markers
+                .iter()
+                .find(|marker| bytes[index..].starts_with(marker.as_bytes()))
+            {
+                return Some((index, marker.len()));
+            }
+        }
+        index += 1;
+    }
+    None
+}
+
+fn context_tokens(lines: &[(usize, &str)]) -> Vec<ContextToken> {
+    lines
+        .iter()
+        .flat_map(|(line, text)| {
+            text.split(|character: char| !(character.is_ascii_alphanumeric() || character == '-'))
+                .filter(|token| !token.is_empty())
+                .map(|token| ContextToken {
+                    text: token.to_ascii_lowercase(),
+                    line: *line,
+                })
+        })
+        .collect()
+}
+
+fn looks_like_deferral(tokens: &[ContextToken]) -> bool {
+    tokens.iter().enumerate().any(|(index, token)| {
+        matches!(
+            token.text.as_str(),
+            "defer" | "deferred" | "deferral" | "disabled" | "skipped" | "blocked" | "blocker"
+        ) || (token.text == "owned" && tokens.get(index + 1).is_some_and(|next| next.text == "by"))
+            || (token.text == "not" && tokens.get(index + 1).is_some_and(|next| next.text == "yet"))
+            || token.text == "until"
+            || (token.text == "tracks"
+                && tokens[index + 1..tokens.len().min(index + 5)]
+                    .iter()
+                    .any(|next| matches!(next.text.as_str(), "closing" | "gap")))
+    })
+}
+
+fn issue_references(tokens: &[ContextToken]) -> Vec<IssueReference> {
+    let mut references = BTreeSet::new();
+    for (index, token) in tokens.iter().enumerate() {
+        if token.text == "issue" {
+            if let Some(slug) = tokens
+                .get(index + 1)
+                .filter(|token| is_issue_slug(&token.text))
+            {
+                references.insert((slug.line, slug.text.clone()));
+            }
+            continue;
+        }
+        if !is_issue_slug(&token.text) {
+            continue;
+        }
+        let following = &tokens[index + 1..tokens.len().min(index + 5)];
+        let preceding = &tokens[index.saturating_sub(5)..index];
+        let ownership = preceding.windows(2).any(|pair| {
+            matches!(pair[0].text.as_str(), "owned" | "blocked") && pair[1].text == "by"
+        });
+        if ownership
+            && following
+                .first()
+                .is_some_and(|candidate| candidate.text == "issue")
+        {
+            references.insert((token.line, token.text.clone()));
+        }
+    }
+    references
+        .into_iter()
+        .map(|(line, slug)| IssueReference { slug, line })
+        .collect()
+}
+
+fn is_issue_slug(token: &str) -> bool {
+    token.len() <= 128
+        && token.contains('-')
+        && token.split('-').all(|segment| {
+            !segment.is_empty()
+                && segment
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        })
+}
+
+fn resolve_issue_state(repo: &Path, slug: &str) -> std::io::Result<IssueState> {
+    // `is_issue_slug` admits no separators or dots, so this join cannot escape `issues/`.
+    let issue = repo.join("issues").join(slug).join("item.md");
+    let contents = match std::fs::read_to_string(issue) {
+        Ok(contents) => contents,
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+            ) =>
+        {
+            return Ok(IssueState::Missing)
+        }
+        Err(error) => return Err(error),
+    };
+    Ok(match issue_status(&contents) {
+        Some(status) if is_open_issue_status(status) => IssueState::Open,
+        Some(status) => IssueState::NonOpen(status.to_string()),
+        None => IssueState::Malformed,
+    })
+}
+
+fn issue_status(contents: &str) -> Option<&str> {
+    let mut lines = contents.lines();
+    if lines.next()?.trim_end() != "---" {
+        return None;
+    }
+    let mut status = None;
+    let mut closed = false;
+    for line in lines {
+        if line.trim_end() == "---" {
+            closed = true;
+            break;
+        }
+        if let Some(value) = line.strip_prefix("status:") {
+            let value = value.trim().trim_matches(['"', '\'']);
+            if status.is_some() || value.is_empty() {
+                return None;
+            }
+            status = Some(value);
+        }
+    }
+    closed.then_some(status).flatten()
+}
+
+fn is_open_issue_status(status: &str) -> bool {
+    // Mirrors the active statuses in this target's issuectl-managed `issues/.schema.yaml`.
+    matches!(
+        status,
+        "open" | "in-progress" | "testing" | "untriaged" | "deferred" | "needs-info"
+    )
 }
 
 #[derive(Default)]
@@ -401,7 +750,7 @@ fn parse_github_coordinate(url: &str) -> Option<(String, String)> {
     (!owner.is_empty() && !repo.is_empty()).then_some((owner, repo))
 }
 
-fn distributed_text_candidates(repo: &Path) -> std::io::Result<Vec<PathBuf>> {
+fn tracked_text_candidates(repo: &Path) -> std::io::Result<Vec<PathBuf>> {
     let output = std::process::Command::new("git")
         .args(["-C", repo.to_string_lossy().as_ref(), "ls-files", "-z"])
         .output();
@@ -693,6 +1042,224 @@ mod tests {
         assert!(!outcome.passed);
         assert!(outcome.message.contains("README.md:1"));
         assert!(!outcome.message.contains("private-widget"));
+    }
+
+    fn verify_deferrals(repo: &Path) -> ProbeOutcome {
+        let deny = BTreeSet::new();
+        let context = ProbeContext {
+            user_specific_deny_list: &deny,
+        };
+        probe_verified_deferrals(repo, &context).unwrap()
+    }
+
+    fn write_issue(repo: &TmpRepo, slug: &str, status: &str) {
+        let path = repo.path.join("issues").join(slug).join("item.md");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, format!("---\nstatus: {status}\n---\n\n# Fixture\n")).unwrap();
+    }
+
+    #[test]
+    fn deferral_probe_flags_an_unresolvable_reference() {
+        let repo = TmpRepo::new("unresolved-deferral");
+        let slug = ["missing", "widget"].join("-");
+        std::fs::write(
+            repo.path.join("design.md"),
+            format!("Feature disabled until issue {slug} is resolved.\n"),
+        )
+        .unwrap();
+        let outcome = verify_deferrals(&repo.path);
+        assert!(!outcome.passed);
+        assert!(outcome.message.contains("unresolved local issue"));
+    }
+
+    #[test]
+    fn deferral_probe_accepts_a_valid_open_reference() {
+        let repo = TmpRepo::new("open-deferral");
+        let slug = ["enable", "widget"].join("-");
+        write_issue(&repo, &slug, "open");
+        std::fs::write(
+            repo.path.join("design.md"),
+            format!("Feature disabled until issue {slug} is resolved.\n"),
+        )
+        .unwrap();
+        let outcome = verify_deferrals(&repo.path);
+        assert!(outcome.passed, "{}", outcome.message);
+    }
+
+    #[test]
+    fn deferral_probe_rejects_a_closed_reference() {
+        let repo = TmpRepo::new("closed-deferral");
+        let slug = ["enable", "widget"].join("-");
+        write_issue(&repo, &slug, "done");
+        std::fs::write(
+            repo.path.join("design.md"),
+            format!("Feature disabled until issue {slug} is resolved.\n"),
+        )
+        .unwrap();
+        let outcome = verify_deferrals(&repo.path);
+        assert!(!outcome.passed);
+        assert!(outcome.message.contains("non-open status \"done\""));
+    }
+
+    #[test]
+    fn deferral_probe_fails_closed_for_cross_repository_references() {
+        let repo = TmpRepo::new("cross-repo-deferral");
+        let tracker = ["example", "tracker"].join("-");
+        let slug = ["enable", "widget"].join("-");
+        std::fs::write(
+            repo.path.join("design.md"),
+            format!("Feature disabled until {tracker} issue {slug} is resolved.\n"),
+        )
+        .unwrap();
+        let outcome = verify_deferrals(&repo.path);
+        assert!(!outcome.passed);
+        assert!(outcome.message.contains("unresolved local issue"));
+    }
+
+    #[test]
+    fn cross_repository_support_passes_when_the_slug_has_an_open_local_mirror() {
+        let repo = TmpRepo::new("cross-repo-mirror");
+        let tracker = ["example", "tracker"].join("-");
+        let slug = ["enable", "widget"].join("-");
+        write_issue(&repo, &slug, "open");
+        std::fs::write(
+            repo.path.join("design.md"),
+            format!("Feature disabled until {tracker} issue {slug} is resolved.\n"),
+        )
+        .unwrap();
+        let outcome = verify_deferrals(&repo.path);
+        assert!(outcome.passed, "{}", outcome.message);
+    }
+
+    #[test]
+    fn deferral_probe_catches_an_owner_named_before_the_issue_noun() {
+        let repo = TmpRepo::new("reverse-owner");
+        let slug = ["missing", "owner"].join("-");
+        std::fs::write(
+            repo.path.join("design.md"),
+            format!("Feature is owned by the separate {slug} issue until it lands.\n"),
+        )
+        .unwrap();
+        let outcome = verify_deferrals(&repo.path);
+        assert!(!outcome.passed);
+        assert!(outcome.message.contains(&slug));
+    }
+
+    #[test]
+    fn deferral_probe_does_not_treat_a_tool_name_as_an_issue_without_the_noun() {
+        let repo = TmpRepo::new("tool-owner");
+        std::fs::write(
+            repo.path.join("design.md"),
+            "The generated file is owned by cargo-dist as a settled design boundary.\n",
+        )
+        .unwrap();
+        let outcome = verify_deferrals(&repo.path);
+        assert!(outcome.passed, "{}", outcome.message);
+    }
+
+    #[test]
+    fn source_scan_checks_comments_but_not_equivalent_code_strings() {
+        let repo = TmpRepo::new("source-comments");
+        let slug = ["missing", "owner"].join("-");
+        std::fs::write(
+            repo.path.join("example.rs"),
+            format!("const TEXT: &str = \"Feature disabled until issue {slug} lands.\";\n"),
+        )
+        .unwrap();
+        let outcome = verify_deferrals(&repo.path);
+        assert!(outcome.passed, "{}", outcome.message);
+
+        std::fs::write(
+            repo.path.join("example.rs"),
+            format!("// Feature disabled until issue {slug} lands.\n"),
+        )
+        .unwrap();
+        let outcome = verify_deferrals(&repo.path);
+        assert!(!outcome.passed);
+
+        std::fs::write(
+            repo.path.join("example.rs"),
+            format!(
+                "const URL: &str = \"https://example.invalid/#issue\"; // Feature disabled until issue {slug} lands.\n"
+            ),
+        )
+        .unwrap();
+        let outcome = verify_deferrals(&repo.path);
+        assert!(
+            !outcome.passed,
+            "a real comment after a URL string must be scanned"
+        );
+    }
+
+    #[test]
+    fn blocked_by_reverse_owner_is_detected() {
+        let repo = TmpRepo::new("blocked-owner");
+        let slug = ["missing", "owner"].join("-");
+        std::fs::write(
+            repo.path.join("design.md"),
+            format!("Feature is blocked by the separate {slug} issue.\n"),
+        )
+        .unwrap();
+        assert!(!verify_deferrals(&repo.path).passed);
+    }
+
+    #[test]
+    fn an_explicit_historical_suppression_skips_the_logical_block() {
+        let repo = TmpRepo::new("historical-allow");
+        let slug = ["old", "owner"].join("-");
+        std::fs::write(
+            repo.path.join("CHANGELOG.md"),
+            format!(
+                "<!-- canon:s24-allow: historical quotation -->\nFeature was disabled until issue {slug} landed.\n"
+            ),
+        )
+        .unwrap();
+        let outcome = verify_deferrals(&repo.path);
+        assert!(outcome.passed, "{}", outcome.message);
+    }
+
+    #[test]
+    fn issue_status_requires_closed_frontmatter_and_accepts_a_quoted_value() {
+        assert_eq!(
+            issue_status("---\nstatus: \"open\"\n---\n# body"),
+            Some("open")
+        );
+        assert_eq!(issue_status("---\nstatus: open\n# body status: done"), None);
+    }
+
+    #[test]
+    fn tracked_file_enumeration_ignores_an_untracked_deferral() {
+        let repo = TmpRepo::new("tracked-only");
+        assert!(std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&repo.path)
+            .status()
+            .unwrap()
+            .success());
+        let slug = ["missing", "owner"].join("-");
+        std::fs::write(
+            repo.path.join("untracked.md"),
+            format!("Feature disabled until issue {slug} lands.\n"),
+        )
+        .unwrap();
+        let outcome = verify_deferrals(&repo.path);
+        assert!(outcome.passed, "{}", outcome.message);
+
+        assert!(std::process::Command::new("git")
+            .args(["add", "untracked.md"])
+            .current_dir(&repo.path)
+            .status()
+            .unwrap()
+            .success());
+        let outcome = verify_deferrals(&repo.path);
+        assert!(!outcome.passed);
+    }
+
+    #[test]
+    fn the_deferral_probe_passes_on_this_repository() {
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let outcome = verify_deferrals(&workspace);
+        assert!(outcome.passed, "{}", outcome.message);
     }
 
     #[test]

@@ -1,4 +1,4 @@
-# Conformance probes — `AGENTS-AI-FIRST-CLI.md` §1–§23
+# Conformance probes — `AGENTS-AI-FIRST-CLI.md` §1–§24
 
 This is the operational checklist. **Read the canon fresh first** — it is the source
 of truth and grows (`§19+` append over time); this table is a probe index into it, not
@@ -278,6 +278,19 @@ step has bound it to a real, read-only command.
 - **Fail:** a configured private marker in shipped text; a personal path/account/private repo in
   a built-in default, fixture, scaffold, skill, or generated output; a heuristic scanner that
   flags the project's own README install line or public coordinates.
+
+### §24 A stated blocker is re-verified, never inherited · **MUST**
+- **Applies:** tracked config, source comments, or docs justify a disabled feature, skipped step,
+  or deferred work by naming a blocker or owning issue.
+- **Signal:** every `issue <slug>` or ownership-shaped `<slug> issue` reference resolves to an open
+  issue in the local tracker; an external slug has a same-slug local mirror; credentials,
+  permissions, dependencies, and other blocker premises have current evidence. Historical quoted
+  examples use a reasoned `canon:s24-allow: <reason>` annotation.
+- **Probe:** `$TOOL doctor --json | jq '.checks[] | select(.id == "canon.s24")'`; then use
+  `review` to re-check technical premises that text and local issue state cannot settle.
+- **Fail:** a missing or closed owning issue; an explicitly cross-repository issue reference with
+  no open local owner; a credential, permission, dependency, or blocker claim inherited without
+  current verification.
 
 ---
 

@@ -171,7 +171,7 @@ mod tests {
     use crate::questionnaire::{Question, Questionnaire};
 
     #[test]
-    fn cli_all_conditionals_yes_applies_all_of_1_to_23() {
+    fn cli_all_conditionals_yes_applies_all_of_1_to_24() {
         let model = Model::standard();
         let q = Questionnaire::builder(Archetype::Cli)
             .all_conditionals_yes()
@@ -180,12 +180,12 @@ mod tests {
 
         assert_eq!(
             resolution.canon_section_set(&model),
-            (1u8..=23).collect::<Vec<_>>()
+            (1u8..=24).collect::<Vec<_>>()
         );
         assert_eq!(
             resolution.applicable_canon_sections(&model),
-            (1u8..=23).collect::<Vec<_>>(),
-            "every §1–§23 applies when all conditionals are yes"
+            (1u8..=24).collect::<Vec<_>>(),
+            "every §1–§24 applies when all conditionals are yes"
         );
     }
 
@@ -195,10 +195,10 @@ mod tests {
         let q = Questionnaire::builder(Archetype::Cli).build(); // all conditionals false
         let resolution = model.resolve(&q);
 
-        // Membership is still the full §1–§23.
+        // Membership is still the full §1–§24.
         assert_eq!(
             resolution.canon_section_set(&model),
-            (1u8..=23).collect::<Vec<_>>()
+            (1u8..=24).collect::<Vec<_>>()
         );
 
         // The conditional sections (§8, §11, §12, §13, §19, §20, §21) are n/a.
@@ -223,10 +223,10 @@ mod tests {
 
         // Only base dimensions are present — every entry is a base-layer dim.
         assert!(resolution.entries().iter().all(|e| e.layer == Layer::Base));
-        // Canon coverage equals the base-canon sections (§10, §15, §16, §17, §22, §23).
+        // Canon coverage equals the base-canon sections (§10, §15, §16, §17, §22, §23, §24).
         assert_eq!(
             resolution.canon_section_set(&model),
-            vec![10u8, 15, 16, 17, 22, 23]
+            vec![10u8, 15, 16, 17, 22, 23, 24]
         );
     }
 

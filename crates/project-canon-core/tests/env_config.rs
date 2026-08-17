@@ -128,7 +128,7 @@ fn convention_paths_are_tilde_expanded_at_the_edge() {
 #[test]
 fn env_config_is_orthogonal_to_the_conformance_model() {
     // Resolving the env layer touches nothing in the two-layer model: a cli resolution still
-    // covers §1–§23 regardless of the env config.
+    // covers §1–§24 regardless of the env config.
     let _cfg = EnvConfig::resolve(&[&EnvConfigLayer::empty(), &EnvConfigLayer::empty()]);
     let model = Model::standard();
     let resolution = model.resolve(
@@ -138,6 +138,6 @@ fn env_config_is_orthogonal_to_the_conformance_model() {
     );
     assert_eq!(
         resolution.canon_section_set(&model),
-        (1u8..=23).collect::<Vec<_>>()
+        (1u8..=24).collect::<Vec<_>>()
     );
 }

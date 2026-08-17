@@ -77,7 +77,7 @@ struct ShippedSkill {
 /// it is interpolated into filesystem paths ([`Agent::path`]) and YAML frontmatter.
 const SHIPPED: &[ShippedSkill] = &[ShippedSkill {
     name: "ai-first-cli-canon",
-    description: "The AI-first CLI canon v3 (AGENTS-AI-FIRST-CLI.md, \u{a7}1\u{2013}\u{a7}23): the family's binding conventions for any CLI surface, including neutral public artifacts, strict input validation, --json output, JSONL logs, non-interactive operation, informative errors, meaningful exit codes, and composable commands. Reference this when designing or changing this repo's CLI surface.",
+    description: "The AI-first CLI canon v4 (AGENTS-AI-FIRST-CLI.md, \u{a7}1\u{2013}\u{a7}24): the family's binding conventions for any CLI surface, including verified deferrals, neutral public artifacts, strict input validation, --json output, JSONL logs, non-interactive operation, informative errors, meaningful exit codes, and composable commands. Reference this when designing or changing this repo's CLI surface.",
 }];
 
 /// Metadata for `version --json`'s bundled-skill drift contract (§17).

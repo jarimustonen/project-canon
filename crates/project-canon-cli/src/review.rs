@@ -741,34 +741,38 @@ fn triage(
                 dim_id: dim.id,
                 source,
             })?;
-            if outcome.passed && dim.id == "canon.s23" {
-                Ok(base(
-                    FindingKind::ManualVerify,
-                    format!(
-                        "{}; review hostnames, internal URLs, borderline names, and dependency legitimacy",
-                        outcome.message
-                    ),
-                    None,
-                ))
-            } else if outcome.passed {
-                Ok(base(FindingKind::Pass, outcome.message, None))
+            if outcome.passed {
+                if let Some(remainder) = judgment_remainder(dim.id) {
+                    Ok(base(
+                        FindingKind::ManualVerify,
+                        format!("{}; {remainder}", outcome.message),
+                        None,
+                    ))
+                } else {
+                    Ok(base(FindingKind::Pass, outcome.message, None))
+                }
             } else {
                 // A confirmed gap: stage (print, never run) an issuectl command scoped to the repo.
                 let staged = stage_command(dim, target);
-                Ok(base(
-                    FindingKind::ConfirmedGap,
-                    if dim.id == "canon.s23" {
-                        format!(
-                            "{}; also review hostnames, internal URLs, borderline names, and dependency legitimacy",
-                            outcome.message
-                        )
-                    } else {
-                        outcome.message
-                    },
-                    Some(staged),
-                ))
+                let observed = match judgment_remainder(dim.id) {
+                    Some(remainder) => format!("{}; also {remainder}", outcome.message),
+                    None => outcome.message,
+                };
+                Ok(base(FindingKind::ConfirmedGap, observed, Some(staged)))
             }
         }
+    }
+}
+
+fn judgment_remainder(id: &str) -> Option<&'static str> {
+    match id {
+        "canon.s23" => Some(
+            "review hostnames, internal URLs, borderline names, and dependency legitimacy",
+        ),
+        "canon.s24" => Some(
+            "re-verify stated credentials, permissions, dependencies, and any blocker the local issue scan cannot settle",
+        ),
+        _ => None,
     }
 }
 
@@ -1015,6 +1019,16 @@ mod tests {
         assert_eq!(s23.kind, FindingKind::ManualVerify);
         assert!(s23.observed.contains("hostnames"));
         assert!(s23.staged_command.is_none());
+    }
+
+    #[test]
+    fn verified_deferral_check_surfaces_the_judgment_remainder_after_mechanical_pass() {
+        let repo = conformant_repo("s24-judgment");
+        let report = report_for(&repo, Archetype::Cli);
+        let s24 = find(&report, "canon.s24");
+        assert_eq!(s24.kind, FindingKind::ManualVerify);
+        assert!(s24.observed.contains("credentials"));
+        assert!(s24.staged_command.is_none());
     }
 
     #[test]

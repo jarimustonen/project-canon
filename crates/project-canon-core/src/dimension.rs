@@ -16,7 +16,7 @@ use crate::questionnaire::Question;
 /// v0; the rest are named-but-empty extension points (see [`crate::profile::Profile`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Archetype {
-    /// AI-first command-line tool — the `AGENTS-AI-FIRST-CLI.md` §1–§23 surface.
+    /// AI-first command-line tool — the `AGENTS-AI-FIRST-CLI.md` §1–§24 surface.
     Cli,
     /// Long-running / hosted service. Empty extension point at v0.
     Service,
@@ -51,7 +51,7 @@ impl Archetype {
 /// Base dims are repo-invariant; profile dims belong to one archetype's surface. Note this is
 /// where a dimension is rooted, not the only place it is *cited*: the `cli` profile's declared
 /// section-set is its profile-rooted members, and the base layer independently contributes the
-/// repo-general canon sections (§10, §15–§17, §22–§23), so their union is the full §1–§23.
+/// repo-general canon sections (§10, §15–§17, §22–§24), so their union is the full §1–§24.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Layer {
     /// Applies to every project-canon-managed repo regardless of archetype.

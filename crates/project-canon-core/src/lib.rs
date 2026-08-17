@@ -10,9 +10,9 @@
 //! - A [`Dimension`] is the unit of conformance — a canon §N section or a create-project scaffold
 //!   requirement, unified so base and profiles are plain id-sets.
 //! - The **base canon** holds the repo-invariant dimensions: the repo-general canon sections
-//!   (§10, §15–§17, §22–§23) plus the create-project scaffold dims.
+//!   (§10, §15–§17, §22–§24) plus the create-project scaffold dims.
 //! - A [`Profile`] is a named section-set + a probe registry. Only [`Archetype::Cli`] has content
-//!   at v0 (the `AGENTS-AI-FIRST-CLI.md` §1–§23 lift); `service`/`library`/`release` are
+//!   at v0 (the `AGENTS-AI-FIRST-CLI.md` §1–§24 lift); `service`/`library`/`release` are
 //!   named-but-empty extension points.
 //! - The [`Questionnaire`] *characterizes* a repo (archetype + the eight yes/no questions,
 //!   mirrored from `cli-canon`) and [`Model::resolve`](profile::Model::resolve) turns it into a
@@ -54,9 +54,9 @@ pub use routing::{suggested_layer, Breadth};
 pub const CANON: &str = include_str!("../AGENTS-AI-FIRST-CLI.md");
 
 /// Current normative canon revision.
-pub const CANON_VERSION: u8 = 3;
+pub const CANON_VERSION: u8 = 4;
 /// Highest stable §N citation included in [`CANON`].
-pub const CANON_SECTION_COUNT: u8 = 23;
+pub const CANON_SECTION_COUNT: u8 = 24;
 
 #[cfg(test)]
 mod canon_tests {
@@ -78,5 +78,20 @@ mod canon_tests {
             super::CANON,
             "the packaged canon file must be byte-identical to the embedded CANON const"
         );
+    }
+
+    #[test]
+    fn canon_metadata_matches_the_embedded_document() {
+        assert!(
+            super::CANON.contains(&format!("**Canon version: {}**", super::CANON_VERSION)),
+            "embedded canon header must match CANON_VERSION"
+        );
+        let highest = super::CANON
+            .lines()
+            .filter_map(|line| line.strip_prefix("## "))
+            .filter_map(|heading| heading.split_once('.'))
+            .filter_map(|(number, _)| number.parse::<u8>().ok())
+            .max();
+        assert_eq!(highest, Some(super::CANON_SECTION_COUNT));
     }
 }

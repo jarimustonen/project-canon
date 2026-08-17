@@ -2,7 +2,7 @@
 
 Project-scoped conformance tool for the AI-first CLI / project family. Ships a **base
 project canon** plus **per-archetype profiles** (`cli`, `service`, …), with the AI-first CLI
-canon (`AGENTS-AI-FIRST-CLI.md` §1–§23) as the `cli` profile. Intended verb surface:
+canon (`AGENTS-AI-FIRST-CLI.md` §1–§24) as the `cli` profile. Intended verb surface:
 `new` (scaffold a conformant repo), `doctor` (machine conformance gate for CI), `review`
 (recommending audit). Consumes an expanding dimension-discovery registry. See homebase
 **ADR 0009** (`docs/decisions/0009-project-canon-scope.md`) for the scope/subsumption/name

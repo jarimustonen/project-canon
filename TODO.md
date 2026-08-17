@@ -135,7 +135,7 @@ design the "actually execute/probe the target" mechanics once, for both.
 **Also open:** `project-canon-v0` epic looks finishable — worth a close pass.
 
 **v0 scope discipline (ADR 0009 §6): a LIFT, not a greenfield canon — ✅ COMPLETE, ✅ RELEASED (0.1.1).**
-✅ `cli` profile (§1–§23 lift); ✅ base canon seeded; ✅ `service`/`library`/`release` named-but-empty
+✅ `cli` profile (§1–§24 lift); ✅ base canon seeded; ✅ `service`/`library`/`release` named-but-empty
 extension points; ✅ env specifics externalized; ✅ `new`/`doctor`/`review` + skill-install shipped;
 ✅ **first release cut & public**. **Path to adoption:** ✅ release → ✅ **`homebase-canon-cutover`** (homebase repo) → selected active repos switched over.
 

@@ -150,8 +150,14 @@ fn json_output_is_well_formed_and_matches_the_gate() {
     assert!(stdout.contains("\"profile\":\"cli\""));
     assert!(stdout.contains("\"conformant\":true"));
     assert!(stdout.contains("\"exit_code\":0"));
-    // Every §1–§23 canon check id is present in the matrix.
-    for section in ["canon.s01", "canon.s18", "canon.s22", "canon.s23"] {
+    // Every §1–§24 canon check id is present in the matrix.
+    for section in [
+        "canon.s01",
+        "canon.s18",
+        "canon.s22",
+        "canon.s23",
+        "canon.s24",
+    ] {
         assert!(stdout.contains(section), "missing {section}");
     }
 
@@ -167,12 +173,12 @@ fn json_output_is_well_formed_and_matches_the_gate() {
 }
 
 #[test]
-fn profile_cli_resolves_all_23_canon_sections() {
+fn profile_cli_resolves_all_24_canon_sections() {
     let f = Fixture::conformant("resolve");
     let out = run_doctor(&["--profile", "cli", "--json", f.path.to_str().unwrap()]);
     assert_eq!(code(&out), 0);
     let stdout = String::from_utf8_lossy(&out.stdout);
-    for n in 1u8..=23 {
+    for n in 1u8..=24 {
         let id = format!("canon.s{n:02}");
         assert!(stdout.contains(&id), "cli profile should resolve {id}");
     }
@@ -221,6 +227,29 @@ fn configured_private_marker_is_a_must_gap_but_own_coordinates_are_allowed() {
     assert!(stdout.contains("canon.s23"), "{stdout}");
     assert!(stdout.contains("AGENTS.md:1"), "{stdout}");
     assert!(!stdout.contains("private-widget"), "{stdout}");
+}
+
+#[test]
+fn unverified_deferral_is_a_must_gap_and_an_open_local_owner_passes() {
+    let f = Fixture::conformant("s24-owner");
+    let slug = ["enable", "widget"].join("-");
+    std::fs::write(
+        f.path.join("README.md"),
+        format!("Feature disabled until issue {slug} lands.\n"),
+    )
+    .unwrap();
+
+    let out = run_doctor(&["--json", f.path.to_str().unwrap()]);
+    assert_eq!(code(&out), 1);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("canon.s24"), "{stdout}");
+    assert!(stdout.contains("unresolved local issue"), "{stdout}");
+
+    let item = f.path.join("issues").join(&slug).join("item.md");
+    std::fs::create_dir_all(item.parent().unwrap()).unwrap();
+    std::fs::write(item, "---\nstatus: open\n---\n\n# Fixture owner\n").unwrap();
+    let out = run_doctor(&["--json", f.path.to_str().unwrap()]);
+    assert_eq!(code(&out), 0, "{}", String::from_utf8_lossy(&out.stdout));
 }
 
 #[test]
