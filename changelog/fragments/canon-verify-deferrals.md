@@ -1,3 +1,0 @@
-- Add canon §24: stated blockers are re-verified rather than inherited.
-- Make `doctor` reject deferral justifications whose local owning issue is missing or closed, and fail closed on cross-repository owners it cannot verify.
-- Surface credential, permission, dependency, and blocker re-verification as a `review` judgment row.

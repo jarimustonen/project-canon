@@ -13,6 +13,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 <!-- oss-changelog:unreleased-end -->
 
+## [0.4.0] - 2026-08-17
+
+Two canon sections that turn hard-won operating rules into machinery. Both follow the same
+shape: a normative section, a mechanical `doctor` gate for the detectable subset, and a
+`review` judgment row for the remainder.
+
+### Added
+
+- Canon **§23 — public artifacts must not embed user-specific facts**, scoped deliberately to
+  *publicly distributed* artifacts: an internal-only tool may legitimately encode its own
+  organization's policy, but a published package must never make a recipient inherit the
+  maintainer's environment. Built-in defaults must be neutral; overridability does not launder
+  a user-specific default, because unset still means whatever ships in the package. The section
+  is routed through the base layer, so every profile inherits the obligation.
+- A `doctor` gate for §23, driven by the new `user_specific_deny_list` configuration key
+  (environment override `PROJECT_CANON_USER_SPECIFIC_DENY_LIST`). Matching is exact and
+  case-insensitive with no username-shape heuristic, and the built-in list is empty — the
+  markers are yours, supplied through user configuration that lives outside the distributed
+  artifact. The scan derives the target's own owner and repository from its git remote or Cargo
+  metadata and exempts that project's own GitHub, badge, Homebrew, and install coordinates,
+  while still flagging a different private project name under the same owner. A project's own
+  published address is not a leak; a check that fires on a README install line is a check that
+  gets turned off.
+- Canon **§24 — a stated blocker is re-verified, not inherited**. A justification for disabled,
+  skipped, or deferred work carries implied authority and no evidence. Before building around
+  one, check it: if it names a credential, permission, or dependency as missing, check whether
+  that now exists; if it names an owning issue, check the issue exists and is open; if neither
+  can be verified, say so rather than silently propagating the claim.
+- A `doctor` check for §24 that rejects deferral justifications whose local owning issue is
+  missing or closed, and fails closed on cross-repository owners it cannot verify.
+- A `review` judgment row for each section, covering what mechanics cannot settle: hostnames,
+  internal URLs, and borderline naming for §23; credential, permission, dependency, and blocker
+  re-verification for §24.
+
+### Changed
+
+- `doctor` may now fail on repositories it previously passed, where a deferral justification
+  names an owning issue that is missing, closed, or in another repository's tracker. This is
+  the intended effect of §24 and the reason for the minor bump.
+- Corrected this repository's own `dist-workspace.toml` deferral comment, which was itself a
+  §24 specimen. It justified a gap by naming an issue in the `ossctl` tracker; that issue turned
+  out to exist but be closed, and the Homebrew publisher it deferred had already been enabled.
+  The comment is now a dated, verified statement of the release-ownership boundary rather than
+  an inherited claim.
+
 ## [0.3.3] - 2026-08-17
 
 ### Fixed
