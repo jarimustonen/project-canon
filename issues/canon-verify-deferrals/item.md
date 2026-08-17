@@ -10,6 +10,10 @@ lane_seq: 20
 commits:
 - hash: c8f22b58e05e09677c8541cf1888f3042a810614
   summary: mark canon-verify-deferrals in progress
+- hash: 6df7559
+  summary: record canon deferral work start
+- hash: c1c5239
+  summary: verify deferral issue ownership with canon section 24
 ---
 
 # Canon rule: a deferral justification must be verified, not inherited
