@@ -10,6 +10,8 @@ lane_seq: 40
 commits:
 - hash: 907ea59
   summary: make --version a full version verb alias
+- hash: bd566a4
+  summary: scope version alias dispatch and enforce text/json runtime equivalence
 ---
 
 # --version must be a full alias of the version verb
