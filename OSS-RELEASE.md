@@ -6,6 +6,7 @@ ecosystems: [rust]
 targets:
   - {ecosystem: rust, package: project-canon-core, registry: crates.io, adapter: cargo-publish}
   - {ecosystem: rust, package: project-canon-cli, registry: crates.io, adapter: cargo-publish}
+  - {ecosystem: rust, package: project-canon-cli, registry: gh-releases, adapter: cargo-dist}
 distribution:
   adapter: cargo-dist
   gh_releases: true
