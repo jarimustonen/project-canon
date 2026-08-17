@@ -7,6 +7,9 @@ priority: normal
 labels: [canon]
 lane: canon-rollout
 lane_seq: 40
+commits:
+- hash: 907ea59
+  summary: make --version a full version verb alias
 ---
 
 # --version must be a full alias of the version verb
