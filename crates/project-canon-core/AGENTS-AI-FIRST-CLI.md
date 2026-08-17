@@ -384,11 +384,12 @@ accordingly:
   global `--json`. `version` is the canonical instance of this rule (it is
   the one an agent reaches for first and the one most often left as an
   `--output`-only special case), but the rule is general: one JSON switch,
-  honored everywhere. The structured contract lives on the **`version`
-  subcommand**; clap's parser-level `--version` flag (which prints plain
-  text and cannot honor `--json`) is at most a text convenience alias — an
-  agent that needs the payload always calls `<tool> version --json`, never
-  `<tool> --version --json`
+  honored everywhere. The global **`--version` flag is a full alias of the
+  `version` subcommand**: both spellings produce identical output and exit
+  codes in text and JSON modes, and flag order does not matter (`<tool>
+  --version --json` equals `<tool> --json --version` equals `<tool> version
+  --json`). The `version` verb remains the canonical form agents should
+  prefer; the flag is equally capable, but less preferred
 - The `commit` field must be **real build provenance, not a placeholder.**
   Stamp the git SHA the binary was built from at build time (a `build.rs`
   that reads the SHA, or the equivalent for the toolchain). Two concrete,

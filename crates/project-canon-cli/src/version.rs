@@ -66,20 +66,6 @@ pub fn run(args: &[String]) -> ExitCode {
     }
 }
 
-/// The parser-level `--version` compatibility alias is intentionally text-only (canon §10).
-pub fn legacy(args: &[String]) -> ExitCode {
-    if args.is_empty() {
-        return write_stdout(&format!("{TOOL} {CLI_VERSION}\n"), false);
-    }
-    fail(
-        json_requested(args),
-        CliError::actionable(
-            "usage_error",
-            "--version is text-only; use `project-canon version --json` for structured version data",
-        ),
-    )
-}
-
 fn payload() -> Json {
     let skills = bundled_skill_metadata()
         .into_iter()
@@ -154,8 +140,8 @@ FLAGS:
     --json     Emit the schema-versioned drift contract on stdout.
     --help     Show this help.
 
-The parser-level `--version` alias is text-only. Agents needing structured data use
-`project-canon version --json`.
+The global `--version` flag is a full alias of this verb and honors `--json`.
+Agents should prefer the canonical `project-canon version` spelling.
 ";
 
 #[cfg(test)]

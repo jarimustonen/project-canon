@@ -118,16 +118,20 @@ step has bound it to a real, read-only command.
 - **Applies:** always (any `--json` surface).
 - **Signal:** every `--json` payload carries `schema_version`; `$TOOL version --json` →
   `{version, commit, schema_version, supported_schemas, skills[]}`; global `--json` works on
-  **every** subcommand incl. `version` (no `--output json`‑only special case); `commit` is a
-  **real 40‑hex SHA** or exactly `null` + a `build_provenance {kind,note}` object — never
-  `"unknown"`/placeholder; error envelope `{schema_version, error:{code,message,
-  invalid_value,expected}}` on **stderr**; non‑fatal `warnings:[]` live in the **stdout**
-  payload; deprecations emit a structured warning naming the removal window, suppressible via
-  `<TOOL>_NO_DEPRECATION_WARNINGS=1`.
-- **Probe:** `$TOOL version --json | jq '{commit,schema_version,supported_schemas,skills}'` ·
-  trigger an error under `--json`, inspect the envelope + channel.
-- **Fail:** `commit:"unknown"`; missing `supported_schemas`; a subcommand with a private JSON
-  toggle; warnings on stderr under `--json`; payload without `schema_version`.
+  **every** subcommand incl. `version` (no `--output json`‑only special case); the global
+  `--version` flag is a **full alias** of the verb with identical output and exit code in text
+  and JSON modes regardless of flag order; `commit` is a **real 40‑hex SHA** or exactly `null`
+  + a `build_provenance {kind,note}` object, never `"unknown"`/placeholder; error envelope
+  `{schema_version, error:{code,message, invalid_value,expected}}` on **stderr**; non‑fatal
+  `warnings:[]` live in the **stdout** payload; deprecations emit a structured warning naming
+  the removal window, suppressible via `<TOOL>_NO_DEPRECATION_WARNINGS=1`.
+- **Probe:** compare `$TOOL version` with `$TOOL --version`, then compare `$TOOL version --json`,
+  `$TOOL --version --json`, and `$TOOL --json --version` byte-for-byte including exit codes;
+  inspect the JSON with `jq '{commit,schema_version,supported_schemas,skills}'`; trigger an error
+  under `--json`, inspect the envelope + channel.
+- **Fail:** `version`/`--version` output or exit-code drift; `commit:"unknown"`; missing
+  `supported_schemas`; a subcommand with a private JSON toggle; warnings on stderr under
+  `--json`; payload without `schema_version`.
 
 ### §11 Dry‑run, idempotency, retry safety · **MUST‑when‑applies**
 - **Applies:** every command that creates/updates/deletes a resource.

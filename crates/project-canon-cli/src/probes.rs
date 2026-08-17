@@ -533,7 +533,24 @@ fn probe_config_surface(runner: &RuntimeRunner) -> RuntimeCheck {
 
 fn version_json(runner: &RuntimeRunner) -> RuntimeCheck<Value> {
     let args = ["version", "--json"];
-    let value = expect_json(&invoke(runner, &args)?, &args, &[0])?;
+    let verb = invoke(runner, &args)?;
+    for alias_args in [
+        ["--version", "--json"].as_slice(),
+        ["--json", "--version"].as_slice(),
+    ] {
+        let alias = invoke(runner, alias_args)?;
+        if alias.code != verb.code
+            || alias.stdout.as_slice() != verb.stdout.as_slice()
+            || alias.stderr.as_slice() != verb.stderr.as_slice()
+        {
+            return Err(RuntimeCheckError::Gap(format!(
+                "{} output or exit code differs from {}",
+                display_args(alias_args),
+                display_args(&args)
+            )));
+        }
+    }
+    let value = expect_json(&verb, &args, &[0])?;
     let schema = value.get("schema_version").and_then(Value::as_i64);
     let valid = schema_object(&value)
         && object_has(&value, "supported_schemas", |v| {
@@ -572,7 +589,7 @@ fn version_json(runner: &RuntimeRunner) -> RuntimeCheck<Value> {
 
 fn probe_version_surface(runner: &RuntimeRunner) -> RuntimeCheck {
     version_json(runner)?;
-    Ok("version --json carries schema, compatibility, provenance, and skill metadata".to_string())
+    Ok("version --json carries schema, compatibility, provenance, and skill metadata; --version is a byte-identical full alias in either flag order".to_string())
 }
 
 fn probe_help_surface(runner: &RuntimeRunner) -> RuntimeCheck {

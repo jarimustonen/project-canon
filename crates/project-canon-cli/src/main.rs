@@ -23,7 +23,8 @@ use project_canon_core::{Archetype, EnvConfig, Model, Questionnaire};
 use crate::error::{fail, json_requested, CliError};
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    normalize_version_alias(&mut args);
     if let Some(status) = help::render_if_requested(&args) {
         return status;
     }
@@ -34,7 +35,6 @@ fn main() -> ExitCode {
         Some("review") => review::run(&args[1..]),
         Some("skill") => skill::run(&args[1..]),
         Some("version") => version::run(&args[1..]),
-        Some("--version") => version::legacy(&args[1..]),
         // Only the bare invocation and top-level help hit the stub; an unknown subcommand OR an
         // unknown leading flag is a strict usage error (§1), not a silent exit-0 — a typo like
         // `project-canon --doctr` must not look like success.
@@ -50,6 +50,18 @@ fn main() -> ExitCode {
                 ),
             )
         }
+    }
+}
+
+/// Rewrite the global `--version` compatibility spelling to the canonical `version` verb.
+///
+/// Moving the verb to the front makes global-flag order immaterial: both `--version --json` and
+/// `--json --version` enter exactly the same parser path as `version --json`. Leaving any second
+/// `--version` in place preserves strict repeated/unknown-flag validation in [`version::run`].
+fn normalize_version_alias(args: &mut Vec<String>) {
+    if let Some(index) = args.iter().position(|arg| arg == "--version") {
+        args.remove(index);
+        args.insert(0, "version".to_string());
     }
 }
 

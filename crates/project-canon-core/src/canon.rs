@@ -218,9 +218,9 @@ pub(crate) fn canon_dimensions() -> Vec<Dimension> {
             Always,
             Probe {
                 effect: ExecRo,
-                signal: "every --json carries schema_version; version --json full; commit is 40-hex or null+build_provenance; error envelope on stderr",
-                command_hint: "$TOOL version --json | jq '{commit,schema_version,supported_schemas,skills}'",
-                fail: "commit:\"unknown\"; missing supported_schemas; a private JSON toggle; warnings on stderr under --json",
+                signal: "every --json carries schema_version; version and --version are full aliases including --json; commit is 40-hex or null+build_provenance; error envelope on stderr",
+                command_hint: "diff <($TOOL version --json) <($TOOL --version --json)  ·  $TOOL --json --version | jq '{commit,schema_version,supported_schemas,skills}'",
+                fail: "version/--version output or exit drift; commit:\"unknown\"; missing supported_schemas; a private JSON toggle; warnings on stderr under --json",
             },
         ),
         section(

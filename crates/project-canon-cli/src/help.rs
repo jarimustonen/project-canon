@@ -73,7 +73,7 @@ const ROOT: Command = Command {
         },
         Flag {
             name: "--version",
-            summary: "Print the human-readable version (text-only compatibility alias).",
+            summary: "Full alias of the version verb; honors --json.",
             value_name: None,
             default: None,
             accepted_values: &[],

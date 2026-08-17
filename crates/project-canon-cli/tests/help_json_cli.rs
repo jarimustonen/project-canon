@@ -69,6 +69,19 @@ fn root_help_json_matches_the_golden_shape_and_lists_verbs() {
         names,
         ["config", "doctor", "new", "review", "skill", "version"]
     );
+    let version_flag = object["flags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|flag| flag["name"] == "--version")
+        .expect("root help documents --version");
+    let summary = version_flag["summary"].as_str().unwrap();
+    assert!(
+        summary.contains("Full alias of the version verb"),
+        "{summary}"
+    );
+    assert!(summary.contains("honors --json"), "{summary}");
+    assert!(!summary.contains("text-only"), "{summary}");
 }
 
 #[test]
