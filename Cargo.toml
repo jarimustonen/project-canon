@@ -7,7 +7,7 @@ resolver = "2"
 members = ["crates/project-canon-core", "crates/project-canon-cli"]
 
 [workspace.package]
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/jarimustonen/project-canon"
