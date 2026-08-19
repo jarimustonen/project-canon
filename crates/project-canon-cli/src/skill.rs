@@ -7,14 +7,13 @@
 //! dogfoods that surface, so the canon reaches adopting repos as a **versioned, installable
 //! skill** rather than a hand-copied markdown file that drifts (issue `canon-installable-skill`).
 //!
-//! ## The skill it ships
+//! ## The skills it ships
 //!
-//! v0 ships exactly one skill, `ai-first-cli-canon`: the canon *content* as a reference skill,
-//! distinct from the `cli-canon` *behavior* skill (the reviewer/generator). Its body is not a
-//! second checked-in copy of the canon — it is **assembled from the single master**
-//! ([`project_canon_core::CANON`]), the same master `new` bundles. There is therefore no drifting
-//! second copy;
-//! the single-source invariant is asserted in the integration tests.
+//! The catalog keeps two artifacts deliberately distinct: `ai-first-cli-canon` is synthetic
+//! canon *content*, assembled from [`project_canon_core::CANON`], while `cli-canon` is the
+//! hand-authored reviewer/generator *behavior* skill. The latter's complete resource tree is
+//! packaged inside this crate and installed together; Codex receives a self-contained prompt
+//! containing the same resources because its runtime uses prompts rather than skill directories.
 //!
 //! ## Side-effect discipline
 //!
@@ -65,20 +64,61 @@ const MARKER_PREFIX: &str = "<!-- Installed by `project-canon skill install`";
 /// Success — installed/upgraded/unchanged, a dry-run plan, or a list/print.
 const EXIT_OK: u8 = 0;
 
-/// A skill shipped by this binary. The body is generated (canon via [`project_canon_core::CANON`]),
-/// never a stored file — see the module docs.
+/// One source resource in a bundled skill tree.
+struct SkillResource {
+    path: &'static str,
+    content: &'static str,
+}
+
+#[derive(Clone, Copy)]
+enum SkillKind {
+    SyntheticCanon,
+    ResourceTree(&'static [SkillResource]),
+}
+
+/// A skill shipped by this binary.
 struct ShippedSkill {
     name: &'static str,
     description: &'static str,
+    source_path: &'static str,
+    kind: SkillKind,
 }
 
-/// The shipped-skill catalog. v0 ships the canon reference skill only; add rows as more land.
-/// Every `name` must be a strict path-safe slug — asserted for the whole table in the tests, since
-/// it is interpolated into filesystem paths ([`Agent::path`]) and YAML frontmatter.
-const SHIPPED: &[ShippedSkill] = &[ShippedSkill {
-    name: "ai-first-cli-canon",
-    description: "The AI-first CLI canon v4 (AGENTS-AI-FIRST-CLI.md, \u{a7}1\u{2013}\u{a7}24): the family's binding conventions for any CLI surface, including verified deferrals, neutral public artifacts, strict input validation, --json output, JSONL logs, non-interactive operation, informative errors, meaningful exit codes, and composable commands. Reference this when designing or changing this repo's CLI surface.",
-}];
+const CLI_CANON_RESOURCES: &[SkillResource] = &[
+    SkillResource {
+        path: "SKILL.md",
+        content: include_str!("../skills/cli-canon/SKILL.md"),
+    },
+    SkillResource {
+        path: "templates/conformance-probes.md",
+        content: include_str!("../skills/cli-canon/templates/conformance-probes.md"),
+    },
+    SkillResource {
+        path: "templates/generate-plan.md",
+        content: include_str!("../skills/cli-canon/templates/generate-plan.md"),
+    },
+    SkillResource {
+        path: "templates/review-report.md",
+        content: include_str!("../skills/cli-canon/templates/review-report.md"),
+    },
+];
+
+/// The complete shipped-skill catalog. Every name and resource path is validated in tests before
+/// it can flow into an install path.
+const SHIPPED: &[ShippedSkill] = &[
+    ShippedSkill {
+        name: "ai-first-cli-canon",
+        description: "The AI-first CLI canon v4 (AGENTS-AI-FIRST-CLI.md, \u{a7}1\u{2013}\u{a7}24): the family's binding conventions for any CLI surface, including verified deferrals, neutral public artifacts, strict input validation, --json output, JSONL logs, non-interactive operation, informative errors, meaningful exit codes, and composable commands. Reference this when designing or changing this repo's CLI surface.",
+        source_path: "AGENTS-AI-FIRST-CLI.md",
+        kind: SkillKind::SyntheticCanon,
+    },
+    ShippedSkill {
+        name: "cli-canon",
+        description: "Apply the AI-first CLI canon as a behavioral reviewer/generator, using the bundled conformance probes and review/generation templates.",
+        source_path: "skills/cli-canon/SKILL.md",
+        kind: SkillKind::ResourceTree(CLI_CANON_RESOURCES),
+    },
+];
 
 /// Metadata for `version --json`'s bundled-skill drift contract (§17).
 pub(crate) fn bundled_skill_metadata() -> Vec<(&'static str, &'static str, i64)> {
@@ -139,18 +179,30 @@ project-canon skill — install / list / print the companion AI-skills (canon \u
 USAGE:
     project-canon skill install [<name>] [FLAGS]
     project-canon skill list [--json]
-    project-canon skill print <name> [--agent claude|codex] [--json]   (alias: show)
+    project-canon skill print <name> [--agent claude|pi|codex] [--resource <path>] [--json]
+        (alias: show)
 
-The one shipped skill, `ai-first-cli-canon`, is the AI-first CLI canon as a versioned,
-installable reference skill (single-sourced from AGENTS-AI-FIRST-CLI.md).
+Bundled skills:
+    ai-first-cli-canon   Synthetic canon content, single-sourced from AGENTS-AI-FIRST-CLI.md.
+    cli-canon            Behavioral reviewer/generator plus its complete templates/ tree.
+
+`print` defaults to SKILL.md. For resource-tree skills, pass --resource <relative-path>;
+`--json` lists every printable resource. Codex output is one self-contained prompt containing
+all support resources, while Claude and pi receive native skill directories.
 
 INSTALL FLAGS:
     --target <dir>          Install base (default: $HOME \u{2192} ~/.claude/skills/). Pass a repo
                             root to install into that repo's agent dirs.
-    --agent <claude|codex|all>   Which runtime layout(s) to write (default: all).
+    --agent <claude|pi|codex|all>   Which runtime layout(s) to write (default: all).
     --force                 Overwrite a newer on-disk skill or a non-managed file at the path.
     --dry-run               Print the per-file plan; write nothing.
     --json                  Emit the structured \u{a7}10 report on stdout.
+
+PRINT FLAGS:
+    --agent <claude|pi|codex>   Render the selected runtime form (default: claude).
+    --resource <path>       Native-tree resource to print (default: SKILL.md). Codex has one
+                            self-contained SKILL.md prompt artifact.
+    --json                  Emit metadata, selected content, and the complete resource list.
 
 SIDE EFFECTS:
     install writes skill files under <target> and nothing else \u{2014} it never shells out or
@@ -167,9 +219,11 @@ EXIT CODES:
 /// A supported agent runtime and its on-disk skill layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Agent {
-    /// Claude Code: `<base>/.claude/skills/<name>/SKILL.md` (YAML frontmatter + body).
+    /// Claude Code: `<base>/.claude/skills/<name>/<resource>`.
     Claude,
-    /// Codex: `<base>/.codex/prompts/<name>.md` (no frontmatter — matches the shipped /issue form).
+    /// pi: `<base>/.pi/agent/skills/<name>/<resource>`.
+    Pi,
+    /// Codex: `<base>/.codex/prompts/<name>.md`, rendered as one self-contained prompt.
     Codex,
 }
 
@@ -177,34 +231,89 @@ impl Agent {
     fn slug(self) -> &'static str {
         match self {
             Agent::Claude => "claude",
+            Agent::Pi => "pi",
             Agent::Codex => "codex",
         }
     }
 
-    /// The install path for `name` under `base`, per this agent's layout. `name` is a validated
-    /// slug (no separators — see [`is_valid_skill_name`]), so the `join` cannot escape `base`.
-    fn path(self, base: &Path, name: &str) -> PathBuf {
+    fn path(self, base: &Path, name: &str, resource: &str) -> PathBuf {
         match self {
-            Agent::Claude => base.join(".claude/skills").join(name).join("SKILL.md"),
+            Agent::Claude => base.join(".claude/skills").join(name).join(resource),
+            Agent::Pi => base.join(".pi/agent/skills").join(name).join(resource),
             Agent::Codex => base.join(".codex/prompts").join(format!("{name}.md")),
         }
     }
 
-    /// The exact file bytes to install for `skill` under this agent's layout.
-    fn render(self, skill: &ShippedSkill) -> String {
-        let provenance = provenance_line(skill.name);
-        match self {
-            // §17: the Claude form declares both version fields in frontmatter. The description is
-            // emitted as a YAML double-quoted scalar so a `: ` (or any YAML-significant char) in it
-            // cannot break frontmatter parsing.
-            Agent::Claude => format!(
-                "---\nname: {}\ndescription: {}\ncli_version: \"{CLI_VERSION}\"\nschema_version: {SKILL_SCHEMA_VERSION}\n---\n\n{provenance}\n\n{CANON}",
-                skill.name,
-                yaml_double_quote(skill.description),
-            ),
-            // The Codex form carries no frontmatter; the provenance comment still records the
-            // version so drift detection works uniformly across both forms.
-            Agent::Codex => format!("{provenance}\n\n{CANON}"),
+    /// Resources materialized by this runtime. Codex has one prompt artifact; native skill
+    /// runtimes preserve the complete relative resource tree.
+    fn resources(self, skill: &ShippedSkill) -> Vec<&'static str> {
+        match (self, skill.kind) {
+            (Agent::Codex, _) | (_, SkillKind::SyntheticCanon) => vec!["SKILL.md"],
+            (_, SkillKind::ResourceTree(resources)) => {
+                resources.iter().map(|resource| resource.path).collect()
+            }
+        }
+    }
+
+    fn render(self, skill: &ShippedSkill, resource: &str) -> Option<String> {
+        if self == Agent::Codex {
+            return (resource == "SKILL.md").then(|| render_codex(skill));
+        }
+        match skill.kind {
+            SkillKind::SyntheticCanon => (resource == "SKILL.md").then(|| {
+                format!(
+                    "---\nname: {}\ndescription: {}\ncli_version: \"{CLI_VERSION}\"\nschema_version: {SKILL_SCHEMA_VERSION}\n---\n\n{}\n\n{CANON}",
+                    skill.name,
+                    yaml_double_quote(skill.description),
+                    provenance_line(skill.name),
+                )
+            }),
+            SkillKind::ResourceTree(resources) => resources
+                .iter()
+                .find(|candidate| candidate.path == resource)
+                .map(|found| render_tree_resource(skill, found)),
+        }
+    }
+}
+
+fn render_tree_resource(skill: &ShippedSkill, resource: &SkillResource) -> String {
+    if resource.path == "SKILL.md" {
+        let source = resource.content;
+        let rest = source
+            .strip_prefix("---\n")
+            .and_then(|body| body.split_once("\n---\n"))
+            .unwrap_or_else(|| panic!("{} must contain YAML frontmatter", skill.source_path));
+        format!(
+            "---\n{}\ncli_version: \"{CLI_VERSION}\"\nschema_version: {SKILL_SCHEMA_VERSION}\n---\n\n{}\n{}",
+            rest.0,
+            provenance_line(skill.name),
+            rest.1.strip_prefix('\n').unwrap_or(rest.1),
+        )
+    } else {
+        format!("{}\n\n{}", provenance_line(skill.name), resource.content)
+    }
+}
+
+fn source_path_for(skill: &ShippedSkill, resource: &str) -> String {
+    match skill.kind {
+        SkillKind::SyntheticCanon => skill.source_path.to_string(),
+        SkillKind::ResourceTree(_) if resource == "SKILL.md" => skill.source_path.to_string(),
+        SkillKind::ResourceTree(_) => format!("skills/{}/{resource}", skill.name),
+    }
+}
+
+fn render_codex(skill: &ShippedSkill) -> String {
+    match skill.kind {
+        SkillKind::SyntheticCanon => format!("{}\n\n{CANON}", provenance_line(skill.name)),
+        SkillKind::ResourceTree(resources) => {
+            let mut out = format!("{}\n", provenance_line(skill.name));
+            for resource in resources {
+                out.push_str(&format!(
+                    "\n<!-- bundled resource: {} -->\n\n{}",
+                    resource.path, resource.content
+                ));
+            }
+            out
         }
     }
 }
@@ -238,13 +347,14 @@ fn provenance_line(name: &str) -> String {
 fn parse_agent(s: &str, allow_all: bool) -> Result<Vec<Agent>, String> {
     match s {
         "claude" => Ok(vec![Agent::Claude]),
+        "pi" => Ok(vec![Agent::Pi]),
         "codex" => Ok(vec![Agent::Codex]),
-        "all" if allow_all => Ok(vec![Agent::Claude, Agent::Codex]),
+        "all" if allow_all => Ok(vec![Agent::Claude, Agent::Pi, Agent::Codex]),
         _ => {
             let valid = if allow_all {
-                "claude/codex/all"
+                "claude/pi/codex/all"
             } else {
-                "claude/codex"
+                "claude/pi/codex"
             };
             Err(format!("invalid --agent {s:?} (expected one of {valid})"))
         }
@@ -561,7 +671,7 @@ mod install {
         Ok(Command::Run(Args {
             skill,
             target,
-            agents: agents.unwrap_or_else(|| vec![Agent::Claude, Agent::Codex]),
+            agents: agents.unwrap_or_else(|| vec![Agent::Claude, Agent::Pi, Agent::Codex]),
             force,
             dry_run,
             json,
@@ -584,6 +694,7 @@ mod install {
     #[derive(Debug)]
     pub(super) struct Row {
         pub name: &'static str,
+        pub resource: &'static str,
         pub agent: Agent,
         pub path: String,
         /// The bytes install would write — `None` for `Unchanged`/blocked rows we do not (re)write.
@@ -622,20 +733,12 @@ mod install {
         let mut rows = Vec::new();
         for skill in skills {
             for &agent in agents {
-                let path = agent.path(base, skill.name);
-                let desired = agent.render(skill);
-                let existing = match std::fs::symlink_metadata(&path) {
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => Existing::Absent,
-                    Err(source) => {
-                        return Err(Fault {
-                            path: path.display().to_string(),
-                            source,
-                        })
-                    }
-                    Ok(md) if !md.file_type().is_file() => Existing::NonRegular,
-                    Ok(_) => match std::fs::read(&path) {
-                        Ok(bytes) => Existing::Regular(bytes),
-                        // A file that vanished between the stat and the read: treat as absent.
+                for resource in agent.resources(skill) {
+                    let path = agent.path(base, skill.name, resource);
+                    let desired = agent
+                        .render(skill, resource)
+                        .expect("catalog resource must render");
+                    let existing = match std::fs::symlink_metadata(&path) {
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Existing::Absent,
                         Err(source) => {
                             return Err(Fault {
@@ -643,17 +746,30 @@ mod install {
                                 source,
                             })
                         }
-                    },
-                };
-                let (action, note) = decide(&existing, desired.as_bytes(), force);
-                rows.push(Row {
-                    name: skill.name,
-                    agent,
-                    path: path.display().to_string(),
-                    desired: action.writes().then_some(desired),
-                    action,
-                    note,
-                });
+                        Ok(md) if !md.file_type().is_file() => Existing::NonRegular,
+                        Ok(_) => match std::fs::read(&path) {
+                            Ok(bytes) => Existing::Regular(bytes),
+                            // A file that vanished between the stat and the read: treat as absent.
+                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Existing::Absent,
+                            Err(source) => {
+                                return Err(Fault {
+                                    path: path.display().to_string(),
+                                    source,
+                                })
+                            }
+                        },
+                    };
+                    let (action, note) = decide(&existing, desired.as_bytes(), force);
+                    rows.push(Row {
+                        name: skill.name,
+                        resource,
+                        agent,
+                        path: path.display().to_string(),
+                        desired: action.writes().then_some(desired),
+                        action,
+                        note,
+                    });
+                }
             }
         }
         Ok(rows)
@@ -875,6 +991,7 @@ mod install {
                     let mut obj = vec![
                         ("name".into(), Json::str(r.name)),
                         ("agent".into(), Json::str(r.agent.slug())),
+                        ("resource".into(), Json::str(r.resource)),
                         ("path".into(), Json::str(r.path.clone())),
                         ("action".into(), Json::str(r.action.as_str())),
                         ("blocked".into(), Json::Bool(r.action.is_blocking())),
@@ -973,7 +1090,7 @@ mod install {
         use super::*;
 
         fn canon_bytes(agent: Agent) -> String {
-            agent.render(&SHIPPED[0])
+            agent.render(&SHIPPED[0], "SKILL.md").unwrap()
         }
 
         fn reg(bytes: &[u8]) -> Existing {
@@ -1108,14 +1225,41 @@ mod install {
         }
 
         #[test]
-        fn shipped_names_are_path_safe_slugs() {
-            for s in SHIPPED {
+        fn shipped_names_and_resource_paths_are_safe() {
+            for skill in SHIPPED {
                 assert!(
-                    is_valid_skill_name(s.name),
+                    is_valid_skill_name(skill.name),
                     "shipped skill name {:?} is not a path-safe slug",
-                    s.name
+                    skill.name
                 );
+                if let SkillKind::ResourceTree(resources) = skill.kind {
+                    for resource in resources {
+                        let path = Path::new(resource.path);
+                        assert!(
+                            !path.is_absolute()
+                                && path
+                                    .components()
+                                    .all(|part| matches!(part, std::path::Component::Normal(_))),
+                            "unsafe resource path {:?}",
+                            resource.path
+                        );
+                    }
+                }
             }
+        }
+
+        #[test]
+        fn cli_canon_native_forms_include_every_resource_and_codex_is_self_contained() {
+            let skill = lookup_skill("cli-canon").unwrap();
+            assert_eq!(Agent::Claude.resources(skill).len(), 4);
+            assert_eq!(Agent::Pi.resources(skill).len(), 4);
+            let codex = Agent::Codex.render(skill, "SKILL.md").unwrap();
+            for resource in CLI_CANON_RESOURCES {
+                assert!(codex.contains(resource.content));
+            }
+            let native = Agent::Pi.render(skill, "SKILL.md").unwrap();
+            assert!(native.contains("cli_version:"));
+            assert!(native.contains("schema_version:"));
         }
 
         #[test]
@@ -1188,6 +1332,16 @@ mod list {
                             "skill_schema_version".into(),
                             Json::Int(SKILL_SCHEMA_VERSION),
                         ),
+                        (
+                            "resources".into(),
+                            Json::Array(
+                                Agent::Claude
+                                    .resources(s)
+                                    .iter()
+                                    .map(|path| Json::str(*path))
+                                    .collect(),
+                            ),
+                        ),
                     ])
                 })
                 .collect();
@@ -1198,6 +1352,15 @@ mod list {
                     ("tool".into(), Json::str("project-canon")),
                     ("verb".into(), Json::str("skill list")),
                     ("cli_version".into(), Json::str(CLI_VERSION)),
+                    (
+                        "supported_agents".into(),
+                        Json::Array(
+                            ["claude", "pi", "codex"]
+                                .into_iter()
+                                .map(Json::str)
+                                .collect(),
+                        ),
+                    ),
                     ("skills".into(), Json::Array(skills)),
                     ("exit_code".into(), Json::Int(EXIT_OK as i64)),
                 ])
@@ -1226,6 +1389,7 @@ mod print {
         let mut name: Option<String> = None;
         let mut agent = Agent::Claude;
         let mut agent_set = false;
+        let mut resource: Option<String> = None;
         let mut json = false;
         let mut positional_only = false;
 
@@ -1272,6 +1436,15 @@ mod print {
                     }
                     agent_set = true;
                 }
+                "--resource" => {
+                    if resource.is_some() {
+                        return usage(args, "repeated flag: --resource");
+                    }
+                    resource = match take_value("--resource", inline, &mut iter) {
+                        Ok(value) => Some(value),
+                        Err(err) => return usage(args, &err),
+                    };
+                }
                 other if other.starts_with('-') => {
                     return usage(args, &format!("unknown flag: {other}"));
                 }
@@ -1312,9 +1485,24 @@ mod print {
             }
         };
 
-        let content = agent.render(skill);
+        let resource = resource.as_deref().unwrap_or("SKILL.md");
+        let available = agent.resources(skill);
+        let content = match agent.render(skill, resource) {
+            Some(content) => content,
+            None => {
+                return usage(
+                    args,
+                    &format!(
+                        "unknown resource {resource:?} for skill {:?} and agent {} (available: {})",
+                        skill.name,
+                        agent.slug(),
+                        available.join(", ")
+                    ),
+                )
+            }
+        };
         if json {
-            // §16 structured payload: metadata + content, routed separately from the body.
+            // §16 structured payload: one selected resource plus complete resource discovery.
             let payload = Json::Object(vec![
                 ("schema_version".into(), Json::Int(SCHEMA_VERSION)),
                 ("tool".into(), Json::str("project-canon")),
@@ -1326,9 +1514,16 @@ mod print {
                     Json::Int(SKILL_SCHEMA_VERSION),
                 ),
                 ("agent".into(), Json::str(agent.slug())),
+                ("resource".into(), Json::str(resource)),
+                (
+                    "resources".into(),
+                    Json::Array(available.iter().map(|path| Json::str(*path)).collect()),
+                ),
                 ("content".into(), Json::str(content)),
-                // The synthetic skill's source of truth (§16 path_in_repo).
-                ("path_in_repo".into(), Json::str("AGENTS-AI-FIRST-CLI.md")),
+                (
+                    "path_in_repo".into(),
+                    Json::str(source_path_for(skill, resource)),
+                ),
                 ("exit_code".into(), Json::Int(EXIT_OK as i64)),
             ]);
             write_stdout(&format!("{payload}\n"), true)

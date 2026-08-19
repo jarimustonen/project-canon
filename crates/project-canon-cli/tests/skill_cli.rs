@@ -34,6 +34,17 @@ impl Tmp {
     fn codex_prompt(&self) -> PathBuf {
         self.path.join(".codex/prompts/ai-first-cli-canon.md")
     }
+    fn skill_resource(&self, agent: &str, name: &str, resource: &str) -> PathBuf {
+        let root = match agent {
+            "claude" => ".claude/skills",
+            "pi" => ".pi/agent/skills",
+            other => panic!("unsupported native skill agent {other}"),
+        };
+        self.path.join(root).join(name).join(resource)
+    }
+    fn named_codex_prompt(&self, name: &str) -> PathBuf {
+        self.path.join(".codex/prompts").join(format!("{name}.md"))
+    }
 }
 
 impl Drop for Tmp {
@@ -74,7 +85,7 @@ fn master_canon() -> String {
 }
 
 #[test]
-fn install_writes_both_agent_forms() {
+fn install_writes_all_agent_forms() {
     let t = Tmp::new("both");
     let out = run(&["install", "--target", t.str()]);
     assert_eq!(
@@ -84,6 +95,11 @@ fn install_writes_both_agent_forms() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(t.claude_skill().is_file(), "claude SKILL.md missing");
+    assert!(
+        t.skill_resource("pi", "ai-first-cli-canon", "SKILL.md")
+            .is_file(),
+        "pi SKILL.md missing"
+    );
     assert!(t.codex_prompt().is_file(), "codex prompt missing");
 
     let claude = std::fs::read_to_string(t.claude_skill()).unwrap();
@@ -123,6 +139,7 @@ fn dry_run_prints_but_writes_nothing() {
     // Nothing written — not even the agent dirs.
     assert!(!t.path.join(".claude").exists());
     assert!(!t.path.join(".codex").exists());
+    assert!(!t.path.join(".pi").exists());
 }
 
 #[test]
@@ -152,7 +169,10 @@ fn json_report_is_well_formed() {
     assert!(stdout.contains("\"verb\":\"skill install\""));
     assert!(stdout.contains("\"dry_run\":true"));
     assert!(stdout.contains("\"agent\":\"claude\""));
+    assert!(stdout.contains("\"agent\":\"pi\""));
     assert!(stdout.contains("\"agent\":\"codex\""));
+    assert!(stdout.contains("\"name\":\"cli-canon\""));
+    assert!(stdout.contains("\"resource\":\"templates/review-report.md\""));
     assert!(stdout.contains("\"action\":\"install\""));
     assert!(stdout.contains("\"written\":0"));
     assert!(stdout.contains("\"exit_code\":0"));
@@ -284,16 +304,130 @@ fn malformed_env_is_a_usage_error_but_help_still_exits_zero() {
 }
 
 #[test]
+fn cli_canon_installs_complete_native_trees_and_a_self_contained_codex_prompt() {
+    let t = Tmp::new("cli-canon-tree");
+    let out = run(&["install", "cli-canon", "--target", t.str()]);
+    assert_eq!(
+        code(&out),
+        0,
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    for agent in ["claude", "pi"] {
+        for resource in [
+            "SKILL.md",
+            "templates/conformance-probes.md",
+            "templates/generate-plan.md",
+            "templates/review-report.md",
+        ] {
+            assert!(
+                t.skill_resource(agent, "cli-canon", resource).is_file(),
+                "missing {agent} resource {resource}"
+            );
+        }
+        let skill =
+            std::fs::read_to_string(t.skill_resource(agent, "cli-canon", "SKILL.md")).unwrap();
+        assert!(skill.contains("cli_version:"));
+        assert!(skill.contains("schema_version:"));
+    }
+
+    let codex = std::fs::read_to_string(t.named_codex_prompt("cli-canon")).unwrap();
+    assert!(!codex.starts_with("---"));
+    for resource in [
+        "SKILL.md",
+        "templates/conformance-probes.md",
+        "templates/generate-plan.md",
+        "templates/review-report.md",
+    ] {
+        assert!(codex.contains(&format!("bundled resource: {resource}")));
+    }
+}
+
+#[test]
+fn cli_canon_print_discovers_and_streams_each_native_resource_exactly() {
+    let t = Tmp::new("cli-canon-print");
+    assert_eq!(
+        code(&run(&[
+            "install",
+            "cli-canon",
+            "--target",
+            t.str(),
+            "--agent",
+            "pi",
+        ])),
+        0
+    );
+    for resource in [
+        "SKILL.md",
+        "templates/conformance-probes.md",
+        "templates/generate-plan.md",
+        "templates/review-report.md",
+    ] {
+        let printed = run(&[
+            "print",
+            "cli-canon",
+            "--agent",
+            "pi",
+            "--resource",
+            resource,
+        ]);
+        assert_eq!(code(&printed), 0);
+        assert_eq!(
+            printed.stdout,
+            std::fs::read(t.skill_resource("pi", "cli-canon", resource)).unwrap()
+        );
+    }
+
+    let json = run(&["print", "cli-canon", "--agent", "pi", "--json"]);
+    let stdout = String::from_utf8(json.stdout).unwrap();
+    assert!(stdout.contains("\"resource\":\"SKILL.md\""));
+    assert!(stdout.contains("templates/conformance-probes.md"));
+    assert!(stdout.contains("templates/generate-plan.md"));
+    assert!(stdout.contains("templates/review-report.md"));
+    assert!(stdout.contains("\"path_in_repo\":\"skills/cli-canon/SKILL.md\""));
+
+    let template = run(&[
+        "print",
+        "cli-canon",
+        "--agent",
+        "pi",
+        "--resource",
+        "templates/review-report.md",
+        "--json",
+    ]);
+    assert!(String::from_utf8(template.stdout)
+        .unwrap()
+        .contains("\"path_in_repo\":\"skills/cli-canon/templates/review-report.md\""));
+}
+
+#[test]
+fn cli_canon_reinstall_is_idempotent_for_the_whole_tree() {
+    let t = Tmp::new("cli-canon-idem");
+    let args = ["install", "cli-canon", "--target", t.str(), "--agent", "pi"];
+    assert_eq!(code(&run(&args)), 0);
+    let out = run(&args);
+    assert_eq!(code(&out), 0);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(stdout.contains("wrote 0 files, 4 unchanged"), "{stdout}");
+}
+
+#[test]
 fn list_reports_the_shipped_skill() {
     let out = run(&["list"]);
     assert_eq!(code(&out), 0);
-    assert!(String::from_utf8_lossy(&out.stdout).contains("ai-first-cli-canon"));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("ai-first-cli-canon"));
+    assert!(text.contains("cli-canon"));
 
     let json = run(&["list", "--json"]);
     assert_eq!(code(&json), 0);
     let stdout = String::from_utf8_lossy(&json.stdout);
     assert!(stdout.contains("\"verb\":\"skill list\""));
     assert!(stdout.contains("\"name\":\"ai-first-cli-canon\""));
+    assert!(stdout.contains("\"name\":\"cli-canon\""));
+    assert!(stdout.contains("\"supported_agents\":[\"claude\",\"pi\",\"codex\"]"));
+    assert!(stdout.contains("templates/conformance-probes.md"));
     assert!(stdout.contains("\"cli_version\""));
 }
 

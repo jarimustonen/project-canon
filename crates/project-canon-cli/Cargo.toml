@@ -1,6 +1,6 @@
 [package]
 name = "project-canon-cli"
-description = "The project-canon binary — a thin CLI over project-canon-core exposing the doctor, new, and review verbs plus the canon skill installer."
+description = "The project-canon binary — conformance verbs plus binary-owned distribution of the AI-first CLI canon and companion cli-canon skill."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -170,6 +170,7 @@ mod tests {
             );
         }
         assert!(json.contains("\"name\":\"ai-first-cli-canon\""));
+        assert!(json.contains("\"name\":\"cli-canon\""));
         assert!(json.contains("\"schema_version\":1"));
         assert!(
             BUILD_COMMIT.is_empty()

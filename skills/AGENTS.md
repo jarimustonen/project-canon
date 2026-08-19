@@ -7,7 +7,9 @@ than the reverse.
 
 ## Contents
 
-- `cli-canon/` — the companion skill for the `cli` profile's canon
+- `cli-canon/` — the companion skill for the `cli` profile's canon. This repo-root path is a
+  symlink to the physical package master under `crates/project-canon-cli/skills/cli-canon/`, so
+  the complete resource tree is included in crates.io source archives without a second copy.
   ([`AGENTS-AI-FIRST-CLI.md`](../AGENTS-AI-FIRST-CLI.md), §1–§24). It is the reviewer/generator
   that *applies* the canon: **review** an existing family CLI against the canon (conformance
   matrix + prioritized recommendations) or **generate** canon-conformant surface scaffolding
@@ -26,7 +28,8 @@ than the reverse.
 
 ## Maintenance
 
-- Edit the skill **here**. This is the source of truth; downstream copies are derived.
+- Edit the skill through **this path**. It resolves to the packaged physical master and remains
+  the source of truth; downstream copies are derived.
 - Installed copies are **consumers**, not sources. Keep environment-specific repository maps out
   of skill text: `project-canon-core`'s `EnvConfig` config/hook layer is the single source for
   each operator's settings.

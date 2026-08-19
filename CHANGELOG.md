@@ -9,7 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+- `project-canon skill` now distributes the canonical `cli-canon` behavioral skill alongside
+  `ai-first-cli-canon`, including all three probe/generation/review templates. Claude and pi get
+  complete native skill trees; Codex keeps its prompt layout with the support resources embedded
+  into one deterministic prompt. `skill print --resource` and JSON resource discovery expose the
+  full tree without relying on downstream copies.
+
 ### Changed
+
+- `--agent all` now includes the first-class pi layout at `.pi/agent/skills/`; version, skill-list,
+  structured-help, and install metadata advertise both bundled skills and all supported agents.
+
 ### Fixed
 <!-- oss-changelog:unreleased-end -->
 

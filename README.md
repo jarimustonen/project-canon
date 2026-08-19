@@ -88,15 +88,25 @@ intentionally empty. A complete fictional family configuration is available at
 [`docs/config.example.toml`](docs/config.example.toml); inspect the resolved values with
 `project-canon config show --json`.
 
-## The canon as a skill
+## Bundled skills
 
-`project-canon` can install the canon itself as a versioned, single-sourced reference skill
-(for Claude and Codex):
+`project-canon` distributes two distinct, version-synchronized skills:
+
+- `ai-first-cli-canon` — synthetic reference content assembled from the canonical document.
+- `cli-canon` — the behavioral reviewer/generator plus its bundled probe and report templates.
+
+Claude and pi receive complete native skill directories; Codex receives self-contained prompts.
+Omitting the name installs both skills to every supported agent layout. `print` defaults to
+`SKILL.md`; its JSON form lists the complete resource tree, and `--resource` streams one template
+byte-for-byte as the native installer writes it.
 
 ```sh
-project-canon skill install       # install the ai-first-cli-canon skill
-project-canon skill list --json   # installed skills + versions
-project-canon skill print         # print the canon to stdout
+project-canon skill install --dry-run
+project-canon skill install cli-canon --agent pi
+project-canon skill list --json
+project-canon skill print ai-first-cli-canon
+project-canon skill print cli-canon --resource templates/review-report.md
+project-canon skill print cli-canon --json
 ```
 
 ## License

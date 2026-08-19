@@ -49,8 +49,8 @@ struct Command {
 const NO_ARGS: &[Arg] = &[];
 const NO_SUBCOMMANDS: &[&str] = &[];
 const VALUES_ARCHETYPE: &[&str] = &["cli", "service", "library", "release"];
-const VALUES_AGENT: &[&str] = &["claude", "codex"];
-const VALUES_AGENT_ALL: &[&str] = &["claude", "codex", "all"];
+const VALUES_AGENT: &[&str] = &["claude", "pi", "codex"];
+const VALUES_AGENT_ALL: &[&str] = &["claude", "pi", "codex", "all"];
 const COMMON_EXITS: &[(&str, &str)] = &[
     ("0", "success, including help display"),
     ("1", "caller-actionable usage or validation error"),
@@ -509,7 +509,7 @@ const SKILL_INSTALL: Command = Command {
         summary: "Optional bundled skill name; omit for all.",
         required: false,
         default: Some("all"),
-        accepted_values: &["ai-first-cli-canon", "all"],
+        accepted_values: &["ai-first-cli-canon", "cli-canon", "all"],
     }],
     flags: &[
         Flag {
@@ -621,7 +621,7 @@ const SKILL_PRINT: Command = Command {
         summary: "Bundled skill name.",
         required: true,
         default: None,
-        accepted_values: &["ai-first-cli-canon"],
+        accepted_values: &["ai-first-cli-canon", "cli-canon"],
     }],
     flags: &[
         Flag {
@@ -634,8 +634,22 @@ const SKILL_PRINT: Command = Command {
             deprecated: false,
         },
         Flag {
+            name: "--resource",
+            summary: "Print one relative resource; defaults to SKILL.md. JSON lists all resources.",
+            value_name: Some("path"),
+            default: Some("SKILL.md"),
+            accepted_values: &[
+                "SKILL.md",
+                "templates/conformance-probes.md",
+                "templates/generate-plan.md",
+                "templates/review-report.md",
+            ],
+            env_var: None,
+            deprecated: false,
+        },
+        Flag {
             name: "--json",
-            summary: "Emit skill metadata and content as JSON.",
+            summary: "Emit skill metadata, resource discovery, and selected content as JSON.",
             value_name: None,
             default: None,
             accepted_values: &[],
