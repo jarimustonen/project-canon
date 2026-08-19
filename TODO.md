@@ -7,7 +7,7 @@ Pointers to open issues. Descriptions and plans live in the linked
 
 _Repo bootstrapped 2026-08-12 from homebase **ADR 0009** (`project-canon` = project/repo-scoped
 conformance tool; base project canon + per-archetype profiles, AI-first CLI canon as the `cli`
-profile). Resume: `jatketaan @TODO.md`. Live scheduling is `issuectl dag`; TODO.md carries only handoff notes._
+profile). Resume with `/skill:stint-start`. Live scheduling is `issuectl dag`; TODO.md carries only handoff notes._
 
 _**Session 2026-08-14 (five rounds, all landed `done`, green on main, no deploy — repo policy):**
 `env-config-hook-layer` (`2d9f8ab`) → `doctor-conformance-gate` (`50f55e9`) →
@@ -153,7 +153,3 @@ issuectl ls --status in-progress
 ```
 
 `TODO.md` is only the session handoff and project notes; issue bodies and `issuectl dag` are the source of truth.
-
-## Piialiisan bugiraportit
-
-- [x] 🐛 Piialiisan bugiraportti: review: execute the built binary to auto-verify runtime canon checks in… — jari via Telegram ([`intake-feature-project-canon-ab1e44dfaf66`](issues/intake-feature-project-canon-ab1e44dfaf66/item.md)) — **admitted 2026-08-16**, now normal planned work in `canon-rollout` (seq 30); see the handoff block above.
