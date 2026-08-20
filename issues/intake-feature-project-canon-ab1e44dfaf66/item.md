@@ -1,12 +1,11 @@
 ---
 created: 2026-08-16
-updated: 2026-08-17
+updated: 2026-08-20
 type: feature
 reporter: jari
 status: done
 priority: normal
-labels:
-- via:agent-homebase-wrapup
+closed_by: agent
 lane: canon-rollout
 lane_seq: 30
 commits:
@@ -15,7 +14,7 @@ commits:
 - hash: 614c52a
   summary: harden process lifecycle and apply review findings
 closed: 2026-08-17
-closed_by: agent
+provenance: agent-homebase-wrapup
 ---
 
 # review: execute the built binary to auto-verify runtime canon checks in…
