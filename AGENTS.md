@@ -104,6 +104,26 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
   guard the crates.io partial-publish case, and `ossctl release resume`/`abandon` recover an
   interrupted run. Still: green gate first, dry-run/plan first, never publish red, report each
   phase.
+- **⚠️ TEMPORARY WORKAROUND (added 2026-08-19) — the engine's exit code is currently NOT
+  trustworthy on this repo: trust the CHANNELS instead.** `ossctl release cut` exits non-zero
+  with `release_failed` on releases where **everything actually landed**. The verify phase
+  reports the `gh-releases` target as `missing` for a GitHub Release that is fully published
+  with all assets. Observed on `0.4.0`, `0.5.0`, and `0.6.0`. It is a **lookup bug, not a timing
+  race**: the release existed for ~18 of the 20-minute polling window and was never observed, and
+  a read-only `ossctl release verify` run long afterwards still reports missing. Tracked upstream
+  as **`verify-gh-release-missing`** in the `ossctl` repo (laned `verify-seam`). This repo is
+  likely *why* the bug is visible — it is the one repo whose package name (`project-canon-cli`)
+  differs from its project/tag/tap name (`project-canon`).
+  **So, until it is fixed:** after a cut, verify each channel directly — crates.io
+  (`curl … /api/v1/crates/project-canon-cli`), `gh release view v<ver>`, and the tap formula —
+  and treat a verify-phase `missing` on `gh-releases` as a **known false negative**. Do **NOT**
+  react to that exit code by retrying the cut or hand-reconciling crates.io: crates.io publishes
+  are irreversible, so acting on the false failure is the actual danger here, not the failure.
+  **🔎 RE-CHECK THIS NOTE BEFORE RELYING ON IT.** It is a workaround, not a standing rule. At the
+  start of any release work, check whether `verify-gh-release-missing` has been fixed and
+  released (`ossctl version`, and the issue's status in the `ossctl` tracker). **If it is fixed,
+  DELETE this whole bullet** and go back to trusting the engine's exit code — a stale workaround
+  that outlives its cause is exactly the §24 defect this project has a canon section about.
 - **Git: `pull --rebase` → `push` is always allowed, no confirmation** (maintainer
   decision, 2026-08-05). On this repo the agent may run the pull-rebase-push sequence
   (`git pull --rebase origin main` then `git push origin main`, and pushing tags) on its own
@@ -124,6 +144,20 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
   `build` lane at v0 — every verb (`doctor`/`new`/`review`) reads the core model, so they collide
   here. `crates/project-canon-cli/src/main.rs` is the thin binary. Split `doctor`/`new`/`review`
   into parallel lanes only once their modules are provably disjoint (re-assess after each lands).
+- **Worker briefs MUST require design reasoning in the ISSUE, not only in the run report**
+  (2026-08-19, from measured evidence). Every brief handed to a worktree worker must include:
+  *"append your design decisions and rejected alternatives as an `issuectl` comment on the issue
+  before merging."* Treat this as non-optional, exactly like the green gate and the terminal
+  `run merge` call. **Why:** across the 2026-08-17 rounds, of four workers **exactly one** wrote
+  its decisions into the issue — and that is the **only** reasoning still durable today (in-repo,
+  in git, next to the work). Two returned **empty `discussion_items`** *despite the brief
+  explicitly asking for them*, and a third populated the report richly but left nothing in-repo,
+  so its rationale now exists only inside the orchestration run store. **Prompting harder does
+  not fix this** — it was already prompted; it is the `orchestratectl`
+  `spinoff-report-fields-null` bug. Routing the reasoning through an issue comment is
+  transport-independent and survives that bug entirely. Keep the structured report for
+  orchestrator sequencing, but never let it be the only copy: a decision that exists only in the
+  run store is a decision the next agent will silently re-litigate or, worse, inherit blindly.
 - **Migration rules:** N/A (no schema/DB).
 - **Test-account reset preference:** none.
 
