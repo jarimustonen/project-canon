@@ -30,7 +30,28 @@ Codex). Design decisions in `issues/canon-installable-skill/design.md` — kept 
 one recorded canon deviation (unknown-name in `print` exits **2** for binary-wide consistency, not
 §16's literal 1 — owner may amend the canon)._
 
-_**🔒 2026-08-16 (session 2, LATEST — start here). Two things happened: a 4-unit canon-conformance
+_**🚀 2026-08-19 — LATEST STATE. `0.6.0` is public and live on every channel**: crates.io
+(`project-canon-core@0.6.0` + `project-canon-cli@0.6.0`), the GitHub Release with cargo-dist
+binaries, and Homebrew `project-canon` at `0.6.0`. Workspace manifest matches. `0.6.0` shipped the
+complete `cli-canon` behavioral skill alongside `ai-first-cli-canon` (all three probe/generation/
+review templates; Claude and pi get native skill trees, Codex gets the resources embedded in one
+deterministic prompt) plus the first-class pi layout under `--agent all`. Intake labels have since
+been migrated to the issuectl lifecycle (`doctor --fix`)._
+
+_**Canon is at v4, §1–§24.** `0.4.0` and `0.5.0` (2026-08-17) closed the canon-conformance arc —
+see the two sections below. The `canon-rollout` lane is **empty**; every unit in it landed._
+
+_**Direction from here.** v0's scope is complete and released, so the open question is no longer
+"finish v0" but "how far does the family actually adopt this". The live thread is release-surface
+correctness: this repo's own contract under-declares what it publishes, and that work is entangled
+with a HIGH engine bug in `ossctl` (below). Beyond that, the natural next block is the sibling-CLI
+§10 rollout, which is **deliberately unscheduled** — see the decision note below._
+
+_**⚠️ Needs scheduling triage:** one active issue is unscheduled — `contract-declare-release-surface`
+(the contract omits the Homebrew target). It is **blocked in practice** on the `ossctl` gh-releases
+verify bug and says so in its own body; read that before touching the contract._
+
+_**🔒 2026-08-16 (session 2). Two things happened: a 4-unit canon-conformance
 round, and a publicness defect found + fixed + turned into a rule.**_
 
 _**Round: `project-canon` now conforms to the canon it publishes.** Four units, strictly serial (core
@@ -77,14 +98,16 @@ call):** (1) **`orchestratectl`** issue **`spinoff-report-fields-null`** (priori
 `spinoff_proposals`/`wrap_up_recommendations`, while `run wait` returned a rich accurate summary for
 the same runs. So the report is captured but not persisted into `nodes/<node>.json`. Every round fact
 in this handoff was reconstructed from `git log` — the *reasoning* is lost. Don't waste effort
-re-prompting workers; it's a tooling bug. (2) **Four `audit-no-user-specifics` issues** filed in
+re-prompting workers; it's a tooling bug. **STILL RECURRING as of 2026-08-17** (2 of 4 workers that
+round), which is why the recommended practice above routes reasoning into issue comments instead. (2) **Four `audit-no-user-specifics` issues** filed in
 `issuectl`, `orchestratectl`, `ossctl`, `glasspad` (the public siblings) so the leak class gets swept
 family-wide; `aggountant` is private so the rule doesn't bite. Each says: **close as clean if the
 audit finds nothing** — a recorded clean result is the point._
 
-_**Homebrew leg is STILL manual** — `ossctl release plan` seals only the 2 crates.io targets, so the
-tap formula (sha256 + push) was hand-updated **twice** today. Teaching cargo-dist to push the formula
-in CI is the highest-value release-infra follow-up (noted since 0.1.1, still not filed)._
+_**[SUPERSEDED 2026-08-17 — see the release-infra note above. The Homebrew leg is now automatic.]**
+~~Homebrew leg is STILL manual — `ossctl release plan` seals only the 2 crates.io targets, so the
+tap formula (sha256 + push) was hand-updated twice today. Teaching cargo-dist to push the formula
+in CI is the highest-value release-infra follow-up.~~_
 
 _**🚀 2026-08-16 — FIRST RELEASE CUT: v0.1.1 is PUBLIC.** `project-canon` is released and the repo
 is now **public** (`gh repo … --visibility public`). Live channels: **crates.io** —
@@ -113,26 +136,84 @@ coordinated bump to **0.1.1** (core@0.1.0 was already public without the CANON A
 
 _**`homebase-canon-cutover` DONE 2026-08-16.** After the first release, homebase and the selected active repo set switched to consume the canon/tool FROM here: install the `ai-first-cli-canon` skill from project-canon, not copy the markdown. **Two deferred follow-ups** (noted, NOT filed): (1) wire `new` to optionally auto-install the `ai-first-cli-canon` skill on scaffold; (2) a top-level `version --json` `skills:` audit surface. **Also worth a follow-up:** teach cargo-dist to push the Homebrew formula in CI (today the formula is maintained by hand in the tap) once the ossctl `dist` phase is trusted._
 
-**▶ NEXT (head-of-line): `canon-no-user-specifics`** — promote the publicness rule to a canon
-section (§23) + a mechanical `doctor` check, so it's enforced family-wide instead of remembered.
-Its blocker (`portable-neutral-defaults`) has landed. **Read the appended note on that issue first**
-— it records the carve-out the check must honor and what it needs as input (the repo's own
-coordinates as known-good, derivable from the git remote; plus an operator deny-list via the §8
-user-config layer, keeping the check itself free of user specifics). Land it in a state where
-project-canon itself passes — a canon section the home repo violates is worse than none.
+_**🔒 2026-08-17 (round A) — the two publicness/verification rules became CANON + machinery. Shipped
+as `0.4.0`.** Both follow the same shape: a normative section, a mechanical `doctor` gate for the
+detectable subset, and a `review` judgment row for the remainder._
 
-**Then (laned, `canon-rollout` seq 30): `intake-feature-project-canon-ab1e44dfaf66`** — make `review`
-**execute the built binary** to auto-confirm runtime-observable canon checks (§2/§8/§10/§14/§15/§16/
-§18) instead of punting ~14 of 22 sections to manual-verify. Admitted from intake at this handoff
-(owner ack 2026-08-16). Filed against 0.1.1, when `review` auto-confirmed only ONE gap family-wide
-(§22, a static filesystem check) and the real gaps had to be found by hand-running each binary.
-**Much more actionable now:** this session built the very surfaces it wants probed, so the probes
-have something to find. Suggested shape from the reporter: an opt-in `--run <path-to-binary>` (or
-auto-detect a built target), keeping `--assume-defaults` static-only as the safe default for un-built
-repos. **Sequence it with `canon-no-user-specifics`** — that one also needs a new `doctor` check, so
-design the "actually execute/probe the target" mechanics once, for both.
+_**§23 — public artifacts must not embed user-specific facts.** Scoped deliberately to *publicly
+distributed* artifacts (an internal-only tool may encode its own org's policy; a published package
+must never make a recipient inherit the maintainer's environment), and routed through the BASE layer
+so every profile inherits it. The `doctor` gate is driven by `user_specific_deny_list` (env override
+`PROJECT_CANON_USER_SPECIFIC_DENY_LIST`), exact + case-insensitive, **no username-shape heuristic**,
+built-in list **empty** — the markers live in user config outside the artifact. It derives the
+target's own owner/repo from the git remote or Cargo metadata and **exempts that project's own
+GitHub/badge/Homebrew/install coordinates**, while still flagging a different private project name
+under the same owner. **Known design property:** an unconfigured deny-list is **non-gating** — it
+reports the key to set rather than failing. Defensible (a check that fails every fresh repo gets
+disabled) but it means the mechanical half is opt-in per operator._
 
-**Also open:** `project-canon-v0` epic looks finishable — worth a close pass.
+_**§24 — a stated blocker is re-verified, not inherited.** The worker proved the rule on this repo:
+`dist-workspace.toml` justified a gap by naming an `ossctl` owning issue — which turned out to
+**exist but be closed**, for work already enabled. The comment is now a dated, verified statement.
+`doctor` rejects deferral justifications whose local owning issue is missing/closed and **fails
+closed** on cross-repo owners it cannot verify (no network lookup; recognized slugs need an open
+local mirror; a reasoned `canon:s24-allow` annotation is reserved for historical quotations).
+**Consequence, and the reason `0.4.0` is a minor:** `doctor` may now fail repos it previously passed._
+
+_**🔒 2026-08-17 (round B) — `review` verifies by DOING; `--version` fixed. Shipped as `0.5.0`.**_
+
+_**`review --run <binary>`** executes a built CLI to auto-confirm runtime-observable sections. On
+this repo it moved **16 manual/6 pass → 9 manual/14 pass**. Deliberately conservative and
+**independently re-verified at handoff, not taken on the worker's word**: opt-in only
+(`--assume-defaults` stays static and never executes); no shell; per-call timeout; read-only argv
+(`skill list`/`print`, never `skill install`). Outcomes distinguish pass / gap / **`could-not-probe`**
+— a missing binary, a non-executable file, and a script sleeping an hour all returned
+`could-not-probe` (the hang bounded to ~4s), and a non-conforming binary correctly reported gaps.
+**`could-not-probe` never collapses into pass or gap** — under-reporting was the original complaint._
+
+_**`--version` is now a full alias of the `version` verb** — identical output and exit code in every
+mode including `--json`, argument order irrelevant. **Canon §10 was amended in step**, dropping its
+false rationale that the flag "cannot honor `--json`" (true of clap's built-in action, not of a tool
+that dispatches the flag itself, as this one already did). The §10 **runtime probe** from round A
+encoded the old rule and moved with the amendment, so the tool never contradicted itself._
+
+_**📌 DECIDED (owner, 2026-08-19): the sibling-CLI §10 rollout is deliberately LEFT TO SIT.** The
+amendment makes every other family CLI report a §10 gap by design; that is the alignment signal
+working, nothing is broken in those tools, and `--version` still behaves as users expect there —
+only the machine-readable spelling differs. **Not filed, on purpose.** The one real cost is noise:
+if every sibling audit shows a standing §10 gap, audit output starts getting skimmed and a genuine
+gap hides among the known ones. **When the rollout is actually scheduled, file one tracking issue
+first** so a future reader sees a recorded decision rather than drift. Do not "fix" this by
+softening the canon rule — enumerate each tool's gaps via its own runtime probe and lane them._
+
+_**📌 RECOMMENDED PRACTICE (2026-08-19, from evidence): put worker reasoning in the ISSUE, not only
+in the run report.** Of the four workers in the 2026-08-17 rounds, **exactly one** appended its
+design decisions as an `issuectl` comment — and that is the **only** reasoning that is durable today
+(in-repo, in git, next to the work). Two returned **empty `discussion_items`** despite the brief
+explicitly asking for them, and a third populated the report richly but left nothing in-repo, so its
+rationale exists only in the orchestration run store. Prompting harder does not fix this (it was
+already prompted). **Therefore: every brief should require "append your design decisions and
+rejected alternatives as an issue comment before merging", as standard as the green gate and the
+merge call.** It is transport-independent and survives the `orchestratectl`
+`spinoff-report-fields-null` bug entirely. Keep the structured report for orchestrator sequencing;
+stop letting it be the only copy._
+
+_**Release-infra state (good news, supersedes older notes below):** the **Homebrew leg is now fully
+automatic** — cargo-dist publishes the formula in CI via `HOMEBREW_TAP_TOKEN` (configured
+2026-08-15), verified across `0.4.0`/`0.5.0`/`0.6.0`. The long-standing "teach cargo-dist to push the
+formula" follow-up is **DONE**; ignore the 2026-08-16 note below that calls it manual._
+
+_**⚠️ `ossctl` gh-releases verify reports a SUCCESSFUL release as FAILED — filed, laned, being
+worked.** `release cut` exits non-zero with `release_failed` on a release where everything landed.
+**It is a lookup bug, not a timing race**, and that distinction is the point: for `0.5.0` the GitHub
+Release existed for ~18 of the 20-minute polling window and was never observed, and a read-only
+`release verify` run long afterwards **still** reports missing. Reproduces on `ossctl 0.9.0`. Filed
+as **`verify-gh-release-missing`** in the `ossctl` repo (now laned `verify-seam`, with a later note
+suggesting the fault is in `release/reconcile.rs`'s generic registry query rather than the tag
+lookup). **Operational rule until fixed: trust the CHANNELS, not the engine's exit code** — check
+crates.io, the GitHub Release, and the tap directly before believing a reported failure. The stale
+`in_flight` journal entries this caused (`0.3.3`/`0.4.0`/`0.5.0`/`0.6.0`) have since been abandoned
+with accurate reasons; `in_flight_count` is 0._
 
 **v0 scope discipline (ADR 0009 §6): a LIFT, not a greenfield canon — ✅ COMPLETE, ✅ RELEASED (0.1.1).**
 ✅ `cli` profile (§1–§24 lift); ✅ base canon seeded; ✅ `service`/`library`/`release` named-but-empty
