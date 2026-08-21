@@ -15,6 +15,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 <!-- oss-changelog:unreleased-end -->
 
+## [0.6.1] - 2026-08-21
+
+Release-infrastructure correctness. No change to the CLI's behaviour; the declared release
+surface now matches what actually ships.
+
+### Fixed
+
+- **Homebrew is now a declared, verified release target.** Every release already published the
+  Homebrew formula — cargo-dist does it from `publish-jobs = ["homebrew"]` — but the release
+  contract never declared the channel, so it was published without ever being planned or
+  verified. That is how the formula silently sat three versions behind earlier this month while
+  every release reported success. It is declared as `binary:project-canon` (the distribution
+  identity cargo-dist actually writes, `Formula/project-canon.rb`), not the Rust package name,
+  so verification fetches the formula that exists rather than one that never did.
+- **The release engine is now the sole crates.io publisher.** Every release had been running
+  *two* publish paths: the engine publishing locally during its sealed transaction, and a
+  tag-triggered workflow publishing again afterwards. The second path had been reporting success
+  by explicitly matching cargo's `already exists on crates.io index` diagnostic and treating it
+  as success — a deliberate no-op rather than a second registry write, so nothing was corrupted,
+  but the declared surface and the real one disagreed. The duplicate workflow is removed.
+  Publication stays inside the engine's transaction, where `dry-run-all` precedes it, core→CLI
+  ordering is enforced, receipts are journaled, and the tag is pushed only after both crates
+  publish.
+
 ## [0.6.0] - 2026-08-19
 
 ### Added
