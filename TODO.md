@@ -47,9 +47,19 @@ correctness: this repo's own contract under-declares what it publishes, and that
 with a HIGH engine bug in `ossctl` (below). Beyond that, the natural next block is the sibling-CLI
 §10 rollout, which is **deliberately unscheduled** — see the decision note below._
 
-_**⚠️ Needs scheduling triage:** one active issue is unscheduled — `contract-declare-release-surface`
-(the contract omits the Homebrew target). It is **blocked in practice** on the `ossctl` gh-releases
-verify bug and says so in its own body; read that before touching the contract._
+_**✅ 2026-08-21 — the `ossctl` verify blocker is FIXED and the workaround is GONE.** `ossctl 0.10.0`
+resolves `verify-gh-release-missing` (upstream status `fixed`). **Verified, not inherited:**
+re-running `ossctl release verify` on the exact v0.5.0 run that used to report `missing` now returns
+**3/3 matches, 0 missing**. The temporary "trust the channels, not the exit code" bullet in
+`AGENTS.md` has therefore been **deleted** as its own expiry clause required — the engine's exit
+code is trustworthy again. `contract-declare-release-surface` is consequently **unblocked**._
+
+_**Open work is exactly two issues, both `high`:** `contract-declare-release-surface` (lane
+`release-surface` — now unblocked; note its appended comment: the crates.io publish path is
+currently **doubled**, ossctl locally *and* `publish-crates.yml` on tag push, so pick one and
+retire the other rather than just relabelling the adapter) and `ci-timeout-regression` (lane
+`ci-health` — **scoped as an investigation, not a fix**; "leave it alone" is an accepted outcome,
+and its own "CI is red" claim is already stale — `main` went green again on the next run)._
 
 _**🔒 2026-08-16 (session 2). Two things happened: a 4-unit canon-conformance
 round, and a publicness defect found + fixed + turned into a rule.**_
