@@ -1,10 +1,11 @@
 ---
 created: 2026-08-19
-updated: 2026-08-19
+updated: 2026-08-21
 type: bug
 reporter: agent-ossctl-stint-23
 status: open
 priority: high
+lane: release-surface
 ---
 
 # contract under-declares the release surface (no homebrew target); blocked on the gh-releases verify lookup bug
@@ -152,3 +153,19 @@ live exercise of that path.
 `ossctl 0.9.0` or newer. The CI-delegated homebrew adapter shipped in 0.8.0 and the
 `cargo-publish-ci` adapter in 0.9.0. Check with `ossctl --version` (which also only
 started working in 0.8.0).
+
+## Comments
+
+### 2026-08-21T07:31:45Z · @agent
+
+**The "local or CI publish?" question is now ANSWERED — and the answer is "both", which is itself a defect worth folding into this issue.**
+
+Evidence gathered 2026-08-21 (owner decided to do this work once the ossctl verify fix lands):
+
+- `.github/workflows/publish-crates.yml` triggers on the **version-tag push** (`v[0-9]+.[0-9]+.[0-9]+*`) and publishes both crates to crates.io in dependency order, from CI, using a `CARGO_REGISTRY_TOKEN` repo secret. Its header comment states the intent explicitly: *"crates.io publishing happens in CI with no dependency on a local token."* It deliberately does NOT key off `release: published`, because cargo-dist creates the Release with `GITHUB_TOKEN` and GitHub emits no workflow event for that.
+- **But `ossctl release cut` also publishes crates.io locally**, in its `publish` phase, which runs *before* the `tag` phase. The 2026-08-17 run journals for v0.4.0 and v0.5.0 both record `target_published` receipts for `project-canon-core` and `project-canon-cli` with `registry_url` values — i.e. the local publish really happened.
+- So every release currently runs **two** crates.io publish paths: ossctl locally first, then the tag push firing `publish-crates.yml`. `gh run list --workflow=publish-crates.yml` shows that workflow **succeeded** on v0.3.2, v0.3.3, v0.4.0, v0.5.0 and v0.6.0 (23–36s each), so the second path is not erroring loudly — worth checking whether it detects the already-published version and no-ops, or whether the duplicate is being swallowed.
+
+**Implication for the fix in this issue:** the contract currently declares `adapter: cargo-publish` (local), which matches ossctl's behaviour but contradicts the CI workflow's stated intent. Picking `cargo-publish-ci` for both crates would match the workflow — but do **not** simply switch the adapter and leave both paths live. Decide which path is authoritative and **retire the other**, otherwise the double-publish stays, just re-labelled. This is the same class of defect as the missing Homebrew declaration: reality and the declared surface disagree.
+
+Also note this makes the repo's release even harder to reason about while `verify-gh-release-missing` is unfixed — a false-red on gh-releases plus two live publish paths is a bad combination for an autonomous agent to act on.
