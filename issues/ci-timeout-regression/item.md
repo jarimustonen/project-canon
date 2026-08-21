@@ -9,6 +9,8 @@ lane: ci-health
 commits:
 - hash: a0981fe
   summary: mark investigation in progress
+- hash: 26c63e0
+  summary: record investigation verdict and close wontfix
 closed: 2026-08-21
 closed_by: agent
 ---
