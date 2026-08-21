@@ -7,11 +7,16 @@ targets:
   - {ecosystem: rust, package: project-canon-core, registry: crates.io, adapter: cargo-publish}
   - {ecosystem: rust, package: project-canon-cli, registry: crates.io, adapter: cargo-publish}
   - {ecosystem: rust, package: project-canon-cli, registry: gh-releases, adapter: cargo-dist}
+  - {ecosystem: rust, package: project-canon-cli, registry: homebrew, adapter: cargo-dist}
 distribution:
   adapter: cargo-dist
   gh_releases: true
   installers: [shell, homebrew]
   homebrew_tap: jarimustonen/homebrew-project-canon
+  platforms:
+    - aarch64-apple-darwin
+    - aarch64-unknown-linux-musl
+    - x86_64-unknown-linux-musl
 versioning: zerover
 changelog: {mode: fragment, source: issuectl-trailers}
 conventional_commits: true
@@ -40,18 +45,18 @@ docs_site: none
   single most important field to confirm.*
 - **ecosystems: [rust]** — one Cargo workspace, two crates; no other manifests. Not `binary`
   (that is only for repos with no package ecosystem).
-- **targets: crates.io ×2** — both `project-canon-core` (library keel) and `project-canon-cli`
-  (the `project-canon` binary) publish to crates.io (owner-confirmed 2026-08-15). Workspace
-  `repository`/`license`/`description` are all present; the bin can only publish once its `core`
-  dep is published, so both are listed. Coexists with the Homebrew/binary `distribution` layer.
+- **targets: crates.io ×2, GitHub Releases, Homebrew** — both `project-canon-core` (library
+  keel) and `project-canon-cli` (the `project-canon` binary) publish to crates.io. The release
+  engine is the sole crates.io writer (`cargo-publish`): it preserves dependency ordering,
+  records publish receipts, and verifies registry state before tagging. The retired tag-triggered
+  workflow deliberately no longer competes with that path. Cargo-dist owns the binary channels;
+  its CI publishes both the GitHub Release and the Homebrew formula, so both delegated targets use
+  `cargo-dist` rather than the engine-owned `homebrew-tap` adapter.
 - **distribution: cargo-dist, shell + homebrew installers** — cross-platform prebuilt binaries
-  via cargo-dist (macOS arm64/x86_64 + musl Linux arm64/x86_64 by the normalizer's default),
-  attached to GitHub Releases, with a `homebrew` installer (the **primary** delivery channel —
-  how the tool is installed on our machines) plus a `shell` curl installer as the mac+linux
-  fallback. `homebrew_tap: jarimustonen/homebrew-project-canon` follows the family's
-  one-tap-per-tool convention (cf. `homebrew-ossctl`, `homebrew-issuectl`,
-  `homebrew-orchestratectl`). **Prerequisite:** that tap repo does not exist yet — it must be
-  created (empty, public) before the cut, exactly like the sibling tools' taps.
+  for macOS arm64 and musl Linux arm64/x86_64 are attached to GitHub Releases. Cargo-dist also
+  pushes the Homebrew formula to `jarimustonen/homebrew-project-canon`; the shell installer is the
+  fallback channel. The explicit platform list matches `dist-workspace.toml` rather than relying
+  on normalizer defaults.
 - **versioning: zerover** — the repo calls itself **v0** and deliberately stays pre-1.0; both
   crates are at `0.0.0`. ZeroVer caps major at 0, so the first cut lands `0.1.0` and breaking
   changes bump the minor.
