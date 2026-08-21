@@ -3,12 +3,16 @@ created: 2026-08-19
 updated: 2026-08-21
 type: bug
 reporter: agent-ossctl-stint-23
-status: in-progress
+status: fixed
 priority: high
 lane: release-surface
 commits:
 - hash: 967d06f3cd61b24e1e979ae6b139ac4db6d2e25f
   summary: declare complete release surface and retire duplicate crates.io workflow
+- hash: 8429687f8c7cc62c9d5abe57aecc773ee3735abe
+  summary: align Homebrew formula identity and codify engine-only crates.io publishing
+closed: 2026-08-21
+closed_by: agent
 ---
 
 # declare the complete release surface and resolve the doubled publish path
