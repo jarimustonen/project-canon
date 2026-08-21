@@ -2,12 +2,12 @@
 schema_version: 1
 status: approved
 maturity: mvp
-ecosystems: [rust]
+ecosystems: [rust, binary]
 targets:
   - {ecosystem: rust, package: project-canon-core, registry: crates.io, adapter: cargo-publish}
   - {ecosystem: rust, package: project-canon-cli, registry: crates.io, adapter: cargo-publish}
   - {ecosystem: rust, package: project-canon-cli, registry: gh-releases, adapter: cargo-dist}
-  - {ecosystem: rust, package: project-canon-cli, registry: homebrew, adapter: cargo-dist}
+  - {ecosystem: binary, package: project-canon, registry: homebrew, adapter: cargo-dist}
 distribution:
   adapter: cargo-dist
   gh_releases: true
@@ -43,15 +43,18 @@ docs_site: none
   exact things this release must add — so `mvp` is the honest tier. **Not `production`**: that
   needs ≥2 recent committers + existing CI + a release gate, none of which hold yet. *← the
   single most important field to confirm.*
-- **ecosystems: [rust]** — one Cargo workspace, two crates; no other manifests. Not `binary`
-  (that is only for repos with no package ecosystem).
+- **ecosystems: [rust, binary]** — one Cargo workspace supplies the two crates; the `binary`
+  facet identifies the cargo-dist Homebrew formula, whose public name is `project-canon` rather
+  than the Rust package name `project-canon-cli`.
 - **targets: crates.io ×2, GitHub Releases, Homebrew** — both `project-canon-core` (library
   keel) and `project-canon-cli` (the `project-canon` binary) publish to crates.io. The release
   engine is the sole crates.io writer (`cargo-publish`): it preserves dependency ordering,
   records publish receipts, and verifies registry state before tagging. The retired tag-triggered
   workflow deliberately no longer competes with that path. Cargo-dist owns the binary channels;
   its CI publishes both the GitHub Release and the Homebrew formula, so both delegated targets use
-  `cargo-dist` rather than the engine-owned `homebrew-tap` adapter.
+  `cargo-dist` rather than the engine-owned `homebrew-tap` adapter. The Homebrew target uses
+  `binary:project-canon`, matching cargo-dist's `formula = "project-canon"`; ossctl verifies
+  `Formula/<package>.rb`, so using the Rust package name would observe the wrong formula.
 - **distribution: cargo-dist, shell + homebrew installers** — cross-platform prebuilt binaries
   for macOS arm64 and musl Linux arm64/x86_64 are attached to GitHub Releases. Cargo-dist also
   pushes the Homebrew formula to `jarimustonen/homebrew-project-canon`; the shell installer is the

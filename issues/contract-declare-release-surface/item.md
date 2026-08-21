@@ -3,12 +3,15 @@ created: 2026-08-19
 updated: 2026-08-21
 type: bug
 reporter: agent-ossctl-stint-23
-status: open
+status: in-progress
 priority: high
 lane: release-surface
+commits:
+- hash: 967d06f3cd61b24e1e979ae6b139ac4db6d2e25f
+  summary: declare complete release surface and retire duplicate crates.io workflow
 ---
 
-# contract under-declares the release surface (no homebrew target); blocked on the gh-releases verify lookup bug
+# declare the complete release surface and resolve the doubled publish path
 
 ## Description
 
@@ -80,9 +83,9 @@ waits 20 minutes for a publish nobody performs.
 
 ## Acceptance
 
-- [ ] Homebrew target declared, plus a `distribution:` block
-- [ ] The local-vs-CI crates.io question is answered and recorded in the contract's rationale
-- [ ] `ossctl contract validate` passes
+- [x] Homebrew target declared, plus a `distribution:` block
+- [x] The local-vs-CI crates.io question is answered and recorded in the contract's rationale
+- [x] `ossctl contract validate` passes
 - [ ] Once `verify-gh-release-missing` is fixed, a cut verifies all four targets and exits zero
 
 ## Reference: a correctly-declared contract
@@ -169,3 +172,27 @@ Evidence gathered 2026-08-21 (owner decided to do this work once the ossctl veri
 **Implication for the fix in this issue:** the contract currently declares `adapter: cargo-publish` (local), which matches ossctl's behaviour but contradicts the CI workflow's stated intent. Picking `cargo-publish-ci` for both crates would match the workflow — but do **not** simply switch the adapter and leave both paths live. Decide which path is authoritative and **retire the other**, otherwise the double-publish stays, just re-labelled. This is the same class of defect as the missing Homebrew declaration: reality and the declared surface disagree.
 
 Also note this makes the repo's release even harder to reason about while `verify-gh-release-missing` is unfixed — a false-red on gh-releases plus two live publish paths is a bad combination for an autonomous agent to act on.
+
+### 2026-08-21T09:37:06Z · @agent
+
+#### Release-surface decision
+
+Verified the former blocker before changing the contract: `ossctl version` reports 0.10.0, and `ossctl release verify 01M08P4D4HK25MRQXDE0XDW9NJ --json` reconciles the historical v0.5.0 run with 3 matches, 0 conflicts, and 0 missing, including `rust:project-canon-cli:gh-releases`. The blocker is cleared.
+
+I chose the ossctl engine's local `cargo-publish` path as the sole crates.io writer and deleted `.github/workflows/publish-crates.yml`. This keeps publication inside the sealed release transaction: `dry-run-all` runs before publication, core→CLI ordering remains engine-controlled, registry receipts are journaled, verification observes the exact publish operation, and tagging happens only after both crates publish. It also matches the approved operating policy's engine-driven release and recovery model.
+
+The rejected alternative was changing both targets to `cargo-publish-ci` and retaining the tag-triggered workflow. That would avoid requiring a local token, which was the workflow's original stated intent, but would move the irreversible writes outside the engine that coordinates and journals the cut. It also makes a tag the trigger for publication, weakening the engine's direct ordering and recovery guarantees. Keeping both paths was not considered valid because it preserves the defect.
+
+The duplicate workflow succeeded because it explicitly swallowed only cargo's duplicate-version error. The v0.5.0 Actions log says `crate project-canon-core@0.5.0 already exists on crates.io index` and then `treating as success`, followed by the same sequence for `project-canon-cli@0.5.0`. Its `publish()` shell function regex-matched that diagnostic and returned zero; it was a deliberate no-op after ossctl had already published, not a second successful registry write.
+
+Homebrew remains cargo-dist-owned: the new `registry: homebrew, adapter: cargo-dist` target declares and verifies the existing `publish-jobs = ["homebrew"]` behavior without introducing an engine `homebrew-tap` double writer. `ossctl contract validate --require-approved` passes, and sealed plan `793dd6de08f9ae59856af475504d248b94cbb4578ec77c2a07efcb2ae173af6d` contains all four targets, including Homebrew.
+
+### 2026-08-21T09:51:15Z · @agent
+
+#### Review correction: Homebrew formula identity
+
+The required `/llm-review` and `/assess-findings` pass found one substantive flaw in the initial contract edit: the Homebrew target used the Rust package identity `project-canon-cli`, but cargo-dist publishes `Formula/project-canon.rb` (`formula = "project-canon"`). Read-only inspection of ossctl 0.10.0 confirmed that delegated Homebrew verification passes `target.package` directly to `verify_tap_formula`, which fetches `Formula/<package>.rb`. Leaving the proposed Rust target unchanged would therefore have sealed a target that later observed the wrong formula.
+
+I applied the supported representation: `ecosystem: binary, package: project-canon, registry: homebrew, adapter: cargo-dist`, while the two crates.io targets remain Rust `cargo-publish` targets and the GitHub Release remains attached to `project-canon-cli`. The `binary` target is a distribution identity and does not need a Rust manifest version. `ossctl contract validate --require-approved` passes, and final sealed plan `94187d85f6b7df1f48a88c218dc552914096f5d1ba8c2b0c40d4918b4ffb8c52` contains exactly four targets with Homebrew as `binary:project-canon`/`cargo-dist`.
+
+The review also led to explicit operating-policy text: ossctl is the sole crates.io writer, the release host must carry valid registry credentials, the tag-triggered crates.io workflow is deliberately absent, and release tags come only from `ossctl release cut` or `ossctl release resume`. The rejected review proposals were an immediate four-target release (forbidden by this task), deleting an external GitHub secret (destructive and not authorized), and removing the hand-written changelog fragment (the repository's fragment README explicitly permits it).

@@ -90,7 +90,7 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
   version, finalize the CHANGELOG, and run the release recipe as an owned Phase-3 act — no
   confirmation needed. **Judging that there is something worth releasing is the agent's call**,
   not a decision to escalate; do not surface "shall we publish?" as a Decisions-needed item.
-  Preconditions still hold: the green gate passes, and `cargo publish` runs `--dry-run` first.
+  Preconditions still hold: the green gate passes, and the engine's `dry-run-all` phase succeeds.
   crates.io publishes are irreversible (yank-only), so never publish red, and report each step.
 - **The ENGINE-DRIVEN cut (`ossctl release cut`) is fully autonomous — NO go/no-go checkpoint,
   ever** (maintainer decision, 2026-08-06). Running the release *through the engine* — the full
@@ -102,13 +102,17 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
   content-addressed plan (a side-effect-free preview the agent inspects), the coordinator runs
   `dry-run-all` before any publish, `project-canon-core`→`project-canon-cli` ordering + index-wait
   guard the crates.io partial-publish case, and `ossctl release resume`/`abandon` recover an
-  interrupted run. Still: green gate first, dry-run/plan first, never publish red, report each
-  phase.
+  interrupted run. The engine is the sole crates.io writer and requires valid crates.io credentials
+  on the host running the cut; there is deliberately no tag-triggered crates.io workflow. Never
+  add one alongside `cargo-publish`, because that recreates a double writer. Still: green gate
+  first, dry-run/plan first, never publish red, report each phase.
 - **Git: `pull --rebase` → `push` is always allowed, no confirmation** (maintainer
   decision, 2026-08-05). On this repo the agent may run the pull-rebase-push sequence
   (`git pull --rebase origin main` then `git push origin main`, and pushing tags) on its own
   whenever `main` is clean and green — publishing commits to the remote does not need a
-  separate go. Still: never force-push a shared branch, and never push a red tree.
+  separate go. Release tags are created and pushed only by `ossctl release cut` or
+  `ossctl release resume`; a manual version tag would start cargo-dist without the crates.io leg.
+  Still: never force-push a shared branch, and never push a red tree.
 - **Deploy command + target:** **none — this is a distributable CLI, not a hosted service.**
   There is no deploy-to-server step; `/stint-start` Phase 3 is skipped. Changes land on `main`,
   and releases are cut via the OSS pipeline: `OSS-RELEASE.md` (approved contract) +
