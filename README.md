@@ -23,7 +23,7 @@ sections §1–§24 — and ships the tooling to apply it:
   (printed, never executed) issue-tracker commands. Static by default; an explicit
   `--run <binary>` opts in to timeout-bounded, read-only runtime probes.
 - **`skill`** — install the canon and its reviewer workflow as skills for coding
-  agents (Claude Code, pi, Codex), version-synchronized with the binary.
+  agents, version-synchronized with the binary.
 
 ## Contents
 
@@ -176,8 +176,9 @@ project-canon skill list --json
 project-canon skill print ai-first-cli-canon   # stream content without installing
 ```
 
-Claude Code and pi receive native skill directories; Codex receives self-contained
-prompts. Skills are version-synchronized with the binary (§17).
+Supported agent layouts (`--agent`, default: all) are `claude`, `pi`, and `codex`:
+the `claude` and `pi` layouts receive native skill directories; `codex` receives a
+self-contained prompt. Skills are version-synchronized with the binary (§17).
 
 ## Configuration
 

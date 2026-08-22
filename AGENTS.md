@@ -13,7 +13,8 @@ Verb surface (all implemented):
 - **`new`** — scaffold a conformant repo; generate-only, bootstrap hooks are printed, never executed
 - **`review`** — recommending audit; static by default, `--run <binary>` opts in to read-only
   runtime probes (see [`docs/review-runtime-probes.md`](docs/review-runtime-probes.md))
-- **`skill`** — install/print the `ai-first-cli-canon` + `cli-canon` skills (Claude, pi, Codex)
+- **`skill`** — install/print the `ai-first-cli-canon` + `cli-canon` skills (agent layouts:
+  `claude`, `pi`, `codex`)
 - **`config`** — inspect resolved settings and provenance (`path`, `show`); precedence is
   built-in default < config file < `PROJECT_CANON_*` env
 
