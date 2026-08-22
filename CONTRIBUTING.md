@@ -7,10 +7,11 @@ welcome.
 ## Reporting issues
 
 - **Bugs and feature requests** — file a
-  [GitHub issue](https://github.com/jarimustonen/project-canon/issues).
+  [GitHub issue](https://github.com/jarimustonen/project-canon/issues). This is the
+  channel for external contributors.
 - The canonical issue tracker is **in-repo**, under [`issues/`](issues/), managed with
-  [`issuectl`](https://github.com/jarimustonen/issuectl). The maintainer triages GitHub
-  reports into it — you do not need issuectl to contribute.
+  [`issuectl`](https://github.com/jarimustonen/issuectl). Only contributors with commit
+  access write to it; accepted GitHub reports are triaged into it by the maintainer.
 - **Security vulnerabilities** — do not open a public issue; see
   [`SECURITY.md`](SECURITY.md).
 
