@@ -187,8 +187,8 @@ Bundled skills:
     cli-canon            Behavioral reviewer/generator plus its complete templates/ tree.
 
 `print` defaults to SKILL.md. For resource-tree skills, pass --resource <relative-path>;
-`--json` lists every printable resource. Codex output is one self-contained prompt containing
-all support resources, while Claude and pi receive native skill directories.
+`--json` lists every printable resource. The codex layout is one self-contained prompt
+containing all support resources; the claude and pi layouts are native skill directories.
 
 INSTALL FLAGS:
     --target <dir>          Install base (default: $HOME \u{2192} ~/.claude/skills/). Pass a repo
@@ -219,11 +219,11 @@ EXIT CODES:
 /// A supported agent runtime and its on-disk skill layout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Agent {
-    /// Claude Code: `<base>/.claude/skills/<name>/<resource>`.
+    /// The `claude` layout: `<base>/.claude/skills/<name>/<resource>`.
     Claude,
-    /// pi: `<base>/.pi/agent/skills/<name>/<resource>`.
+    /// The `pi` layout: `<base>/.pi/agent/skills/<name>/<resource>`.
     Pi,
-    /// Codex: `<base>/.codex/prompts/<name>.md`, rendered as one self-contained prompt.
+    /// The `codex` layout: `<base>/.codex/prompts/<name>.md`, one self-contained prompt.
     Codex,
 }
 

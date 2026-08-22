@@ -10,8 +10,8 @@ the homebase copy so the two do not diverge. §1–§24 are a stable citation su
 renumbered); this note is the ONLY addition to the lifted content. -->
 
 **Canon version: 4** (2026-08-17). These principles apply to all CLI tools in
-this repo unless otherwise mentioned. The primary caller is often an AI agent
-(Claude Code), not a human typing in a terminal. Some conventions differ from
+this repo unless otherwise mentioned. The primary caller is often an AI coding
+agent, not a human typing in a terminal. Some conventions differ from
 human-oriented software — follow these deliberately.
 
 The tool family is Rust/clap; language-specific idioms below (a `Clock` trait,
@@ -626,7 +626,8 @@ just the data.
 ## 15. `skill` subcommand: install companion AI-skills
 
 Every CLI ships with a `skill` subcommand whose job is to install
-Claude-Code-style skills (`SKILL.md` files with frontmatter) that teach
+skills in the open [Agent Skills](https://agentskills.io) format
+(`SKILL.md` files with frontmatter) that teach
 an AI agent how to drive this CLI in real workflows. The skill files are
 the agent's *operating manual* for the tool — distinct from `--help`
 (reference) and the schema (data shape).
@@ -634,7 +635,7 @@ the agent's *operating manual* for the tool — distinct from `--help`
 - `<tool> skill list` — shows available skills shipped with this tool,
   one-line descriptions
 - `<tool> skill install [<name>]` — copies the skill(s) into the active
-  Claude Code installation (`~/.claude/skills/` by default,
+  agent runtime (`~/.claude/skills/` by default,
   `--target <dir>` for other agent runtimes); installs all when no name
   given
 - `<tool> skill show <name> --json` — prints the skill content without

@@ -1,6 +1,6 @@
 # skills/ — canonical skill sources
 
-This directory holds the **maintained, canonical source** of the Claude Code skills that ship
+This directory holds the **maintained, canonical source** of the agent skills that ship
 alongside the AI-first CLI canon. Per homebase **ADR 0009 §2/§6**, `project-canon` is now the
 maintained home of these skills; homebase and other consumers copy them **FROM here** rather
 than the reverse.
