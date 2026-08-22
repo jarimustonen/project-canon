@@ -30,36 +30,83 @@ Codex). Design decisions in `issues/canon-installable-skill/design.md` — kept 
 one recorded canon deviation (unknown-name in `print` exits **2** for binary-wide consistency, not
 §16's literal 1 — owner may amend the canon)._
 
-_**🚀 2026-08-19 — LATEST STATE. `0.6.0` is public and live on every channel**: crates.io
-(`project-canon-core@0.6.0` + `project-canon-cli@0.6.0`), the GitHub Release with cargo-dist
-binaries, and Homebrew `project-canon` at `0.6.0`. Workspace manifest matches. `0.6.0` shipped the
-complete `cli-canon` behavioral skill alongside `ai-first-cli-canon` (all three probe/generation/
-review templates; Claude and pi get native skill trees, Codex gets the resources embedded in one
-deterministic prompt) plus the first-class pi layout under `--agent all`. Intake labels have since
-been migrated to the issuectl lifecycle (`doctor --fix`)._
+_**🚀 2026-08-21 — LATEST STATE. `0.6.1` is public and verified on all four channels**: crates.io
+(`project-canon-core@0.6.1` + `project-canon-cli@0.6.1`), the GitHub Release (12 assets), and
+Homebrew `project-canon` at `0.6.1`. Workspace manifest matches. `0.6.0` (08-19) shipped the complete
+`cli-canon` behavioral skill alongside `ai-first-cli-canon` plus the first-class pi layout under
+`--agent all`; `0.6.1` is release-infrastructure correctness only, no CLI behaviour change._
 
-_**Canon is at v4, §1–§24.** `0.4.0` and `0.5.0` (2026-08-17) closed the canon-conformance arc —
-see the two sections below. The `canon-rollout` lane is **empty**; every unit in it landed._
+_**Canon is at v4, §1–§24.** `0.4.0`/`0.5.0` (08-17) closed the canon-conformance arc — see the
+round-A/round-B sections below._
 
-_**Direction from here.** v0's scope is complete and released, so the open question is no longer
-"finish v0" but "how far does the family actually adopt this". The live thread is release-surface
-correctness: this repo's own contract under-declares what it publishes, and that work is entangled
-with a HIGH engine bug in `ossctl` (below). Beyond that, the natural next block is the sibling-CLI
-§10 rollout, which is **deliberately unscheduled** — see the decision note below._
+_**🎯 THE BACKLOG IS EMPTY.** Zero lanes, zero unscheduled, zero open issues (verified at handoff).
+A next round therefore needs **new work defined** — this is a genuine cold start for planning, not a
+prepared agenda. Do not manufacture units from history. The two standing decisions below (§10
+rollout deliberately sitting; hybrid-metadata refactor dropped) are recorded so nobody re-opens them
+by accident._
 
-_**✅ 2026-08-21 — the `ossctl` verify blocker is FIXED and the workaround is GONE.** `ossctl 0.10.0`
-resolves `verify-gh-release-missing` (upstream status `fixed`). **Verified, not inherited:**
-re-running `ossctl release verify` on the exact v0.5.0 run that used to report `missing` now returns
-**3/3 matches, 0 missing**. The temporary "trust the channels, not the exit code" bullet in
-`AGENTS.md` has therefore been **deleted** as its own expiry clause required — the engine's exit
-code is trustworthy again. `contract-declare-release-surface` is consequently **unblocked**._
+_**Direction from here.** v0's scope is complete and released; the open question is no longer "finish
+v0" but **how far the family actually adopts this**. The release-surface thread that dominated the
+last two rounds is now closed. Plausible next threads, none scheduled: family adoption/rollout, the
+sibling-CLI §10 alignment (see the sit-decision), or whatever new intake arrives._
 
-_**Open work is exactly two issues, both `high`:** `contract-declare-release-surface` (lane
-`release-surface` — now unblocked; note its appended comment: the crates.io publish path is
-currently **doubled**, ossctl locally *and* `publish-crates.yml` on tag push, so pick one and
-retire the other rather than just relabelling the adapter) and `ci-timeout-regression` (lane
-`ci-health` — **scoped as an investigation, not a fix**; "leave it alone" is an accepted outcome,
-and its own "CI is red" claim is already stale — `main` went green again on the next run)._
+_**🔒 2026-08-21 (round) — the release surface now matches reality. Shipped as `0.6.1`.** Two units,
+run in parallel (disjoint lanes), both landed green (279 tests)._
+
+_**`contract-declare-release-surface` → fixed.** (1) **Homebrew is now a declared, verified target.**
+Every release already published the formula via cargo-dist, but the contract never declared the
+channel, so it shipped un-planned and un-verified — which is exactly how it silently sat three
+versions behind earlier in the month. It is declared as **`binary:project-canon`**, the distribution
+identity cargo-dist actually writes (`Formula/project-canon.rb`), **not** the Rust package name: the
+`/llm-review` pass caught that a `project-canon-cli` key would seal a target verifying a formula that
+never existed. (2) **The engine is now the sole crates.io publisher.** Releases had been running
+*two* publish paths; the tag-triggered `publish-crates.yml` was **deleted**. The mystery of why the
+duplicate always "succeeded" is answered: it explicitly regex-matched cargo's `already exists on
+crates.io index` diagnostic and returned zero — a deliberate no-op after ossctl had already
+published, not a second registry write, so nothing was ever corrupted. Full reasoning + the rejected
+alternative are in the issue's comments._
+
+_**`ci-timeout-regression` → wontfix, NO code change** (owner scoped it as an investigation, with
+"leave it alone" pre-authorised as a valid outcome). The worker measured instead of guessing: reran
+the same SHA 4× on Linux — **all passed** (1 failure in 5, 20%) — and found the failing attempt ran
+the whole 140-test binary in **0.30s**, so the test never waited for its 2s deadline at all. Reading
+the completion path showed the runner **already** waits on capture-pipe EOF *and* child status under
+one deadline, i.e. the proposed "fix" was behaviour it already had. Likely real cause: an
+intermittent Linux `Text file busy` (ETXTBSY) on the freshly-written executable script fixture —
+another test in the same run failed exactly that way — and the assertion `matches!(…, Err(Timeout))`
+**hides which variant actually occurred**. It deliberately changed nothing: weakening the timeout
+would damage a real safety property. **Follow-up worth filing only if ETXTBSY failures become
+frequent:** a test-infrastructure issue whose diagnostics preserve the actual `RunFailure` variant._
+
+_**✅ `ossctl`'s gh-releases verify bug is FIXED — and the workaround self-expired as designed.**
+`ossctl 0.10.0` resolves `verify-gh-release-missing`. **Verified, not inherited:** re-verifying the
+exact v0.5.0 run that used to report `missing` returned 3/3 matches, and in the `0.6.1` cut
+`gh-releases` verified `matches`. The temporary "trust the channels, not the exit code" bullet in
+`AGENTS.md` was therefore **deleted**, as its own expiry clause required. That loop worked — a
+workaround was written in with its removal condition and died in two days instead of hardening into
+architecture (§24's whole point)._
+
+_**⚠️ BUT: a NEW verify defect appeared on the newly-declared Homebrew target — `0.6.1`'s cut still
+exited non-zero.** The release is completely fine (all four channels verified by hand); only the
+engine misreports. Evidence: the formula is public, `Formula/project-canon.rb` returns **200** with
+`version "0.6.1"`, and `package: project-canon` is the only path that exists — yet verify said
+**`missing`** during the cut (after ~20 min polling) and **`unknown` / "could not be observed
+(network or command failure)"** on a fresh read afterwards. Two contradictory verdicts about one
+settled, publicly reachable artifact ⇒ the **observation path** is broken, not the lookup key, and an
+observation failure is being coerced into `missing` in at least one code path. That coercion is the
+dangerous part: `missing` asserts a fact about the registry and invites an irreversible re-publish.
+**Filed via intake as `intake-bug-ossctl-51f9c1ce4cfd`** (ossctl). **Perverse incentive to be aware
+of: declaring the Homebrew channel correctly is what triggers this**, so the bug currently punishes
+correct configuration. **Until it is fixed, verify release channels by hand and do NOT act on the
+cut's exit code** — but do not re-add a standing workaround bullet to `AGENTS.md` without an expiry
+condition._
+
+_**📌 DECIDED (owner, 2026-08-21): the hybrid mechanical+judgment metadata refactor is DROPPED
+(wontfix).** §23/§24 each need a mechanical `doctor` row plus a review-only remainder, and that
+hybrid-ness is currently hardcoded in the CLI (`review.rs::judgment_remainder`, matching literal
+`canon.s23`/`canon.s24`) rather than declared in the core dimension model. A worker proposed moving
+it into core. **Not filed, deliberately** — it is readable at two arms and the cost only appears if a
+third hybrid section arrives. Revisit then, not before._
 
 _**🔒 2026-08-16 (session 2). Two things happened: a 4-unit canon-conformance
 round, and a publicness defect found + fixed + turned into a rule.**_
@@ -113,11 +160,6 @@ round), which is why the recommended practice above routes reasoning into issue 
 `issuectl`, `orchestratectl`, `ossctl`, `glasspad` (the public siblings) so the leak class gets swept
 family-wide; `aggountant` is private so the rule doesn't bite. Each says: **close as clean if the
 audit finds nothing** — a recorded clean result is the point._
-
-_**[SUPERSEDED 2026-08-17 — see the release-infra note above. The Homebrew leg is now automatic.]**
-~~Homebrew leg is STILL manual — `ossctl release plan` seals only the 2 crates.io targets, so the
-tap formula (sha256 + push) was hand-updated twice today. Teaching cargo-dist to push the formula
-in CI is the highest-value release-infra follow-up.~~_
 
 _**🚀 2026-08-16 — FIRST RELEASE CUT: v0.1.1 is PUBLIC.** `project-canon` is released and the repo
 is now **public** (`gh repo … --visibility public`). Live channels: **crates.io** —
@@ -213,17 +255,13 @@ automatic** — cargo-dist publishes the formula in CI via `HOMEBREW_TAP_TOKEN` 
 2026-08-15), verified across `0.4.0`/`0.5.0`/`0.6.0`. The long-standing "teach cargo-dist to push the
 formula" follow-up is **DONE**; ignore the 2026-08-16 note below that calls it manual._
 
-_**⚠️ `ossctl` gh-releases verify reports a SUCCESSFUL release as FAILED — filed, laned, being
-worked.** `release cut` exits non-zero with `release_failed` on a release where everything landed.
-**It is a lookup bug, not a timing race**, and that distinction is the point: for `0.5.0` the GitHub
-Release existed for ~18 of the 20-minute polling window and was never observed, and a read-only
-`release verify` run long afterwards **still** reports missing. Reproduces on `ossctl 0.9.0`. Filed
-as **`verify-gh-release-missing`** in the `ossctl` repo (now laned `verify-seam`, with a later note
-suggesting the fault is in `release/reconcile.rs`'s generic registry query rather than the tag
-lookup). **Operational rule until fixed: trust the CHANNELS, not the engine's exit code** — check
-crates.io, the GitHub Release, and the tap directly before believing a reported failure. The stale
-`in_flight` journal entries this caused (`0.3.3`/`0.4.0`/`0.5.0`/`0.6.0`) have since been abandoned
-with accurate reasons; `in_flight_count` is 0._
+_**[RESOLVED 2026-08-21 — `verify-gh-release-missing` is fixed in `ossctl 0.10.0`; see the ✅ note
+above. Kept for the diagnostic pattern only.]** The gh-releases verify bug reported a SUCCESSFUL
+release as FAILED. The method that cracked it is the reusable part: it was a **lookup bug, not a
+timing race**, proven by re-running the read-only `release verify` long after everything settled and
+still getting `missing`. Apply that same test to any future "verify says missing" report — it
+separates "looked too early" from "looked in the wrong place" in one command. (The stale `in_flight`
+journal entries this caused have been abandoned with accurate reasons; `in_flight_count` is 0.)_
 
 **v0 scope discipline (ADR 0009 §6): a LIFT, not a greenfield canon — ✅ COMPLETE, ✅ RELEASED (0.1.1).**
 ✅ `cli` profile (§1–§24 lift); ✅ base canon seeded; ✅ `service`/`library`/`release` named-but-empty
