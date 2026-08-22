@@ -1,17 +1,30 @@
 # project-canon
 
-Project-scoped conformance tool for the AI-first CLI / project family. Ships a **base
-project canon** plus **per-archetype profiles** (`cli`, `service`, …), with the AI-first CLI
-canon (`AGENTS-AI-FIRST-CLI.md` §1–§24) as the `cli` profile. Intended verb surface:
-`new` (scaffold a conformant repo), `doctor` (machine conformance gate for CI), `review`
-(recommending audit). Consumes an expanding dimension-discovery registry. See homebase
-**ADR 0009** (`docs/decisions/0009-project-canon-scope.md`) for the scope/subsumption/name
-decision that created this repo.
+Project-scoped conformance tool for the AI-first CLI / project family — **implemented and
+released** (crates.io + GitHub Releases + Homebrew; `project-canon --version` for the
+installed binary). Ships a **base project canon** plus **per-archetype profiles**
+(`cli`, `service`, `library`, `release`), with the AI-first CLI canon
+(`AGENTS-AI-FIRST-CLI.md` §1–§24) as the `cli` profile; the other archetypes resolve to the
+base checks at v0. Everything acts on the resolved model (`resolved = base ∪ profile`).
 
-> **Status: bootstrap only.** This repo currently holds the scaffold + the shared canon copy.
-> The canon/skill extraction from homebase and the `new` / `doctor` / `review` implementation
-> are **not built yet** — they are tracked as issues here. **Open an issue before building a
-> feature**; do not pre-design the tool in this file.
+Verb surface (all implemented):
+
+- **`doctor`** — machine conformance gate for CI; non-zero exit on a mechanically-decided MUST gap
+- **`new`** — scaffold a conformant repo; generate-only, bootstrap hooks are printed, never executed
+- **`review`** — recommending audit; static by default, `--run <binary>` opts in to read-only
+  runtime probes (see [`docs/review-runtime-probes.md`](docs/review-runtime-probes.md))
+- **`skill`** — install/print the `ai-first-cli-canon` + `cli-canon` skills (Claude, pi, Codex)
+- **`config`** — inspect resolved settings and provenance (`path`, `show`); precedence is
+  built-in default < config file < `PROJECT_CANON_*` env
+
+See homebase **ADR 0009** (`docs/decisions/0009-project-canon-scope.md`) for the
+scope/subsumption/name decision that created this repo.
+
+[`README.md`](README.md) is the human front door (audience: external users). Keep it in sync
+when the CLI surface, install channels, or platform coverage change — its install/badges/license
+regions are `oss-readme` marker-managed.
+
+**Open an issue before building a feature**; do not pre-design the tool in this file.
 
 ## CLI Design Principles
 
@@ -128,20 +141,16 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
   `build` lane at v0 — every verb (`doctor`/`new`/`review`) reads the core model, so they collide
   here. `crates/project-canon-cli/src/main.rs` is the thin binary. Split `doctor`/`new`/`review`
   into parallel lanes only once their modules are provably disjoint (re-assess after each lands).
-- **Worker briefs MUST require design reasoning in the ISSUE, not only in the run report**
-  (2026-08-19, from measured evidence). Every brief handed to a worktree worker must include:
-  *"append your design decisions and rejected alternatives as an `issuectl` comment on the issue
-  before merging."* Treat this as non-optional, exactly like the green gate and the terminal
-  `run merge` call. **Why:** across the 2026-08-17 rounds, of four workers **exactly one** wrote
-  its decisions into the issue — and that is the **only** reasoning still durable today (in-repo,
-  in git, next to the work). Two returned **empty `discussion_items`** *despite the brief
-  explicitly asking for them*, and a third populated the report richly but left nothing in-repo,
-  so its rationale now exists only inside the orchestration run store. **Prompting harder does
-  not fix this** — it was already prompted; it is the `orchestratectl`
-  `spinoff-report-fields-null` bug. Routing the reasoning through an issue comment is
-  transport-independent and survives that bug entirely. Keep the structured report for
-  orchestrator sequencing, but never let it be the only copy: a decision that exists only in the
-  run store is a decision the next agent will silently re-litigate or, worse, inherit blindly.
+- **Worker briefs MUST require design reasoning in the ISSUE, not only in the run report.**
+  Every brief handed to a worktree worker must include: *"append your design decisions and
+  rejected alternatives as an `issuectl` comment on the issue before merging."* Treat this as
+  non-optional, exactly like the green gate and the terminal `run merge` call. **Why:** the
+  structured report is lossy in practice (the `orchestratectl` `spinoff-report-fields-null`
+  bug returns empty `discussion_items` even when the brief asks for them, and a run-store-only
+  report is invisible from the repo) — prompting harder does not fix it; the issue comment is
+  transport-independent, in-repo, and in git next to the work. Keep the structured report for
+  orchestrator sequencing, but never let it be the only copy: a decision that exists only in
+  the run store is a decision the next agent will silently re-litigate or inherit blindly.
 - **Migration rules:** N/A (no schema/DB).
 - **Test-account reset preference:** none.
 
