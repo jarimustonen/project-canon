@@ -67,7 +67,7 @@ change worded explicitly in the release notes — see
 ## Design conventions
 
 The CLI surface follows the AI-first CLI canon,
-[`AGENTS-AI-FIRST-CLI.md`](AGENTS-AI-FIRST-CLI.md) (§1–§24) — read it before
+[`AGENTS-AI-FIRST-CLI.md`](crates/project-canon-core/AGENTS-AI-FIRST-CLI.md) (§1–§24) — read it before
 designing or changing any CLI surface; the tool enforces on itself what it checks
 in others. [`AGENTS.md`](AGENTS.md) is the agent-facing repository documentation.
 One rule deserves emphasis: **this repository is public, and no public artifact

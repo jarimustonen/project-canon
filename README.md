@@ -12,7 +12,7 @@ When the primary operator of a command-line tool is an AI agent rather than a hu
 the design rules change: strict input validation instead of silent fixups, `--json`
 output everywhere, no interactive prompts, errors that explain how to recover, JSONL
 logs, composable non-interactive commands. project-canon maintains those rules as a
-versioned, citable canon — [`AGENTS-AI-FIRST-CLI.md`](AGENTS-AI-FIRST-CLI.md),
+versioned, citable canon — [`AGENTS-AI-FIRST-CLI.md`](crates/project-canon-core/AGENTS-AI-FIRST-CLI.md),
 sections §1–§24 — and ships the tooling to apply it:
 
 - **`doctor`** — a mechanical conformance gate for CI. Exits non-zero on any
@@ -139,7 +139,7 @@ safety and JSON contracts.
 
 ## The canon
 
-[`AGENTS-AI-FIRST-CLI.md`](AGENTS-AI-FIRST-CLI.md) is the canonical document, and
+[`AGENTS-AI-FIRST-CLI.md`](crates/project-canon-core/AGENTS-AI-FIRST-CLI.md) is the canonical document, and
 this repository is its maintained home. Sections §1–§18 are a stable citation
 surface (never renumbered); new principles append as §19+. Highlights:
 
