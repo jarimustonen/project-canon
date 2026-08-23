@@ -11,6 +11,8 @@ commits:
   summary: start implementation
 - hash: f60b0041add425b2b10c2733f04d97c2e731d946
   summary: enforce skill description length
+- hash: 73ded9231e65dd2da92064fd448ffeea287ac85d
+  summary: harden probe after review
 ---
 
 # Enforce the 1024-char skill description limit mechanically
