@@ -2,7 +2,7 @@
 created: 2026-08-23
 updated: 2026-08-23
 type: chore
-status: untriaged
+status: done
 priority: normal
 provenance: other
 provenance_detail: Fleet-wide product rename authorized by maintainer
@@ -12,6 +12,7 @@ originating_run_kind: spinoff
 commits:
 - hash: e993c5d
   summary: 'chore: migrate release tooling to Shipshape'
+closed: 2026-08-23
 ---
 
 # Migrate active release tooling references to Shipshape
