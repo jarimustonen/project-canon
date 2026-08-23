@@ -3,7 +3,7 @@ created: 2026-08-23
 updated: 2026-08-23
 type: improvement
 reporter: jari
-status: in-progress
+status: done
 priority: normal
 lane: build
 commits:
@@ -13,6 +13,7 @@ commits:
   summary: enforce skill description length
 - hash: 73ded9231e65dd2da92064fd448ffeea287ac85d
   summary: harden probe after review
+closed: 2026-08-23
 ---
 
 # Enforce the 1024-char skill description limit mechanically
@@ -40,3 +41,9 @@ Rejected alternatives:
 - Rejecting a skill based on total file size: rejected because only frontmatter needs a bound; a valid skill body may be large.
 - Aggregating all violations in one row: deferred as optional remediation UX; deterministic first-failure reporting satisfies the mechanical gate.
 - Replacing `serde_yaml` in this issue: its archived status is maintenance debt, but bounded input makes it non-blocking and replacement is not needed for this accepted scope.
+
+## Resolution
+
+### 2026-08-23T19:16:20Z · @issuectl
+
+Implemented and verified the bundled rendered-resource test plus shared doctor/review enforcement. Full green gate passed after multi-model review and assessed localized fixes.
