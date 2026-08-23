@@ -44,6 +44,11 @@ Every directory follows this structure:
 - `AGENTS.md` — all AI-relevant info (consolidated)
 - `AGENTS-<TOPIC>.md` — complex topics split out (optional)
 
+**Public docs must link a symlink's physical target, never the symlink.** GitHub's web UI
+renders a symlinked file as its target path, not its content, so README/CONTRIBUTING link
+`crates/project-canon-core/AGENTS-AI-FIRST-CLI.md` directly. Repo-internal agent docs may
+keep using the repo-root symlink (it resolves locally).
+
 ## Issues & Planning
 
 Issue tracking is managed by [`issuectl`](https://github.com/jarimustonen/issuectl). Use the `/issue` skill (installed by `issuectl init`) to create, search, update, and close issues.
@@ -87,6 +92,12 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
   `0.1.1`/`0.2.0` shipped a maintainer account, a personal repository-root convention, and a
   family-tool list naming three *private* repos to crates.io: see `portable-neutral-defaults`
   (the cleanup) and `canon-no-user-specifics` (making it a `doctor`-enforced canon section).
+- **No `CODE_OF_CONDUCT.md`** (maintainer decision, 2026-08-23): it was removed deliberately;
+  do not re-add it on a future `/oss-contributing` run even though the mvp tier proposes one.
+- **The release engine is `shipshape` — renamed from `ossctl` (2026-08-23).** Same engine,
+  same command surface; an un-converged machine may still have the `ossctl` binary and the
+  GitHub remote may still read ossctl — use whichever binary is installed. The `/oss-*`
+  skill names are unchanged.
 - **Green gate** (must pass before a unit counts as landed):
   - `cargo fmt --all --check`
   - `cargo clippy --workspace --all-targets -- -D warnings`
@@ -106,16 +117,16 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
   not a decision to escalate; do not surface "shall we publish?" as a Decisions-needed item.
   Preconditions still hold: the green gate passes, and the engine's `dry-run-all` phase succeeds.
   crates.io publishes are irreversible (yank-only), so never publish red, and report each step.
-- **The ENGINE-DRIVEN cut (`ossctl release cut`) is fully autonomous — NO go/no-go checkpoint,
+- **The ENGINE-DRIVEN cut (`shipshape release cut`) is fully autonomous — NO go/no-go checkpoint,
   ever** (maintainer decision, 2026-08-06). Running the release *through the engine* — the full
   multi-target flow (crates.io ×2 + cargo-dist binaries + the Homebrew tap) — requires **no
   permission and no pause before the irreversible publish**, not for the first-ever engine cut,
   not for the homebrew leg (the homebrew leg is the most important target — it must be cut, not
   dropped). Do **not** stop to ask "shall I cut?" — just run the recipe end to end and report
-  as you go. The safety is structural, not a human gate: `ossctl release plan` seals a
+  as you go. The safety is structural, not a human gate: `shipshape release plan` seals a
   content-addressed plan (a side-effect-free preview the agent inspects), the coordinator runs
   `dry-run-all` before any publish, `project-canon-core`→`project-canon-cli` ordering + index-wait
-  guard the crates.io partial-publish case, and `ossctl release resume`/`abandon` recover an
+  guard the crates.io partial-publish case, and `shipshape release resume`/`abandon` recover an
   interrupted run. The engine is the sole crates.io writer and requires valid crates.io credentials
   on the host running the cut; there is deliberately no tag-triggered crates.io workflow. Never
   add one alongside `cargo-publish`, because that recreates a double writer. Still: green gate
@@ -124,13 +135,13 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
   decision, 2026-08-05). On this repo the agent may run the pull-rebase-push sequence
   (`git pull --rebase origin main` then `git push origin main`, and pushing tags) on its own
   whenever `main` is clean and green — publishing commits to the remote does not need a
-  separate go. Release tags are created and pushed only by `ossctl release cut` or
-  `ossctl release resume`; a manual version tag would start cargo-dist without the crates.io leg.
+  separate go. Release tags are created and pushed only by `shipshape release cut` or
+  `shipshape release resume`; a manual version tag would start cargo-dist without the crates.io leg.
   Still: never force-push a shared branch, and never push a red tree.
 - **Deploy command + target:** **none — this is a distributable CLI, not a hosted service.**
   There is no deploy-to-server step; `/stint-start` Phase 3 is skipped. Changes land on `main`,
   and releases are cut via the OSS pipeline: `OSS-RELEASE.md` (approved contract) +
-  **`ossctl release`** + **cargo-dist** (`dist-workspace.toml` → `.github/workflows/release.yml`).
+  **`shipshape release`** + **cargo-dist** (`dist-workspace.toml` → `.github/workflows/release.yml`).
   Publish targets: **crates.io** (`project-canon-core` + `project-canon-cli`, released in
   lockstep — the CLI exact-pins `core = "=<ver>"`) and **Homebrew** (tap
   **`jarimustonen/homebrew-project-canon`**).

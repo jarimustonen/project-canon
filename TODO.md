@@ -13,7 +13,10 @@ _**🚀 2026-08-23 — LATEST STATE. `0.6.2` is live and verified on all four ch
 GitHub Release, Homebrew; engine `verify` phase: all targets `matches`; release commit `4693463`
 fast-forwarded to main by hand — see the ossctl bug below). This supersedes the "backlog empty"
 note further down: **one open, unscheduled issue now exists** (`skill-description-length-check`,
-awaiting human lane-or-close triage — context only, not scheduled or accepted)._
+awaiting human lane-or-close triage — context only, not scheduled or accepted). **NOTE: the
+release engine `ossctl` has been RENAMED `shipshape`** (another agent, 2026-08-23; crates are
+`shipshape-core`/`shipshape`) — the ossctl mentions below are historical; use whichever binary the
+machine has until the fleet converges._
 
 _**🌍 2026-08-22/23 session — the PUBLICIZE pass: stealth-public → external-user-facing.** Interactive
 session (no worktrees). (1) **README rewritten for an external audience** — value-prop lead, Why,

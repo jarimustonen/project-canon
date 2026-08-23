@@ -5,6 +5,7 @@ type: improvement
 reporter: jari
 status: open
 priority: normal
+lane: build
 ---
 
 # Enforce the 1024-char skill description limit mechanically
