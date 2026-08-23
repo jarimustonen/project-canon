@@ -921,6 +921,9 @@ fn absolute_lexical(path: &str) -> std::io::Result<PathBuf> {
 
 fn judgment_remainder(id: &str) -> Option<&'static str> {
     match id {
+        "canon.s15" => Some(
+            "verify the skill list/install surface, install target behavior, and guidance freshness beyond the static description-length check",
+        ),
         "canon.s23" => Some(
             "review hostnames, internal URLs, borderline names, and dependency legitimacy",
         ),

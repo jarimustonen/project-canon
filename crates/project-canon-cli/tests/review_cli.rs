@@ -130,6 +130,36 @@ fn a_repo_with_must_gaps_still_exits_zero() {
 }
 
 #[test]
+fn over_limit_located_skill_is_an_advisory_confirmed_gap() {
+    let f = Fixture::conformant("skill-description");
+    let skill = f.path.join("skills/fixture-skill/SKILL.md");
+    std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
+    std::fs::write(
+        skill,
+        format!(
+            "---\nname: fixture-skill\ndescription: \"{}\"\n---\n\n# Fixture\n",
+            "x".repeat(1025)
+        ),
+    )
+    .unwrap();
+
+    let out = run_review(&["--json", f.path.to_str().unwrap()]);
+    assert_eq!(code(&out), 0, "review remains advisory");
+    let payload: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let finding = payload["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|finding| finding["id"] == "canon.s15")
+        .expect("§15 finding");
+    assert_eq!(finding["kind"], "confirmed-gap");
+    assert!(finding["observed"]
+        .as_str()
+        .unwrap()
+        .contains("1025-character"));
+}
+
+#[test]
 fn a_conformant_repo_exits_zero_and_stages_nothing() {
     let f = Fixture::conformant("clean");
     let out = run_review(&[f.path.to_str().unwrap()]);

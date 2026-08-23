@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `doctor` and static `review` now enforce Canon §15's 1024-character maximum for
+  frontmatter descriptions in repository skills they can locate.
+
 ### Changed
 
 - Active release tooling guidance, generated ownership markers, distribution comments, and the

@@ -1249,6 +1249,23 @@ mod install {
         }
 
         #[test]
+        fn every_bundled_native_skill_render_has_a_compliant_description() {
+            for skill in SHIPPED {
+                let rendered = Agent::Pi.render(skill, "SKILL.md").unwrap();
+                let length =
+                    crate::probes::skill_description_length(&rendered).unwrap_or_else(|error| {
+                        panic!("{} rendered invalid frontmatter: {error}", skill.name)
+                    });
+                assert!(
+                    length <= crate::probes::SKILL_DESCRIPTION_MAX_CHARS,
+                    "{} rendered description is {length} characters (maximum {})",
+                    skill.name,
+                    crate::probes::SKILL_DESCRIPTION_MAX_CHARS
+                );
+            }
+        }
+
+        #[test]
         fn cli_canon_native_forms_include_every_resource_and_codex_is_self_contained() {
             let skill = lookup_skill("cli-canon").unwrap();
             assert_eq!(Agent::Claude.resources(skill).len(), 4);

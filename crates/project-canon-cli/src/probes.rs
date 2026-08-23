@@ -851,6 +851,7 @@ pub fn mechanical_probe(
         "base.git-hygiene" => Some(|repo, _| probe_git_hygiene(repo)),
         "base.readme" => Some(|repo, _| probe_readme(repo)),
         "base.gitignore" => Some(|repo, _| probe_gitignore(repo)),
+        "canon.s15" => Some(|repo, _| probe_skill_description_lengths(repo)),
         "canon.s22" => Some(|repo, _| probe_core_cli_split(repo)),
         "canon.s23" => Some(probe_public_artifact_specifics),
         "canon.s24" => Some(probe_verified_deferrals),
@@ -862,12 +863,13 @@ pub fn mechanical_probe(
 /// lockstep with [`mechanical_probe`] and cross-checked against the model by
 /// `every_mechanical_probe_id_exists_in_the_model`.
 #[cfg(test)]
-const MECHANICAL_PROBE_IDS: [&str; 8] = [
+const MECHANICAL_PROBE_IDS: [&str; 9] = [
     "base.doc-pattern",
     "base.issue-tracking",
     "base.git-hygiene",
     "base.readme",
     "base.gitignore",
+    "canon.s15",
     "canon.s22",
     "canon.s23",
     "canon.s24",
@@ -927,6 +929,99 @@ fn probe_gitignore(repo: &Path) -> std::io::Result<ProbeOutcome> {
             ProbeOutcome::fail(".gitignore missing")
         },
     )
+}
+
+/// Agent Skills frontmatter description limit from canon §15.
+pub(crate) const SKILL_DESCRIPTION_MAX_CHARS: usize = 1024;
+
+/// Parse a rendered `SKILL.md` and return its YAML frontmatter description length in Unicode
+/// characters. YAML parsing matters here: escaped and block scalars must be measured as the value
+/// an Agent Skills consumer sees, not as source bytes.
+pub(crate) fn skill_description_length(content: &str) -> Result<usize, String> {
+    let normalized = content.replace("\r\n", "\n");
+    let body = normalized
+        .strip_prefix("---\n")
+        .ok_or_else(|| "missing opening YAML frontmatter fence".to_string())?;
+    let (frontmatter, _) = body
+        .split_once("\n---\n")
+        .ok_or_else(|| "missing closing YAML frontmatter fence".to_string())?;
+    let yaml: serde_yaml::Value = serde_yaml::from_str(frontmatter)
+        .map_err(|error| format!("invalid YAML frontmatter: {error}"))?;
+    let description = yaml
+        .get("description")
+        .and_then(serde_yaml::Value::as_str)
+        .ok_or_else(|| "frontmatter description is missing or not a string".to_string())?;
+    Ok(description.chars().count())
+}
+
+/// Locate repository-native Agent Skills directories and enforce the §15 description limit over
+/// every direct child `SKILL.md`. Repositories with no locatable skill files pass this scoped
+/// check; the rest of §15 remains a review judgment rather than being inferred from absence.
+fn probe_skill_description_lengths(repo: &Path) -> std::io::Result<ProbeOutcome> {
+    const ROOTS: [&str; 4] = [
+        "skills",
+        ".agents/skills",
+        ".claude/skills",
+        ".pi/agent/skills",
+    ];
+    let mut skill_files = BTreeSet::new();
+    for root in ROOTS {
+        let directory = repo.join(root);
+        let entries = match std::fs::read_dir(&directory) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) if error.kind() == std::io::ErrorKind::NotADirectory => continue,
+            Err(error) => return Err(error),
+        };
+        for entry in entries {
+            let entry = entry?;
+            if !entry.metadata()?.is_dir() {
+                continue;
+            }
+            let candidate = entry.path().join("SKILL.md");
+            if stat(&candidate)?.is_some_and(|metadata| metadata.is_file()) {
+                skill_files.insert(candidate);
+            }
+        }
+    }
+
+    for file in &skill_files {
+        let rel = file.strip_prefix(repo).unwrap_or(file);
+        let bytes = std::fs::read(file)?;
+        let content = match std::str::from_utf8(&bytes) {
+            Ok(content) => content,
+            Err(_) => {
+                return Ok(ProbeOutcome::fail(format!(
+                    "located skill {} is not UTF-8",
+                    rel.display()
+                )))
+            }
+        };
+        let length = match skill_description_length(content) {
+            Ok(length) => length,
+            Err(error) => {
+                return Ok(ProbeOutcome::fail(format!(
+                    "cannot measure located skill {}: {error}",
+                    rel.display()
+                )))
+            }
+        };
+        if length > SKILL_DESCRIPTION_MAX_CHARS {
+            return Ok(ProbeOutcome::fail(format!(
+                "located skill {} has a {length}-character frontmatter description (maximum {SKILL_DESCRIPTION_MAX_CHARS})",
+                rel.display()
+            )));
+        }
+    }
+
+    Ok(if skill_files.is_empty() {
+        ProbeOutcome::pass("no repository Agent Skills found in supported skill directories")
+    } else {
+        ProbeOutcome::pass(format!(
+            "{} located Agent Skill description(s) are at most {SKILL_DESCRIPTION_MAX_CHARS} characters",
+            skill_files.len()
+        ))
+    })
 }
 
 /// §22 core/cli split: a `crates/*-core` and a `crates/*-cli` directory both exist (SHOULD). A
@@ -1618,6 +1713,13 @@ mod tests {
         fn mkdir(&self, rel: &str) {
             std::fs::create_dir_all(self.path.join(rel)).unwrap();
         }
+        fn write(&self, rel: &str, content: &str) {
+            let path = self.path.join(rel);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(path, content).unwrap();
+        }
         #[cfg(unix)]
         fn symlink(&self, target: &str, link: &str) {
             std::os::unix::fs::symlink(target, self.path.join(link)).unwrap();
@@ -1683,6 +1785,57 @@ mod tests {
         assert!(passed(probe_git_hygiene(&repo.path)));
         assert!(passed(probe_readme(&repo.path)));
         assert!(passed(probe_gitignore(&repo.path)));
+    }
+
+    fn rendered_skill(description: &str) -> String {
+        format!("---\nname: fixture-skill\ndescription: {description}\n---\n\n# Fixture\n")
+    }
+
+    #[test]
+    fn skill_description_length_accepts_compliant_and_exact_limit_values() {
+        let compliant = rendered_skill(&format!("\"{}\"", "a".repeat(42)));
+        assert_eq!(skill_description_length(&compliant).unwrap(), 42);
+
+        let exact = rendered_skill(&format!("\"{}\"", "é".repeat(SKILL_DESCRIPTION_MAX_CHARS)));
+        assert_eq!(
+            skill_description_length(&exact).unwrap(),
+            SKILL_DESCRIPTION_MAX_CHARS,
+            "the limit counts Unicode characters rather than UTF-8 bytes"
+        );
+    }
+
+    #[test]
+    fn skill_description_probe_rejects_an_over_limit_description() {
+        let repo = TmpRepo::new("skill-description-over");
+        let content = rendered_skill(&format!(
+            "\"{}\"",
+            "x".repeat(SKILL_DESCRIPTION_MAX_CHARS + 1)
+        ));
+        repo.write(".agents/skills/fixture-skill/SKILL.md", &content);
+
+        let outcome = probe_skill_description_lengths(&repo.path).unwrap();
+        assert!(!outcome.passed);
+        assert!(
+            outcome.message.contains("1025-character"),
+            "{}",
+            outcome.message
+        );
+        assert!(outcome
+            .message
+            .contains(".agents/skills/fixture-skill/SKILL.md"));
+    }
+
+    #[test]
+    fn skill_description_probe_accepts_located_compliant_skills_and_no_skills() {
+        let empty = TmpRepo::new("skill-description-empty");
+        assert!(passed(probe_skill_description_lengths(&empty.path)));
+
+        let repo = TmpRepo::new("skill-description-ok");
+        repo.write(
+            "skills/fixture-skill/SKILL.md",
+            &rendered_skill(&format!("\"{}\"", "x".repeat(SKILL_DESCRIPTION_MAX_CHARS))),
+        );
+        assert!(passed(probe_skill_description_lengths(&repo.path)));
     }
 
     #[test]

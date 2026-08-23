@@ -185,6 +185,27 @@ fn profile_cli_resolves_all_24_canon_sections() {
 }
 
 #[test]
+fn over_limit_located_skill_description_is_a_must_gap() {
+    let f = Fixture::conformant("skill-description");
+    let skill = f.path.join(".agents/skills/fixture-skill/SKILL.md");
+    std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
+    std::fs::write(
+        skill,
+        format!(
+            "---\nname: fixture-skill\ndescription: \"{}\"\n---\n\n# Fixture\n",
+            "x".repeat(1025)
+        ),
+    )
+    .unwrap();
+
+    let out = run_doctor(&["--json", f.path.to_str().unwrap()]);
+    assert_eq!(code(&out), 1);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("canon.s15"), "{stdout}");
+    assert!(stdout.contains("1025-character"), "{stdout}");
+}
+
+#[test]
 fn configured_private_marker_is_a_must_gap_but_own_coordinates_are_allowed() {
     let f = Fixture::conformant("s23");
     std::fs::write(

@@ -283,9 +283,9 @@ pub(crate) fn canon_dimensions() -> Vec<Dimension> {
                 // tags it [sandbox-write]. The coarse single effect-class per section takes the
                 // most-dangerous member, so a review runner sandboxes the whole §15 probe.
                 effect: SandboxWrite,
-                signal: "skill list; skill install [<name>] into ~/.claude/skills by default, --target <dir>; skills live in-repo",
-                command_hint: "$TOOL skill list  ·  (sandbox) $TOOL skill install --target \"$sandbox/skills\"",
-                fail: "no skill door; a skill list referencing a removed flag",
+                signal: "skill list; skill install [<name>] into ~/.claude/skills by default, --target <dir>; skills live in-repo; every frontmatter description is at most 1024 characters",
+                command_hint: "$TOOL skill list  ·  inspect located SKILL.md descriptions  ·  (sandbox) $TOOL skill install --target \"$sandbox/skills\"",
+                fail: "no skill door; a skill list referencing a removed flag; a frontmatter description over 1024 characters",
             },
         ),
         section(
