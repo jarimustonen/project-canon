@@ -646,6 +646,12 @@ version with the binary. The CLI is responsible for keeping skill text
 and CLI surface in sync (a tool whose `skill list` references a removed
 flag is a release-blocker, same as a broken `--help`).
 
+Respect the Agent Skills format limits: the frontmatter `description`
+field is **at most 1024 characters**. It is the trigger surface an agent
+loads at startup, so keep it dense — an over-limit description is
+rejected or truncated by consuming runtimes, which silently breaks skill
+discovery.
+
 Rationale: `--help` tells an agent *what* a command does; a skill tells
 it *when and how to use it in a multi-step workflow* — when to combine
 with which other commands, which gotchas to avoid, what the success
