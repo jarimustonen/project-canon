@@ -3,7 +3,7 @@ created: 2026-08-23
 updated: 2026-08-23
 type: improvement
 reporter: jari
-status: open
+status: in-progress
 priority: normal
 lane: build
 ---
