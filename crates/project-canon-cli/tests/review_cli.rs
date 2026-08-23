@@ -349,19 +349,26 @@ fn a_missing_run_target_is_an_honest_could_not_probe_report() {
     ]);
     assert_eq!(code(&out), 0, "review remains advisory");
     let payload: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(payload["summary"]["could_not_probe"], 8);
-    assert!(payload["runtime_probe"]["outcomes"]
-        .as_array()
-        .unwrap()
+    let outcomes = payload["runtime_probe"]["outcomes"].as_array().unwrap();
+    assert_eq!(outcomes.len(), 8);
+    assert!(outcomes
         .iter()
         .all(|outcome| outcome["status"] == "could-not-probe"));
-    let could_not = payload["findings"]
-        .as_array()
-        .unwrap()
+    let findings = payload["findings"].as_array().unwrap();
+    let could_not = findings
         .iter()
         .filter(|finding| finding["kind"] == "could-not-probe")
         .count();
-    assert_eq!(could_not, 8);
+    assert_eq!(
+        payload["summary"]["could_not_probe"], could_not,
+        "the summary counts finding classifications, while runtime_probe retains all raw outcomes"
+    );
+    assert!(
+        findings
+            .iter()
+            .any(|finding| { finding["id"] == "canon.s15" && finding["kind"] == "manual-verify" }),
+        "a static §15 pass and its judgment remainder survive runtime unavailability"
+    );
     assert_eq!(payload["staged_commands"].as_array().unwrap().len(), 0);
 }
 

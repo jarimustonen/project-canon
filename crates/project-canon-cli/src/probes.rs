@@ -86,7 +86,7 @@ pub struct RuntimeProbeOutcome {
     pub id: &'static str,
     pub status: RuntimeProbeStatus,
     pub message: String,
-    blocks_suite: bool,
+    pub(crate) blocks_suite: bool,
 }
 
 pub const RUNTIME_TIMEOUT_MS: u64 = 3000;
@@ -938,13 +938,7 @@ pub(crate) const SKILL_DESCRIPTION_MAX_CHARS: usize = 1024;
 /// characters. YAML parsing matters here: escaped and block scalars must be measured as the value
 /// an Agent Skills consumer sees, not as source bytes.
 pub(crate) fn skill_description_length(content: &str) -> Result<usize, String> {
-    let normalized = content.replace("\r\n", "\n");
-    let body = normalized
-        .strip_prefix("---\n")
-        .ok_or_else(|| "missing opening YAML frontmatter fence".to_string())?;
-    let (frontmatter, _) = body
-        .split_once("\n---\n")
-        .ok_or_else(|| "missing closing YAML frontmatter fence".to_string())?;
+    let frontmatter = extract_skill_frontmatter(content)?;
     let yaml: serde_yaml::Value = serde_yaml::from_str(frontmatter)
         .map_err(|error| format!("invalid YAML frontmatter: {error}"))?;
     let description = yaml
@@ -954,40 +948,153 @@ pub(crate) fn skill_description_length(content: &str) -> Result<usize, String> {
     Ok(description.chars().count())
 }
 
+fn extract_skill_frontmatter(content: &str) -> Result<&str, String> {
+    let content = content.strip_prefix('\u{feff}').unwrap_or(content);
+    let (first, mut offset) = next_line(content, 0);
+    if first != Some("---") {
+        return Err("missing opening YAML frontmatter fence".to_string());
+    }
+    let frontmatter_start = offset;
+    loop {
+        let line_start = offset;
+        let (line, next_offset) = next_line(content, offset);
+        let Some(line) = line else {
+            return Err("missing closing YAML frontmatter fence".to_string());
+        };
+        if line == "---" {
+            return Ok(&content[frontmatter_start..line_start]);
+        }
+        offset = next_offset;
+    }
+}
+
+/// Return the next LF/CRLF-delimited line and the byte offset immediately after it. A final line
+/// without a newline is still a line, allowing a closing frontmatter fence at EOF.
+fn next_line(content: &str, offset: usize) -> (Option<&str>, usize) {
+    if offset >= content.len() {
+        return (None, offset);
+    }
+    let rest = &content[offset..];
+    match rest.find('\n') {
+        Some(index) => {
+            let line = rest[..index].strip_suffix('\r').unwrap_or(&rest[..index]);
+            (Some(line), offset + index + 1)
+        }
+        None => (Some(rest.strip_suffix('\r').unwrap_or(rest)), content.len()),
+    }
+}
+
+/// Byte extent through the closing frontmatter fence. This lets repository probes decode only
+/// bounded frontmatter bytes, avoiding a false UTF-8 error when a bounded read cuts through a
+/// multibyte character later in a large skill body.
+fn skill_frontmatter_extent(bytes: &[u8]) -> Option<usize> {
+    let mut offset = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).map_or(0, |_| 3);
+    let (first, next) = next_byte_line(bytes, offset)?;
+    if first != b"---" {
+        return None;
+    }
+    offset = next;
+    loop {
+        let (line, next) = next_byte_line(bytes, offset)?;
+        if line == b"---" {
+            return Some(next);
+        }
+        offset = next;
+    }
+}
+
+fn next_byte_line(bytes: &[u8], offset: usize) -> Option<(&[u8], usize)> {
+    if offset >= bytes.len() {
+        return None;
+    }
+    let rest = &bytes[offset..];
+    match rest.iter().position(|byte| *byte == b'\n') {
+        Some(index) => {
+            let line = rest[..index].strip_suffix(b"\r").unwrap_or(&rest[..index]);
+            Some((line, offset + index + 1))
+        }
+        None => Some((rest.strip_suffix(b"\r").unwrap_or(rest), bytes.len())),
+    }
+}
+
 /// Locate repository-native Agent Skills directories and enforce the §15 description limit over
 /// every direct child `SKILL.md`. Repositories with no locatable skill files pass this scoped
 /// check; the rest of §15 remains a review judgment rather than being inferred from absence.
 fn probe_skill_description_lengths(repo: &Path) -> std::io::Result<ProbeOutcome> {
+    const MAX_FRONTMATTER_BYTES: u64 = 1_048_576;
     const ROOTS: [&str; 4] = [
         "skills",
         ".agents/skills",
         ".claude/skills",
         ".pi/agent/skills",
     ];
+    let canonical_repo = std::fs::canonicalize(repo)?;
     let mut skill_files = BTreeSet::new();
     for root in ROOTS {
         let directory = repo.join(root);
-        let entries = match std::fs::read_dir(&directory) {
-            Ok(entries) => entries,
+        let canonical_root = match std::fs::canonicalize(&directory) {
+            Ok(path) if path.starts_with(&canonical_repo) && path.is_dir() => path,
+            Ok(_) => {
+                return Ok(ProbeOutcome::fail(format!(
+                    "supported skill directory {root} resolves outside the target repository"
+                )))
+            }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
             Err(error) if error.kind() == std::io::ErrorKind::NotADirectory => continue,
             Err(error) => return Err(error),
         };
-        for entry in entries {
+        for entry in std::fs::read_dir(canonical_root)? {
             let entry = entry?;
-            if !entry.metadata()?.is_dir() {
-                continue;
-            }
             let candidate = entry.path().join("SKILL.md");
-            if stat(&candidate)?.is_some_and(|metadata| metadata.is_file()) {
-                skill_files.insert(candidate);
+            let _metadata = match std::fs::symlink_metadata(&candidate) {
+                Ok(metadata) if metadata.file_type().is_file() => metadata,
+                Ok(metadata) if metadata.file_type().is_symlink() => {
+                    return Ok(ProbeOutcome::fail(format!(
+                        "located skill {} is a symlink and cannot be safely inspected",
+                        candidate
+                            .strip_prefix(&canonical_repo)
+                            .unwrap_or(&candidate)
+                            .display()
+                    )))
+                }
+                Ok(_) => continue,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) if error.kind() == std::io::ErrorKind::NotADirectory => continue,
+                Err(error) => return Err(error),
+            };
+            let canonical = std::fs::canonicalize(&candidate)?;
+            if !canonical.starts_with(&canonical_repo) {
+                return Ok(ProbeOutcome::fail(format!(
+                    "located skill {} resolves outside the target repository",
+                    candidate
+                        .strip_prefix(&canonical_repo)
+                        .unwrap_or(&candidate)
+                        .display()
+                )));
             }
+            skill_files.insert(canonical);
         }
     }
 
     for file in &skill_files {
-        let rel = file.strip_prefix(repo).unwrap_or(file);
-        let bytes = std::fs::read(file)?;
+        let rel = file.strip_prefix(&canonical_repo).unwrap_or(file);
+        let mut bytes = Vec::new();
+        std::fs::File::open(file)?
+            .take(MAX_FRONTMATTER_BYTES + 1)
+            .read_to_end(&mut bytes)?;
+        let Some(frontmatter_end) = skill_frontmatter_extent(&bytes) else {
+            if bytes.len() as u64 > MAX_FRONTMATTER_BYTES {
+                return Ok(ProbeOutcome::fail(format!(
+                    "located skill {} frontmatter exceeds the {MAX_FRONTMATTER_BYTES}-byte scan limit or has no closing fence within it",
+                    rel.display()
+                )));
+            }
+            return Ok(ProbeOutcome::fail(format!(
+                "cannot measure located skill {}: missing YAML frontmatter fences",
+                rel.display()
+            )));
+        };
+        bytes.truncate(frontmatter_end);
         let content = match std::str::from_utf8(&bytes) {
             Ok(content) => content,
             Err(_) => {
@@ -1805,6 +1912,25 @@ mod tests {
     }
 
     #[test]
+    fn skill_description_length_decodes_yaml_scalars_and_frontmatter_line_endings() {
+        let escaped = rendered_skill("\"four\\u0020words\"");
+        assert_eq!(skill_description_length(&escaped).unwrap(), 10);
+
+        let folded =
+            "---\r\nname: fixture-skill\r\ndescription: >-\r\n  first line\r\n  second line\r\n---";
+        assert_eq!(
+            skill_description_length(folded).unwrap(),
+            "first line second line".chars().count()
+        );
+
+        let literal = "---\nname: fixture-skill\ndescription: |-\n  first\n  second\n---\n";
+        assert_eq!(
+            skill_description_length(literal).unwrap(),
+            "first\nsecond".chars().count()
+        );
+    }
+
+    #[test]
     fn skill_description_probe_rejects_an_over_limit_description() {
         let repo = TmpRepo::new("skill-description-over");
         let content = rendered_skill(&format!(
@@ -1836,6 +1962,30 @@ mod tests {
             &rendered_skill(&format!("\"{}\"", "x".repeat(SKILL_DESCRIPTION_MAX_CHARS))),
         );
         assert!(passed(probe_skill_description_lengths(&repo.path)));
+    }
+
+    #[test]
+    fn skill_description_probe_bounds_frontmatter_not_the_skill_body() {
+        let repo = TmpRepo::new("skill-description-large-body");
+        let mut content = rendered_skill("\"short description\"");
+        content.push_str(&"x".repeat(1_048_576));
+        repo.write("skills/fixture-skill/SKILL.md", &content);
+        assert!(passed(probe_skill_description_lengths(&repo.path)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn skill_description_probe_rejects_a_skill_root_outside_the_repo() {
+        let repo = TmpRepo::new("skill-description-scope");
+        let external = TmpRepo::new("skill-description-external");
+        external.write(
+            "fixture-skill/SKILL.md",
+            &rendered_skill("\"short description\""),
+        );
+        repo.symlink(external.path.to_str().unwrap(), "skills");
+        let outcome = probe_skill_description_lengths(&repo.path).unwrap();
+        assert!(!outcome.passed);
+        assert!(outcome.message.contains("outside the target repository"));
     }
 
     #[test]

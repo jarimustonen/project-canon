@@ -848,66 +848,88 @@ fn triage(
         staged_command,
     };
 
-    // An explicit runtime probe is stronger evidence than the conservative questionnaire. This
-    // intentionally lets §8 be decided when --run observes a config surface even though Q2 is off
-    // under static defaults.
-    if let Some(runtime) = runtime {
-        return Ok(match runtime.status {
-            RuntimeProbeStatus::Pass => base(FindingKind::Pass, runtime.message.clone(), None),
-            RuntimeProbeStatus::Gap => base(
-                FindingKind::ConfirmedGap,
-                runtime.message.clone(),
-                Some(stage_command(dim, target)),
-            ),
-            RuntimeProbeStatus::CouldNotProbe => {
-                base(FindingKind::CouldNotProbe, runtime.message.clone(), None)
-            }
-        });
+    // An explicit, decisive runtime probe is stronger evidence than the conservative
+    // questionnaire. This intentionally lets §8 be decided when --run observes a config surface
+    // even though Q2 is off under static defaults. An unavailable runtime does not override n/a.
+    let runtime_decided = runtime.is_some_and(|outcome| {
+        matches!(
+            outcome.status,
+            RuntimeProbeStatus::Pass | RuntimeProbeStatus::Gap
+        )
+    });
+    if let AppStatus::NotApplicable { gated_by } = status {
+        if !runtime_decided {
+            return Ok(base(
+                FindingKind::NotApplicable,
+                format!("n/a — conditional trigger off ({} = no)", gated_by.label()),
+                None,
+            ));
+        }
     }
 
-    // Out of scope for this repo (a conditional gated off) — never a gap.
-    if let AppStatus::NotApplicable { gated_by } = status {
+    // Static and opt-in runtime probes are additive evidence. In particular, §15 has both: a
+    // repository description-length check and a runtime skill-list check. `--run` must never hide
+    // a static gap or the dimension's judgment remainder.
+    let static_outcome = mechanical_probe(dim.id)
+        .map(|probe| probe(repo, probe_context))
+        .transpose()
+        .map_err(|source| ProbeFault {
+            dim_id: dim.id,
+            source,
+        })?;
+    let static_gap = static_outcome
+        .as_ref()
+        .is_some_and(|outcome| !outcome.passed);
+    let runtime_gap = runtime.is_some_and(|outcome| outcome.status == RuntimeProbeStatus::Gap);
+    let any_pass = static_outcome
+        .as_ref()
+        .is_some_and(|outcome| outcome.passed)
+        || runtime.is_some_and(|outcome| outcome.status == RuntimeProbeStatus::Pass);
+
+    let mut evidence = Vec::new();
+    if let Some(outcome) = &static_outcome {
+        evidence.push(outcome.message.clone());
+    }
+    if let Some(outcome) = runtime {
+        evidence.push(outcome.message.clone());
+    }
+    let evidence = evidence.join("; ");
+
+    if static_gap || runtime_gap {
+        let observed = match judgment_remainder(dim.id) {
+            Some(remainder) => format!("{evidence}; also {remainder}"),
+            None => evidence,
+        };
         return Ok(base(
-            FindingKind::NotApplicable,
-            format!("n/a — conditional trigger off ({} = no)", gated_by.label()),
+            FindingKind::ConfirmedGap,
+            observed,
+            Some(stage_command(dim, target)),
+        ));
+    }
+    if any_pass {
+        return Ok(match judgment_remainder(dim.id) {
+            Some(remainder) => base(
+                FindingKind::ManualVerify,
+                format!("{evidence}; {remainder}"),
+                None,
+            ),
+            None => base(FindingKind::Pass, evidence, None),
+        });
+    }
+    if let Some(runtime) = runtime {
+        debug_assert_eq!(runtime.status, RuntimeProbeStatus::CouldNotProbe);
+        return Ok(base(
+            FindingKind::CouldNotProbe,
+            runtime.message.clone(),
             None,
         ));
     }
 
-    // Applies — a mechanical probe decides pass vs. confirmed gap; otherwise it is a manual-verify
-    // coverage note carrying the probe's how-to.
-    match mechanical_probe(dim.id) {
-        None => Ok(base(
-            FindingKind::ManualVerify,
-            "no mechanical probe — verify by hand".to_string(),
-            None,
-        )),
-        Some(probe) => {
-            let outcome = probe(repo, probe_context).map_err(|source| ProbeFault {
-                dim_id: dim.id,
-                source,
-            })?;
-            if outcome.passed {
-                if let Some(remainder) = judgment_remainder(dim.id) {
-                    Ok(base(
-                        FindingKind::ManualVerify,
-                        format!("{}; {remainder}", outcome.message),
-                        None,
-                    ))
-                } else {
-                    Ok(base(FindingKind::Pass, outcome.message, None))
-                }
-            } else {
-                // A confirmed gap: stage (print, never run) an issuectl command scoped to the repo.
-                let staged = stage_command(dim, target);
-                let observed = match judgment_remainder(dim.id) {
-                    Some(remainder) => format!("{}; also {remainder}", outcome.message),
-                    None => outcome.message,
-                };
-                Ok(base(FindingKind::ConfirmedGap, observed, Some(staged)))
-            }
-        }
-    }
+    Ok(base(
+        FindingKind::ManualVerify,
+        "no mechanical probe — verify by hand".to_string(),
+        None,
+    ))
 }
 
 fn absolute_lexical(path: &str) -> std::io::Result<PathBuf> {
@@ -1076,6 +1098,14 @@ mod tests {
             std::fs::create_dir_all(self.path.join(rel)).unwrap();
             self
         }
+        fn write(&self, rel: &str, content: &str) -> &Self {
+            let path = self.path.join(rel);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(path, content).unwrap();
+            self
+        }
         fn target(&self) -> String {
             self.path.display().to_string()
         }
@@ -1140,6 +1170,78 @@ mod tests {
         assert_eq!(doc.fix_class, FixClass::MustFix);
         assert!(doc.observed.contains("AGENTS.md"));
         assert!(doc.staged_command.is_some(), "a confirmed gap is staged");
+    }
+
+    #[test]
+    fn runtime_s15_pass_does_not_hide_a_static_description_gap_or_remainder() {
+        let repo = conformant_repo("s15-mixed");
+        repo.write(
+            "skills/fixture-skill/SKILL.md",
+            &format!(
+                "---\nname: fixture-skill\ndescription: \"{}\"\n---\n",
+                "x".repeat(1025)
+            ),
+        );
+        let runtime = RuntimeProbeOutcome {
+            id: "canon.s15",
+            status: RuntimeProbeStatus::Pass,
+            message: "runtime skill list passed".to_string(),
+            blocks_suite: false,
+        };
+        let model = Model::standard();
+        let dimension = model.dimension("canon.s15").unwrap();
+        let deny_list = std::collections::BTreeSet::new();
+        let context = ProbeContext {
+            user_specific_deny_list: &deny_list,
+        };
+        let finding = triage(
+            dimension,
+            AppStatus::Applies,
+            &repo.path,
+            &repo.target(),
+            &context,
+            Some(&runtime),
+        )
+        .unwrap();
+        assert_eq!(finding.kind, FindingKind::ConfirmedGap);
+        assert!(finding.observed.contains("1025-character"));
+        assert!(finding.observed.contains("runtime skill list passed"));
+        assert!(finding.observed.contains("guidance freshness"));
+    }
+
+    #[test]
+    fn unavailable_runtime_does_not_hide_a_static_s15_gap() {
+        let repo = conformant_repo("s15-unavailable");
+        repo.write(
+            ".claude/skills/fixture-skill/SKILL.md",
+            &format!(
+                "---\nname: fixture-skill\ndescription: \"{}\"\n---\n",
+                "x".repeat(1025)
+            ),
+        );
+        let runtime = RuntimeProbeOutcome {
+            id: "canon.s15",
+            status: RuntimeProbeStatus::CouldNotProbe,
+            message: "runtime unavailable".to_string(),
+            blocks_suite: true,
+        };
+        let model = Model::standard();
+        let dimension = model.dimension("canon.s15").unwrap();
+        let deny_list = std::collections::BTreeSet::new();
+        let context = ProbeContext {
+            user_specific_deny_list: &deny_list,
+        };
+        let finding = triage(
+            dimension,
+            AppStatus::Applies,
+            &repo.path,
+            &repo.target(),
+            &context,
+            Some(&runtime),
+        )
+        .unwrap();
+        assert_eq!(finding.kind, FindingKind::ConfirmedGap);
+        assert!(finding.observed.contains("1025-character"));
     }
 
     #[test]

@@ -1250,18 +1250,27 @@ mod install {
 
         #[test]
         fn every_bundled_native_skill_render_has_a_compliant_description() {
-            for skill in SHIPPED {
-                let rendered = Agent::Pi.render(skill, "SKILL.md").unwrap();
-                let length =
-                    crate::probes::skill_description_length(&rendered).unwrap_or_else(|error| {
-                        panic!("{} rendered invalid frontmatter: {error}", skill.name)
-                    });
-                assert!(
-                    length <= crate::probes::SKILL_DESCRIPTION_MAX_CHARS,
-                    "{} rendered description is {length} characters (maximum {})",
-                    skill.name,
-                    crate::probes::SKILL_DESCRIPTION_MAX_CHARS
-                );
+            // Codex prompts are not Agent Skills frontmatter; both native layouts are.
+            for agent in [Agent::Claude, Agent::Pi] {
+                for skill in SHIPPED {
+                    let rendered = agent.render(skill, "SKILL.md").unwrap();
+                    let length = crate::probes::skill_description_length(&rendered).unwrap_or_else(
+                        |error| {
+                            panic!(
+                                "{} {} render has invalid frontmatter: {error}",
+                                agent.slug(),
+                                skill.name
+                            )
+                        },
+                    );
+                    assert!(
+                        length <= crate::probes::SKILL_DESCRIPTION_MAX_CHARS,
+                        "{} {} rendered description is {length} characters (maximum {})",
+                        agent.slug(),
+                        skill.name,
+                        crate::probes::SKILL_DESCRIPTION_MAX_CHARS
+                    );
+                }
             }
         }
 
