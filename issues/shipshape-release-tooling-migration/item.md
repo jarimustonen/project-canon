@@ -34,6 +34,11 @@ Retained legacy strings deliberately: dated `/oss-init` and `ossctl 0.8.0` prove
 
 The review caught one non-mechanical mapping: Shipshape's actual ten-skill catalog has `shipshape-release`, not `shipshape-release-cut`, so the fragment guide names `/shipshape-release` as orchestrator and `/shipshape-changelog --finalize` as its operation. Rejected retaining old marker names (the ADR freezes only changelog markers), advertising an ossctl alias/trigger, and mutating machine installation state from this worker; ADR 0005 assigns convergence to the conductor.
 
+### 2026-08-23T14:40:53Z · @agent
+
+Post-rebase semantic check found concurrent main had added transitional guidance saying to use whichever ossctl/shipshape binary was installed and that /oss-* skills were unchanged. ADR 0005 says the opposite: Shipshape is canonical, old skill names are actionable refusals, and ossctl is only a frozen rollback binary. Updated the active policy to require shipshape and /shipshape-*; a missing installation is a conductor convergence gap, not authorization to cut with ossctl. Also migrated the concurrent /oss-contributing reference.
+
+
 ## Agent Runs
 
 ### 2026-08-23T14:39:25Z · @agent

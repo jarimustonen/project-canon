@@ -93,11 +93,11 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
   family-tool list naming three *private* repos to crates.io: see `portable-neutral-defaults`
   (the cleanup) and `canon-no-user-specifics` (making it a `doctor`-enforced canon section).
 - **No `CODE_OF_CONDUCT.md`** (maintainer decision, 2026-08-23): it was removed deliberately;
-  do not re-add it on a future `/oss-contributing` run even though the mvp tier proposes one.
-- **The release engine is `shipshape` — renamed from `ossctl` (2026-08-23).** Same engine,
-  same command surface; an un-converged machine may still have the `ossctl` binary and the
-  GitHub remote may still read ossctl — use whichever binary is installed. The `/oss-*`
-  skill names are unchanged.
+  do not re-add it on a future `/shipshape-contributing` run even though the mvp tier proposes one.
+- **The release engine is `shipshape` (2026-08-23).** Use the canonical `shipshape` binary and
+  `/shipshape-*` skill catalog. If Shipshape is not installed, stop and report the convergence gap;
+  do not substitute the frozen `ossctl` rollback binary for a new cut. The upstream GitHub remote
+  may still contain `ossctl` in its coordinate, which is deliberate historical continuity.
 - **Green gate** (must pass before a unit counts as landed):
   - `cargo fmt --all --check`
   - `cargo clippy --workspace --all-targets -- -D warnings`
