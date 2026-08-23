@@ -9,6 +9,56 @@ _Repo bootstrapped 2026-08-12 from homebase **ADR 0009** (`project-canon` = proj
 conformance tool; base project canon + per-archetype profiles, AI-first CLI canon as the `cli`
 profile). Resume with `/skill:stint-start`. Live scheduling is `issuectl dag`; TODO.md carries only handoff notes._
 
+_**🚀 2026-08-23 — LATEST STATE. `0.6.2` is live and verified on all four channels** (crates.io ×2,
+GitHub Release, Homebrew; engine `verify` phase: all targets `matches`; release commit `4693463`
+fast-forwarded to main by hand — see the ossctl bug below). This supersedes the "backlog empty"
+note further down: **one open, unscheduled issue now exists** (`skill-description-length-check`,
+awaiting human lane-or-close triage — context only, not scheduled or accepted)._
+
+_**🌍 2026-08-22/23 session — the PUBLICIZE pass: stealth-public → external-user-facing.** Interactive
+session (no worktrees). (1) **README rewritten for an external audience** — value-prop lead, Why,
+worked quickstart from a real `doctor` run, canon-highlights table, Status (ZeroVer). Every claim
+fact-checked against the binary + dist config; **fixed a real error: the README promised macOS
+x86_64 prebuilt binaries that are not in the dist target list** (coverage is macOS arm64 + Linux
+musl arm64/x86_64). (2) **AGENTS.md re-grounded** — it still said "bootstrap only, verbs not built"
+four releases after they shipped. (3) **GitHub metadata set** (description + six topics, was empty).
+(4) **CONTRIBUTING.md + PR template** landed; issue-channel split is explicit (externals → GitHub
+issues; the in-repo issuectl tracker is committer-only). **CODE_OF_CONDUCT.md was added then
+REMOVED (owner decision — do not re-add).** GitHub issue forms deliberately skipped (issuectl is
+canonical). (5) **SECURITY.md** — threat gate fired (subprocess probes, untrusted probe output,
+shipped binaries) → full mvp-scale policy; **Private Vulnerability Reporting enabled** in repo
+settings on owner's go. (6) **Canon links now target the physical master**
+(`crates/project-canon-core/AGENTS-AI-FIRST-CLI.md`) because GitHub's web UI renders a symlink as
+its target path, not content. (7) **Product-name neutrality (owner rule: no agent product names —
+pi.dev is used too):** canon §15 now defines skills by the open **Agent Skills** standard
+(agentskills.io); help text + docs use `--agent` layout ids (`claude`/`pi`/`codex`). **Canon §15
+also gained the format limit: skill frontmatter `description` ≤ 1024 chars** (both bundled skills
+measured well under: 390/867). All shipped in `0.6.2` (terminology/canon content, no behaviour
+change)._
+
+_**⚠️ Two NEW ossctl engine bugs found by the `0.6.2` cut, both filed in ossctl (and the changelog
+one already has a worker running there):** (1) **`changelog-finalize-markers` (high)** — finalize
+put the dated `## [0.6.2]` header INSIDE the Unreleased marker block, compiled neither the pending
+fragment nor issue trailers (empty sections), left the fragment unconsumed, and the broken block
+propagated into the public cargo-dist GitHub release body. Repaired here by hand: CHANGELOG fixed
+(`19f3bf8`, fragment consumed) + `gh release edit`. (2) **`cut-main-not-advanced` (normal)** — the
+engine tagged the bump commit and published everything but never advanced main, leaving origin/main
+at 0.6.1 while 0.6.2 was live (next `plan --bump patch` would have collided); fixed by ff-merge +
+push. Both are also evidence for post-cut mechanical checks (see the skill thread below)._
+
+_**📌 De-stealth → skill thread: collection issue `oss-publicize-skill` filed in ossctl.** The whole
+publicize pass + the five gaps it exposed in the /oss-* family (metadata apply, PVR check,
+claims-vs-binary audit, symlink-link check, neutrality sweep) are recorded there, with an A/B/C
+design question (own member vs. /oss-release mode vs. checklist). **Deliberately NOT a skill yet —
+one project is one data point.** Next: run the same pass on a second stealth-public repo, append
+observations as a comment on that issue, then decide and extract._
+
+_**Direction from here.** The "how far does the family adopt this" question from the last handoff has
+a concrete first answer: project-canon itself is now presentable to external users (front door, 
+onboarding, security policy, neutral naming). Plausible next threads, none scheduled: lane-or-close
+the description-limit check, a second publicize pass elsewhere (feeds the skill), family
+adoption/rollout, or new intake._
+
 _**Session 2026-08-14 (five rounds, all landed `done`, green on main, no deploy — repo policy):**
 `env-config-hook-layer` (`2d9f8ab`) → `doctor-conformance-gate` (`50f55e9`) →
 `new-scaffold-generator` (`5f3fcfd`) → `review-audit-verb` (`12c91ed`) → `canon-installable-skill`
@@ -30,7 +80,7 @@ Codex). Design decisions in `issues/canon-installable-skill/design.md` — kept 
 one recorded canon deviation (unknown-name in `print` exits **2** for binary-wide consistency, not
 §16's literal 1 — owner may amend the canon)._
 
-_**🚀 2026-08-21 — LATEST STATE. `0.6.1` is public and verified on all four channels**: crates.io
+_**🚀 2026-08-21 [superseded by 0.6.2 above]. `0.6.1` public and verified on all four channels**: crates.io
 (`project-canon-core@0.6.1` + `project-canon-cli@0.6.1`), the GitHub Release (12 assets), and
 Homebrew `project-canon` at `0.6.1`. Workspace manifest matches. `0.6.0` (08-19) shipped the complete
 `cli-canon` behavioral skill alongside `ai-first-cli-canon` plus the first-class pi layout under
