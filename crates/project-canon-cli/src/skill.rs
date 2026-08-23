@@ -1260,6 +1260,8 @@ mod install {
             let native = Agent::Pi.render(skill, "SKILL.md").unwrap();
             assert!(native.contains("cli_version:"));
             assert!(native.contains("schema_version:"));
+            assert!(native.contains("check shipshape/issuectl/orchestratectl"));
+            assert!(!native.contains("check ossctl/issuectl/orchestratectl"));
         }
 
         #[test]

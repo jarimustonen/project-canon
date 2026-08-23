@@ -1,5 +1,5 @@
-# Deliberate release-ownership boundary, verified with ossctl 0.8.0 on 2026-08-17:
-# this repo delegates Homebrew publishing to cargo-dist CI, while `ossctl dist
+# Deliberate release-ownership boundary, verified with ossctl 0.8.0 on 2026-08-17.
+# This repo delegates Homebrew publishing to cargo-dist CI, while `shipshape dist
 # generate` emits engine-owned Homebrew configuration. Maintain this config
 # directly and regenerate only the workflow with `dist generate` (cargo-dist).
 # The tag-triggered `.github/workflows/release.yml` is produced from the
@@ -40,7 +40,7 @@ pr-run-mode = "skip"
 # 90min with both macOS jobs still queued while both Linux jobs had already succeeded),
 # and because an unbuilt job never fails, it blocks every other artifact from publishing.
 # macOS therefore builds on a self-hosted ARM64 runner registered to this repository.
-# `ossctl dist generate` strips this block, which is why this file is hand-maintained.
+# `shipshape dist generate` strips this block, which is why this file is hand-maintained.
 # This sub-table MUST stay at the end — a `[dist.*]` table placed among the `[dist]`
 # scalar keys would swallow every key after it.
 # TODO: this couples releases to a specific runner. The clean fix is to find out why

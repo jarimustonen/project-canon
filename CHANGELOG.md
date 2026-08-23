@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Active release tooling guidance, generated ownership markers, distribution comments, and the
+  bundled `cli-canon` audit example now use the Shipshape product, `shipshape` command, and
+  `/shipshape-*` skill names. Historical release evidence and permanent compatibility identifiers
+  remain unchanged.
+
 ### Fixed
 <!-- oss-changelog:unreleased-end -->
 

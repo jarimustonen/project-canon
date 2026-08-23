@@ -23,7 +23,7 @@ scope/subsumption/name decision that created this repo.
 
 [`README.md`](README.md) is the human front door (audience: external users). Keep it in sync
 when the CLI surface, install channels, or platform coverage change — its install/badges/license
-regions are `oss-readme` marker-managed.
+regions are `shipshape-readme` marker-managed.
 
 **Open an issue before building a feature**; do not pre-design the tool in this file.
 

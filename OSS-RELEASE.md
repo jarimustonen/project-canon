@@ -53,7 +53,7 @@ docs_site: none
   workflow deliberately no longer competes with that path. Cargo-dist owns the binary channels;
   its CI publishes both the GitHub Release and the Homebrew formula, so both delegated targets use
   `cargo-dist` rather than the engine-owned `homebrew-tap` adapter. The Homebrew target uses
-  `binary:project-canon`, matching cargo-dist's `formula = "project-canon"`; ossctl verifies
+  `binary:project-canon`, matching cargo-dist's `formula = "project-canon"`; Shipshape verifies
   `Formula/<package>.rb`, so using the Rust package name would observe the wrong formula.
 - **distribution: cargo-dist, shell + homebrew installers** — cross-platform prebuilt binaries
   for macOS arm64 and musl Linux arm64/x86_64 are attached to GitHub Releases. Cargo-dist also

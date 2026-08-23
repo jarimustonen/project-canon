@@ -1,10 +1,10 @@
 # project-canon 📏
 
-<!-- oss-readme:badges-start -->
+<!-- shipshape-readme:badges-start -->
 [![CI](https://github.com/jarimustonen/project-canon/actions/workflows/ci.yml/badge.svg)](https://github.com/jarimustonen/project-canon/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/project-canon-cli.svg)](https://crates.io/crates/project-canon-cli)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
-<!-- oss-readme:badges-end -->
+<!-- shipshape-readme:badges-end -->
 
 **Conformance tooling for AI-first CLI projects.**
 
@@ -87,7 +87,7 @@ Add `--json` to any verb for the structured report.
 
 ## Installation
 
-<!-- oss-readme:install-start -->
+<!-- shipshape-readme:install-start -->
 **Homebrew** (macOS and Linux):
 
 ```sh
@@ -113,7 +113,7 @@ on other platforms, install via Homebrew or `cargo install`.
 
 The library crate is published separately as `project-canon-core` (`cargo add
 project-canon-core`) for embedding the conformance model in your own tooling.
-<!-- oss-readme:install-end -->
+<!-- shipshape-readme:install-end -->
 
 ## Usage
 
@@ -206,6 +206,6 @@ but minor versions may still break compatibility. Changes are tracked in
 
 ## License
 
-<!-- oss-readme:license-start -->
+<!-- shipshape-readme:license-start -->
 Licensed under the [MIT License](./LICENSE).
-<!-- oss-readme:license-end -->
+<!-- shipshape-readme:license-end -->
