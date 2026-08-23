@@ -8,14 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- oss-changelog:unreleased-start -->
 ## [Unreleased]
 
-## [0.6.2] - 2026-08-23
-
 ### Added
 
 ### Changed
 
 ### Fixed
 <!-- oss-changelog:unreleased-end -->
+
+## [0.6.2] - 2026-08-23
+
+Terminology and canon-content release. No change to command behaviour.
+
+### Changed
+
+- The canon (§15) and the `skill` help/docs now describe skills by the open
+  [Agent Skills](https://agentskills.io) standard and neutral `--agent` layout
+  identifiers (`claude`/`pi`/`codex`) instead of naming agent products.
+- Canon §15 now records the Agent Skills format limit: a skill's frontmatter
+  `description` is at most 1024 characters.
 
 ## [0.6.1] - 2026-08-21
 
