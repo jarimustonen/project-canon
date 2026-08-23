@@ -9,6 +9,8 @@ lane: build
 commits:
 - hash: fde1413844a8298d06dfcedea7f2d07318c39755
   summary: start implementation
+- hash: f60b0041add425b2b10c2733f04d97c2e731d946
+  summary: enforce skill description length
 ---
 
 # Enforce the 1024-char skill description limit mechanically
