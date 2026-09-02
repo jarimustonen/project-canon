@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+### Changed
+### Fixed
+<!-- oss-changelog:unreleased-end -->
+
+## [0.7.0] - 2026-08-23
+
+### Added
 
 - `doctor` and static `review` now enforce Canon §15's 1024-character maximum for
   frontmatter descriptions in repository skills they can locate.
@@ -19,9 +26,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bundled `cli-canon` audit example now use the Shipshape product, `shipshape` command, and
   `/shipshape-*` skill names. Historical release evidence and permanent compatibility identifiers
   remain unchanged.
-
-### Fixed
-<!-- oss-changelog:unreleased-end -->
 
 ## [0.6.2] - 2026-08-23
 
