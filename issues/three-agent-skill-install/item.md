@@ -19,6 +19,10 @@ commits:
   summary: 'fix: harden three-runtime conformance evidence'
 - hash: 3329ed4aa3051d5322c262de3d7e28b5bf7d2cf5
   summary: 'issues: record three-runtime implementation'
+- hash: 97c41bb5e026af595652110a5f208f5906f0db88
+  summary: 'issues: close three-agent skill install'
+- hash: d37fc0df9a8e578b7efdc8378c5be2be3e75b77e
+  summary: 'issues: record three-runtime design decisions'
 closed: 2026-09-03
 closed_by: pi
 ---
@@ -37,13 +41,13 @@ A no-selection/default or explicit `all` installation must cover all three. Runt
 
 Project Canon itself already implements these three layouts. The missing product behavior is to make this a normative Canon §15 requirement and enforce/review it for other CLIs rather than merely documenting Claude plus a generic custom target.
 
-Acceptance scope:
+## Acceptance Criteria
 
-1. Amend the canonical §15 text with product-neutral runtime/layout requirements for Claude, pi, and Codex, including `all` semantics and native destinations.
-2. Update Project Canon's resolved model/probe text and mechanical runtime/static checks where observable so `doctor`/`review` can distinguish full three-runtime support from a Claude-only installer.
-3. Keep `--target` override behavior and safe non-interactive installation semantics.
-4. Update the bundled `ai-first-cli-canon` and `cli-canon` guidance from the single source, plus tests and public docs where behavior is described.
-5. Preserve neutral public artifacts and the existing generated/runtime-specific form differences.
+- [x] Amend the canonical §15 text with product-neutral runtime/layout requirements for Claude, pi, and Codex, including `all` semantics and native destinations.
+- [x] Update Project Canon's resolved model/probe text and mechanical runtime/static checks where observable so `doctor`/`review` can distinguish full three-runtime support from a Claude-only installer.
+- [x] Keep `--target` override behavior and safe non-interactive installation semantics.
+- [x] Update the bundled `ai-first-cli-canon` and `cli-canon` guidance from the single source, plus tests and public docs where behavior is described.
+- [x] Preserve neutral public artifacts and the existing generated/runtime-specific form differences.
 
 ## Decisions
 
