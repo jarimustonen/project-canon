@@ -61,6 +61,14 @@ use project_canon_core::CANON;
 /// The `cli_version=` field (parsed only from within the marker) drives the §17 drift decision.
 const MARKER_PREFIX: &str = "<!-- Installed by `project-canon skill install`";
 
+// Installer interface constants feed both behavior and its `skill list --json` declaration so the
+// capability object cannot drift from this binary's parser/layout implementation.
+const AGENT_FLAG: &str = "--agent";
+const TARGET_FLAG: &str = "--target";
+const DRY_RUN_FLAG: &str = "--dry-run";
+const FORCE_FLAG: &str = "--force";
+const ALL_AGENTS: &str = "all";
+
 // ===== exit codes ===================================================================
 /// Success — installed/upgraded/unchanged, a dry-run plan, or a list/print.
 const EXIT_OK: u8 = 0;
@@ -237,11 +245,33 @@ impl Agent {
         }
     }
 
+    fn root(self) -> &'static str {
+        match self {
+            Agent::Claude => ".claude/skills",
+            Agent::Pi => ".pi/agent/skills",
+            Agent::Codex => ".codex/prompts",
+        }
+    }
+
+    fn layout_path(self) -> &'static str {
+        match self {
+            Agent::Claude => ".claude/skills/<name>/...",
+            Agent::Pi => ".pi/agent/skills/<name>/...",
+            Agent::Codex => ".codex/prompts/<name>.md",
+        }
+    }
+
+    fn layout_form(self) -> &'static str {
+        match self {
+            Agent::Claude | Agent::Pi => "agent-skill-tree",
+            Agent::Codex => "self-contained-prompt",
+        }
+    }
+
     fn path(self, base: &Path, name: &str, resource: &str) -> PathBuf {
         match self {
-            Agent::Claude => base.join(".claude/skills").join(name).join(resource),
-            Agent::Pi => base.join(".pi/agent/skills").join(name).join(resource),
-            Agent::Codex => base.join(".codex/prompts").join(format!("{name}.md")),
+            Agent::Claude | Agent::Pi => base.join(self.root()).join(name).join(resource),
+            Agent::Codex => base.join(self.root()).join(format!("{name}.md")),
         }
     }
 
@@ -350,7 +380,7 @@ fn parse_agent(s: &str, allow_all: bool) -> Result<Vec<Agent>, String> {
         "claude" => Ok(vec![Agent::Claude]),
         "pi" => Ok(vec![Agent::Pi]),
         "codex" => Ok(vec![Agent::Codex]),
-        "all" if allow_all => Ok(vec![Agent::Claude, Agent::Pi, Agent::Codex]),
+        ALL_AGENTS if allow_all => Ok(vec![Agent::Claude, Agent::Pi, Agent::Codex]),
         _ => {
             let valid = if allow_all {
                 "claude/pi/codex/all"
@@ -636,30 +666,30 @@ mod install {
                     reject_inline("--help", inline)?;
                     return Ok(Command::Help);
                 }
-                "--force" => {
-                    reject_inline("--force", inline)?;
-                    set_flag(&mut force, "--force")?;
+                FORCE_FLAG => {
+                    reject_inline(FORCE_FLAG, inline)?;
+                    set_flag(&mut force, FORCE_FLAG)?;
                 }
-                "--dry-run" => {
-                    reject_inline("--dry-run", inline)?;
-                    set_flag(&mut dry_run, "--dry-run")?;
+                DRY_RUN_FLAG => {
+                    reject_inline(DRY_RUN_FLAG, inline)?;
+                    set_flag(&mut dry_run, DRY_RUN_FLAG)?;
                 }
                 "--json" => {
                     reject_inline("--json", inline)?;
                     set_flag(&mut json, "--json")?;
                 }
-                "--target" => {
+                TARGET_FLAG => {
                     if target.is_some() {
-                        return Err("repeated flag: --target".to_string());
+                        return Err(format!("repeated flag: {TARGET_FLAG}"));
                     }
-                    target = Some(take_value("--target", inline, &mut iter)?);
+                    target = Some(take_value(TARGET_FLAG, inline, &mut iter)?);
                 }
-                "--agent" => {
+                AGENT_FLAG => {
                     if agents.is_some() {
-                        return Err("repeated flag: --agent".to_string());
+                        return Err(format!("repeated flag: {AGENT_FLAG}"));
                     }
                     agents = Some(parse_agent(
-                        &take_value("--agent", inline, &mut iter)?,
+                        &take_value(AGENT_FLAG, inline, &mut iter)?,
                         true,
                     )?);
                 }
@@ -794,11 +824,11 @@ mod install {
                 "install path is outside the declared target base",
             )
         })?;
+        // `base` itself is the caller-declared boundary and may intentionally be a symlink (for
+        // example a symlinked home). Only redirects introduced *below* that boundary are escapes.
         let mut current = base.to_path_buf();
-        for component in std::iter::once(None).chain(relative.components().map(Some)) {
-            if let Some(component) = component {
-                current.push(component.as_os_str());
-            }
+        for component in relative.components() {
+            current.push(component.as_os_str());
             match std::fs::symlink_metadata(&current) {
                 Ok(metadata) if metadata.file_type().is_symlink() => {
                     return Err(std::io::Error::new(
@@ -1431,8 +1461,9 @@ mod list {
                     (
                         "supported_agents".into(),
                         Json::Array(
-                            ["claude", "pi", "codex"]
+                            [Agent::Claude, Agent::Pi, Agent::Codex]
                                 .into_iter()
+                                .map(Agent::slug)
                                 .map(Json::str)
                                 .collect(),
                         ),
@@ -1440,40 +1471,37 @@ mod list {
                     (
                         "install".into(),
                         Json::Object(vec![
-                            ("selection_flag".into(), Json::str("--agent")),
-                            ("default".into(), Json::str("all")),
+                            ("selection_flag".into(), Json::str(AGENT_FLAG)),
+                            ("default".into(), Json::str(ALL_AGENTS)),
                             (
                                 "accepted_values".into(),
                                 Json::Array(
-                                    ["claude", "pi", "codex", "all"]
+                                    ["claude", "pi", "codex", ALL_AGENTS]
                                         .into_iter()
                                         .map(Json::str)
                                         .collect(),
                                 ),
                             ),
-                            ("target_flag".into(), Json::str("--target")),
-                            ("dry_run_flag".into(), Json::str("--dry-run")),
-                            ("force_flag".into(), Json::str("--force")),
+                            ("target_flag".into(), Json::str(TARGET_FLAG)),
+                            ("dry_run_flag".into(), Json::str(DRY_RUN_FLAG)),
+                            ("force_flag".into(), Json::str(FORCE_FLAG)),
                             ("interactive".into(), Json::Bool(false)),
+                            ("no_clobber_default".into(), Json::Bool(true)),
+                            ("overwrite_requires_force".into(), Json::Bool(true)),
                             (
                                 "layouts".into(),
-                                Json::Array(vec![
-                                    Json::Object(vec![
-                                        ("agent".into(), Json::str("claude")),
-                                        ("path".into(), Json::str(".claude/skills/<name>/...")),
-                                        ("form".into(), Json::str("agent-skill-tree")),
-                                    ]),
-                                    Json::Object(vec![
-                                        ("agent".into(), Json::str("pi")),
-                                        ("path".into(), Json::str(".pi/agent/skills/<name>/...")),
-                                        ("form".into(), Json::str("agent-skill-tree")),
-                                    ]),
-                                    Json::Object(vec![
-                                        ("agent".into(), Json::str("codex")),
-                                        ("path".into(), Json::str(".codex/prompts/<name>.md")),
-                                        ("form".into(), Json::str("self-contained-prompt")),
-                                    ]),
-                                ]),
+                                Json::Array(
+                                    [Agent::Claude, Agent::Pi, Agent::Codex]
+                                        .into_iter()
+                                        .map(|agent| {
+                                            Json::Object(vec![
+                                                ("agent".into(), Json::str(agent.slug())),
+                                                ("path".into(), Json::str(agent.layout_path())),
+                                                ("form".into(), Json::str(agent.layout_form())),
+                                            ])
+                                        })
+                                        .collect(),
+                                ),
                             ),
                         ]),
                     ),

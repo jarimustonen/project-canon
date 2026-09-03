@@ -689,6 +689,44 @@ fn an_intermediate_runtime_symlink_is_refused_without_writing_outside_target() {
     assert!(external.snapshot().is_empty());
 }
 
+#[cfg(unix)]
+#[test]
+fn a_nested_runtime_symlink_is_refused_but_a_symlinked_target_is_allowed() {
+    let t = Tmp::new("nested-parent-symlink");
+    let external = Tmp::new("nested-parent-symlink-external");
+    std::fs::create_dir_all(t.path.join(".pi/agent")).unwrap();
+    std::os::unix::fs::symlink(&external.path, t.path.join(".pi/agent/skills")).unwrap();
+
+    let out = run(&[
+        "install",
+        "ai-first-cli-canon",
+        "--target",
+        t.str(),
+        "--agent",
+        "pi",
+    ]);
+    assert_eq!(code(&out), 2);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("may escape --target"));
+    assert!(external.snapshot().is_empty());
+
+    let link_holder = Tmp::new("symlinked-target-holder");
+    let target_link = link_holder.path.join("declared-target");
+    std::os::unix::fs::symlink(&external.path, &target_link).unwrap();
+    let out = run(&[
+        "install",
+        "ai-first-cli-canon",
+        "--target",
+        target_link.to_str().unwrap(),
+        "--agent",
+        "codex",
+    ]);
+    assert_eq!(code(&out), 0, "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(external
+        .path
+        .join(".codex/prompts/ai-first-cli-canon.md")
+        .is_file());
+}
+
 #[test]
 fn print_unknown_name_is_a_usage_error() {
     let out = run(&["print", "nope"]);

@@ -190,12 +190,13 @@ step has bound it to a real, read-only command.
   `.codex/prompts/<name>.md`. No runtime selection and explicit `all` both install all three;
   an explicit runtime selection may install only one. `--target <dir>` changes the install
   base without changing those layouts. Claude/pi preserve native Agent Skills resource trees;
-  Codex may use one self-contained prompt. Installation is non-interactive, dry-runnable, and
+  Codex uses one self-contained prompt. Installation is non-interactive, dry-runnable, and
   no-clobber by default; skills live in-repo and version with the binary.
 - **Probe:** `[exec-ro]` inspect `$TOOL skill list --json` for `supported_agents` and the
   `install` capability object: canonical `--agent` selection defaults to `all`, accepts
-  `claude|pi|codex|all`, lists all three native layouts, preserves `--target`, and advertises
-  non-interactive `--dry-run`/`--force` safety. `[static]` inspect canonical skill resources plus
+  `claude|pi|codex|all`, lists all three native layouts, preserves `--target`, and declares
+  non-interactive `--dry-run`/`--force`, no-clobber-default, and force-required overwrite safety.
+  Treat this as declared interface evidence, not behavioral proof. `[static]` inspect canonical skill resources plus
   installer source/tests; arbitrary project-local runtime files are not proof of installer
   behavior. `[sandbox-write]` only after verifying a
   safe scratch base, compare no-selection with explicit `all`, then each single-runtime selection

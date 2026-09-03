@@ -163,9 +163,10 @@ Follow `templates/conformance-probes.md` then `templates/review-report.md`:
    safety rules above and record real evidence (`$TOOL version --json | jq …`, a `grep isatty`
    hit, `Cargo.toml` members, a shipped `SKILL.md`'s frontmatter). For §15, distinguish
    Claude-only installation from full support: require Claude, pi, and Codex `skill list --json`
-   capability metadata or safe sandbox/source-and-test evidence, with no-selection and explicit `all` covering all three while a
-   single-runtime selection and `--target` remain usable. Preserve native tree artifacts for
-   Claude/pi and the self-contained prompt form Codex may require. Handle the "tool doesn't
+   capability metadata or safe sandbox/source-and-test evidence, with no-selection and explicit
+   `all` covering all three while a single-runtime selection and `--target` remain usable. Treat
+   metadata as declared-interface evidence and preserve native tree artifacts for Claude/pi plus
+   Codex's self-contained prompt; verify behavior from source/tests or a safe sandbox. Handle the "tool doesn't
    speak the contract yet" branch: if `$TOOL version --json` errors, that *is* the §10 `fail`
    evidence — capture the error, don't let a broken `jq` corrupt the matrix. No evidence →
    the row is `unknown`, not `pass`.

@@ -636,9 +636,14 @@ the agent's *operating manual* for the tool — distinct from `--help`
   one-line descriptions. Its `--json` payload declares `supported_agents` and
   an `install` capability object with `selection_flag`, `default`,
   `accepted_values`, `target_flag`, `dry_run_flag`, `force_flag`, `interactive`,
-  and `layouts: [{agent,path,form}]`. This metadata lets an agent verify
-  Claude/pi/Codex coverage and installation safety without invoking a mutating
-  command.
+  `no_clobber_default`, `overwrite_requires_force`, and
+  `layouts: [{agent,path,form}]`. `supported_agents` is catalog-wide: every row
+  in `skills` is installable for every declared agent. The non-`all`
+  `accepted_values`, `supported_agents`, and one-layout-per-agent rows agree;
+  extension agents may use additional non-empty path/form strings. This metadata
+  lets an agent inspect declared Claude/pi/Codex coverage and the declared safety
+  interface without invoking a mutating command; behavior still requires source,
+  test, or sandbox evidence.
 - `<tool> skill install [<name>]` — copies the skill(s) into the maintained
   agent runtimes. The installer **MUST** support all three native destinations:
   Claude at `.claude/skills/<name>/...`, pi at
@@ -648,12 +653,14 @@ the agent's *operating manual* for the tool — distinct from `--help`
   selector is `--agent claude|pi|codex|all`; an explicit single-runtime value
   installs only that runtime. `--target <dir>` overrides the install base without
   changing the selected layouts. Claude and pi receive native Agent Skills
-  resource trees; Codex may instead receive one self-contained prompt because
-  its native artifact form differs. Installation remains non-interactive and
-  must preserve the no-clobber, explicit-force, and dry-run safety rules of
-  §§3 and 11. Omitting `<name>` installs every bundled skill.
-- `<tool> skill show <name> --json` — prints the skill content without
-  installing, so an agent can read it inline if needed
+  resource trees; Codex receives one self-contained prompt because its native
+  artifact form differs. The capability `path` strings above, including
+  `<name>`/`...`, are the exact machine-readable layout templates. Installation
+  remains non-interactive, does not clobber by default, and uses canonical
+  `--dry-run` and explicit `--force` flags for the safety rules of §§3 and 11.
+  Omitting `<name>` installs every bundled skill.
+- `<tool> skill print <name> --json` (alias: `skill show`) — prints the skill
+  content without installing, so an agent can read it inline if needed
 
 The skills themselves live alongside the tool's source (in-repo) so they
 version with the binary. The CLI is responsible for keeping skill text

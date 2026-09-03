@@ -688,18 +688,29 @@ fn probe_skill_list(runner: &RuntimeRunner) -> RuntimeCheck<(SkillRows, Value)> 
     Ok((rows, value))
 }
 
-fn string_set(value: Option<&Value>) -> BTreeSet<&str> {
-    value
+fn strict_string_set<'a>(
+    value: Option<&'a Value>,
+    field: &str,
+) -> Result<BTreeSet<&'a str>, String> {
+    let values = value
         .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .collect()
+        .ok_or_else(|| format!("{field} must be an array"))?;
+    let mut result = BTreeSet::new();
+    for (index, value) in values.iter().enumerate() {
+        let item = value
+            .as_str()
+            .filter(|item| !item.is_empty())
+            .ok_or_else(|| format!("{field}[{index}] must be a non-empty string"))?;
+        if !result.insert(item) {
+            return Err(format!("{field} contains duplicate value {item:?}"));
+        }
+    }
+    Ok(result)
 }
 
 fn validate_skill_install_metadata(list: &Value) -> Result<(), String> {
     let required_agents = BTreeSet::from(["claude", "pi", "codex"]);
-    let declared_agents = string_set(list.get("supported_agents"));
+    let declared_agents = strict_string_set(list.get("supported_agents"), "supported_agents")?;
     if !required_agents.is_subset(&declared_agents) {
         return Err("supported_agents must include claude, pi, and codex".to_string());
     }
@@ -718,29 +729,73 @@ fn validate_skill_install_metadata(list: &Value) -> Result<(), String> {
             return Err(format!("install.{field} must be {expected:?}"));
         }
     }
-    let required_values = BTreeSet::from(["claude", "pi", "codex", "all"]);
-    let accepted = string_set(install.get("accepted_values"));
-    if !required_values.is_subset(&accepted) {
-        return Err("install.accepted_values must include claude, pi, codex, and all".to_string());
+    let accepted = strict_string_set(install.get("accepted_values"), "install.accepted_values")?;
+    let selectable = accepted
+        .iter()
+        .copied()
+        .filter(|value| *value != "all")
+        .collect::<BTreeSet<_>>();
+    if !accepted.contains("all") || selectable != declared_agents {
+        return Err(
+            "install.accepted_values must be supported_agents plus the explicit value all"
+                .to_string(),
+        );
     }
-    if install.get("interactive").and_then(Value::as_bool) != Some(false) {
-        return Err("install.interactive must be false".to_string());
+    for (field, expected) in [
+        ("interactive", false),
+        ("no_clobber_default", true),
+        ("overwrite_requires_force", true),
+    ] {
+        if install.get(field).and_then(Value::as_bool) != Some(expected) {
+            return Err(format!("install.{field} must be {expected}"));
+        }
     }
     let layouts = install
         .get("layouts")
         .and_then(Value::as_array)
         .ok_or_else(|| "install.layouts must be an array".to_string())?;
+    let mut by_agent = std::collections::BTreeMap::new();
+    for (index, layout) in layouts.iter().enumerate() {
+        let object = layout
+            .as_object()
+            .ok_or_else(|| format!("install.layouts[{index}] must be an object"))?;
+        let agent = object
+            .get("agent")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| format!("install.layouts[{index}].agent must be a non-empty string"))?;
+        let path = object
+            .get("path")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| format!("install.layouts[{index}].path must be a non-empty string"))?;
+        let form = object
+            .get("form")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| format!("install.layouts[{index}].form must be a non-empty string"))?;
+        if !declared_agents.contains(agent) {
+            return Err(format!(
+                "install.layouts[{index}].agent {agent:?} is absent from supported_agents"
+            ));
+        }
+        if by_agent.insert(agent, (path, form)).is_some() {
+            return Err(format!(
+                "install.layouts contains duplicate agent {agent:?}"
+            ));
+        }
+    }
+    if by_agent.keys().copied().collect::<BTreeSet<_>>() != declared_agents {
+        return Err(
+            "install.layouts must contain exactly one row for every supported agent".into(),
+        );
+    }
     for (agent, path, form) in [
         ("claude", ".claude/skills/<name>/...", "agent-skill-tree"),
         ("pi", ".pi/agent/skills/<name>/...", "agent-skill-tree"),
         ("codex", ".codex/prompts/<name>.md", "self-contained-prompt"),
     ] {
-        let matches = layouts.iter().any(|layout| {
-            layout.get("agent").and_then(Value::as_str) == Some(agent)
-                && layout.get("path").and_then(Value::as_str) == Some(path)
-                && layout.get("form").and_then(Value::as_str) == Some(form)
-        });
-        if !matches {
+        if by_agent.get(agent).copied() != Some((path, form)) {
             return Err(format!(
                 "install.layouts lacks {agent} path {path:?} with form {form:?}"
             ));
@@ -2601,6 +2656,8 @@ printf '{}\n'
                 "dry_run_flag": "--dry-run",
                 "force_flag": "--force",
                 "interactive": false,
+                "no_clobber_default": true,
+                "overwrite_requires_force": true,
                 "layouts": [
                     {"agent": "claude", "path": ".claude/skills/<name>/...", "form": "agent-skill-tree"},
                     {"agent": "pi", "path": ".pi/agent/skills/<name>/...", "form": "agent-skill-tree"},
@@ -2635,6 +2692,28 @@ printf '{}\n'
             .unwrap()
             .remove("target_flag");
         cases.push((missing_target, "install.target_flag"));
+        let mut unsafe_default = complete_skill_install_metadata();
+        unsafe_default["install"]["no_clobber_default"] = Value::Bool(false);
+        cases.push((unsafe_default, "install.no_clobber_default"));
+        let mut malformed_agent = complete_skill_install_metadata();
+        malformed_agent["supported_agents"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"bad": true}));
+        cases.push((malformed_agent, "supported_agents[4]"));
+        let mut missing_future_layout = complete_skill_install_metadata();
+        missing_future_layout["install"]["layouts"]
+            .as_array_mut()
+            .unwrap()
+            .pop();
+        cases.push((missing_future_layout, "exactly one row"));
+        let mut duplicate_codex = complete_skill_install_metadata();
+        let duplicate = duplicate_codex["install"]["layouts"][2].clone();
+        duplicate_codex["install"]["layouts"]
+            .as_array_mut()
+            .unwrap()
+            .push(duplicate);
+        cases.push((duplicate_codex, "duplicate agent"));
 
         for (value, expected) in cases {
             let error = validate_skill_install_metadata(&value).unwrap_err();
@@ -2652,7 +2731,7 @@ printf '{}\n'
             "runtime-skill-claude-only",
             r#"
 if [ "$1 $2" = "skill list" ]; then
-  printf '%s\n' '{"schema_version":1,"supported_agents":["claude"],"install":{"selection_flag":"--agent","default":"all","accepted_values":["claude","pi","codex","all"],"target_flag":"--target","dry_run_flag":"--dry-run","force_flag":"--force","interactive":false,"layouts":[{"agent":"claude","path":".claude/skills/<name>/...","form":"agent-skill-tree"},{"agent":"pi","path":".pi/agent/skills/<name>/...","form":"agent-skill-tree"},{"agent":"codex","path":".codex/prompts/<name>.md","form":"self-contained-prompt"}]},"skills":[{"name":"fixture-skill","cli_version":"1.0.0","skill_schema_version":1}]}'
+  printf '%s\n' '{"schema_version":1,"supported_agents":["claude"],"install":{"selection_flag":"--agent","default":"all","accepted_values":["claude","all"],"target_flag":"--target","dry_run_flag":"--dry-run","force_flag":"--force","interactive":false,"no_clobber_default":true,"overwrite_requires_force":true,"layouts":[{"agent":"claude","path":".claude/skills/<name>/...","form":"agent-skill-tree"}]},"skills":[{"name":"fixture-skill","cli_version":"1.0.0","skill_schema_version":1}]}'
   exit 0
 fi
 exit 1
@@ -2671,7 +2750,7 @@ exit 1
             "runtime-skill-all",
             r#"
 if [ "$1 $2" = "skill list" ]; then
-  printf '%s\n' '{"schema_version":1,"supported_agents":["claude","pi","codex","future-agent"],"install":{"selection_flag":"--agent","default":"all","accepted_values":["claude","pi","codex","all","future-agent"],"target_flag":"--target","dry_run_flag":"--dry-run","force_flag":"--force","interactive":false,"layouts":[{"agent":"claude","path":".claude/skills/<name>/...","form":"agent-skill-tree"},{"agent":"pi","path":".pi/agent/skills/<name>/...","form":"agent-skill-tree"},{"agent":"codex","path":".codex/prompts/<name>.md","form":"self-contained-prompt"},{"agent":"future-agent"}]},"skills":[{"name":"fixture-skill","cli_version":"1.0.0","skill_schema_version":1}]}'
+  printf '%s\n' '{"schema_version":1,"supported_agents":["claude","pi","codex","future-agent"],"install":{"selection_flag":"--agent","default":"all","accepted_values":["claude","pi","codex","all","future-agent"],"target_flag":"--target","dry_run_flag":"--dry-run","force_flag":"--force","interactive":false,"no_clobber_default":true,"overwrite_requires_force":true,"layouts":[{"agent":"claude","path":".claude/skills/<name>/...","form":"agent-skill-tree"},{"agent":"pi","path":".pi/agent/skills/<name>/...","form":"agent-skill-tree"},{"agent":"codex","path":".codex/prompts/<name>.md","form":"self-contained-prompt"},{"agent":"future-agent","path":".future/skills/<name>/...","form":"agent-skill-tree"}]},"skills":[{"name":"fixture-skill","cli_version":"1.0.0","skill_schema_version":1}]}'
   exit 0
 fi
 exit 1
