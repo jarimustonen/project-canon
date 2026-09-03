@@ -9,6 +9,10 @@ lane: build
 commits:
 - hash: 0f520ba
   summary: start three-runtime skill install work
+- hash: f45a6eaa5cc0c62065f2a8fc533dab7e26b3d7a2
+  summary: 'feat: require three-runtime skill installation'
+- hash: 7f14ff2418d8f8592696a88c011b0bf37cd362da
+  summary: 'issues: record implementation start'
 ---
 
 # Require Claude, pi, and Codex skill installation
