@@ -641,7 +641,9 @@ fn probe_help_surface(runner: &RuntimeRunner) -> RuntimeCheck {
     }
 }
 
-fn probe_skill_list(runner: &RuntimeRunner) -> RuntimeCheck<Vec<(String, String, i64)>> {
+type SkillRows = Vec<(String, String, i64)>;
+
+fn probe_skill_list(runner: &RuntimeRunner) -> RuntimeCheck<(SkillRows, Value)> {
     let args = ["skill", "list", "--json"];
     let value = expect_json(&invoke(runner, &args)?, &args, &[0])?;
     if !schema_object(&value) {
@@ -654,7 +656,7 @@ fn probe_skill_list(runner: &RuntimeRunner) -> RuntimeCheck<Vec<(String, String,
         .and_then(Value::as_array)
         .filter(|skills| !skills.is_empty())
         .ok_or_else(|| RuntimeCheckError::Gap("skill list --json has no skills[]".to_string()))?;
-    skills
+    let rows = skills
         .iter()
         .map(|skill| {
             let name = skill.get("name").and_then(Value::as_str).filter(|name| {
@@ -682,74 +684,77 @@ fn probe_skill_list(runner: &RuntimeRunner) -> RuntimeCheck<Vec<(String, String,
                 )),
             }
         })
+        .collect::<RuntimeCheck<SkillRows>>()?;
+    Ok((rows, value))
+}
+
+fn string_set(value: Option<&Value>) -> BTreeSet<&str> {
+    value
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
         .collect()
 }
 
-fn probe_skill_install_surface(runner: &RuntimeRunner) -> RuntimeCheck {
-    probe_skill_list(runner)?;
-    let list_args = ["skill", "list", "--json"];
-    let list = expect_json(&invoke(runner, &list_args)?, &list_args, &[0])?;
-    let all_agents = BTreeSet::from(["claude".to_string(), "pi".to_string(), "codex".to_string()]);
-    let agents_from = |value: &Value| {
-        value
-            .get("supported_agents")
-            .and_then(Value::as_array)
-            .map(|agents| {
-                agents
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(str::to_string)
-                    .collect::<BTreeSet<_>>()
-            })
-    };
-    let catalog_supports_all = agents_from(&list).as_ref() == Some(&all_agents)
-        || list
-            .get("skills")
-            .and_then(Value::as_array)
-            .is_some_and(|skills| {
-                !skills.is_empty()
-                    && skills
-                        .iter()
-                        .all(|skill| agents_from(skill).as_ref() == Some(&all_agents))
-            });
-    if !catalog_supports_all {
-        return Err(RuntimeCheckError::Gap(
-            "skill list --json does not declare claude, pi, and codex support for the catalog"
-                .to_string(),
-        ));
+fn validate_skill_install_metadata(list: &Value) -> Result<(), String> {
+    let required_agents = BTreeSet::from(["claude", "pi", "codex"]);
+    let declared_agents = string_set(list.get("supported_agents"));
+    if !required_agents.is_subset(&declared_agents) {
+        return Err("supported_agents must include claude, pi, and codex".to_string());
     }
+    let install = list
+        .get("install")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "install capability object is missing".to_string())?;
+    for (field, expected) in [
+        ("selection_flag", "--agent"),
+        ("default", "all"),
+        ("target_flag", "--target"),
+        ("dry_run_flag", "--dry-run"),
+        ("force_flag", "--force"),
+    ] {
+        if install.get(field).and_then(Value::as_str) != Some(expected) {
+            return Err(format!("install.{field} must be {expected:?}"));
+        }
+    }
+    let required_values = BTreeSet::from(["claude", "pi", "codex", "all"]);
+    let accepted = string_set(install.get("accepted_values"));
+    if !required_values.is_subset(&accepted) {
+        return Err("install.accepted_values must include claude, pi, codex, and all".to_string());
+    }
+    if install.get("interactive").and_then(Value::as_bool) != Some(false) {
+        return Err("install.interactive must be false".to_string());
+    }
+    let layouts = install
+        .get("layouts")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "install.layouts must be an array".to_string())?;
+    for (agent, path, form) in [
+        ("claude", ".claude/skills/<name>/...", "agent-skill-tree"),
+        ("pi", ".pi/agent/skills/<name>/...", "agent-skill-tree"),
+        ("codex", ".codex/prompts/<name>.md", "self-contained-prompt"),
+    ] {
+        let matches = layouts.iter().any(|layout| {
+            layout.get("agent").and_then(Value::as_str) == Some(agent)
+                && layout.get("path").and_then(Value::as_str) == Some(path)
+                && layout.get("form").and_then(Value::as_str) == Some(form)
+        });
+        if !matches {
+            return Err(format!(
+                "install.layouts lacks {agent} path {path:?} with form {form:?}"
+            ));
+        }
+    }
+    Ok(())
+}
 
-    let args = ["skill", "install", "--help", "--json"];
-    let help = expect_json(&invoke(runner, &args)?, &args, &[0])?;
-    let flags = help.get("flags").and_then(Value::as_array).ok_or_else(|| {
-        RuntimeCheckError::Gap("skill install structured help lacks flags[]".to_string())
+fn probe_skill_install_surface(runner: &RuntimeRunner) -> RuntimeCheck {
+    let (_, list) = probe_skill_list(runner)?;
+    validate_skill_install_metadata(&list).map_err(|message| {
+        RuntimeCheckError::Gap(format!("skill list --json install metadata gap: {message}"))
     })?;
-    let agent = flags
-        .iter()
-        .find(|flag| flag.get("name").and_then(Value::as_str) == Some("--agent"));
-    let target = flags
-        .iter()
-        .any(|flag| flag.get("name").and_then(Value::as_str) == Some("--target"));
-    let agent_is_complete = agent.is_some_and(|flag| {
-        let accepted = flag
-            .get("accepted_values")
-            .and_then(Value::as_array)
-            .map(|values| {
-                values
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .collect::<BTreeSet<_>>()
-            });
-        flag.get("default").and_then(Value::as_str) == Some("all")
-            && accepted == Some(BTreeSet::from(["claude", "pi", "codex", "all"]))
-    });
-    if !agent_is_complete || !target {
-        return Err(RuntimeCheckError::Gap(
-            "skill install help must expose --agent claude|pi|codex|all defaulting to all and preserve --target"
-                .to_string(),
-        ));
-    }
-    Ok("skill catalog declares claude/pi/codex for every skill; install selection defaults to all, accepts each runtime and explicit all, and preserves --target".to_string())
+    Ok("skill catalog declares Claude, pi, and Codex; install metadata declares --agent defaulting to all with single-runtime/explicit-all selection, --target, non-interactive safety flags, and each native path/form".to_string())
 }
 
 fn print_skill_json(runner: &RuntimeRunner, name: &str) -> RuntimeCheck<Value> {
@@ -779,14 +784,14 @@ fn print_skill_json(runner: &RuntimeRunner, name: &str) -> RuntimeCheck<Value> {
 }
 
 fn probe_skill_print(runner: &RuntimeRunner) -> RuntimeCheck {
-    let skills = probe_skill_list(runner)?;
+    let (skills, _) = probe_skill_list(runner)?;
     print_skill_json(runner, &skills[0].0)?;
     Ok("skill print <listed-name> --json is structured and read-only".to_string())
 }
 
 fn probe_skill_sync(runner: &RuntimeRunner) -> RuntimeCheck {
     let version = version_json(runner)?;
-    let listed = probe_skill_list(runner)?;
+    let (listed, _) = probe_skill_list(runner)?;
     let cli_version = version
         .get("version")
         .and_then(Value::as_str)
@@ -1082,11 +1087,9 @@ fn next_byte_line(bytes: &[u8], offset: usize) -> Option<(&[u8], usize)> {
     }
 }
 
-/// Locate repository-native Agent Skills directories, enforce the §15 description limit, and
-/// compare checked-in runtime artifacts when they provide decisive layout evidence. A repository
-/// may keep only canonical source under `skills/`; in that case installer behavior remains a
-/// runtime/review question. Once any `.claude`, `.pi`, or `.codex` artifact is checked in, however,
-/// every observed skill must be represented in all three native destinations.
+/// Locate repository-native Agent Skills directories and enforce the §15 description limit over
+/// every direct child `SKILL.md`. Repositories with no locatable skill files pass this scoped
+/// check; the rest of §15 remains a review judgment rather than being inferred from absence.
 fn probe_skill_description_lengths(repo: &Path) -> std::io::Result<ProbeOutcome> {
     const MAX_FRONTMATTER_BYTES: u64 = 1_048_576;
     const ROOTS: [&str; 4] = [
@@ -1097,8 +1100,6 @@ fn probe_skill_description_lengths(repo: &Path) -> std::io::Result<ProbeOutcome>
     ];
     let canonical_repo = std::fs::canonicalize(repo)?;
     let mut skill_files = BTreeSet::new();
-    let mut claude_skills = BTreeSet::new();
-    let mut pi_skills = BTreeSet::new();
     for root in ROOTS {
         let directory = repo.join(root);
         let canonical_root = match std::fs::canonicalize(&directory) {
@@ -1141,103 +1142,7 @@ fn probe_skill_description_lengths(repo: &Path) -> std::io::Result<ProbeOutcome>
                         .display()
                 )));
             }
-            let name = entry.file_name().into_string().map_err(|_| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("skill directory under {root} is not UTF-8"),
-                )
-            })?;
-            match root {
-                ".claude/skills" => {
-                    claude_skills.insert(name);
-                }
-                ".pi/agent/skills" => {
-                    pi_skills.insert(name);
-                }
-                _ => {}
-            }
             skill_files.insert(canonical);
-        }
-    }
-
-    let mut codex_skills = BTreeSet::new();
-    let codex_root = repo.join(".codex/prompts");
-    match std::fs::canonicalize(&codex_root) {
-        Ok(root) if !root.starts_with(&canonical_repo) || !root.is_dir() => {
-            return Ok(ProbeOutcome::fail(
-                "supported skill directory .codex/prompts resolves outside the target repository",
-            ));
-        }
-        Ok(root) => {
-            for entry in std::fs::read_dir(root)? {
-                let entry = entry?;
-                let path = entry.path();
-                let metadata = std::fs::symlink_metadata(&path)?;
-                if metadata.file_type().is_symlink() {
-                    return Ok(ProbeOutcome::fail(format!(
-                        "located Codex prompt {} is a symlink and cannot be safely inspected",
-                        path.strip_prefix(&canonical_repo)
-                            .unwrap_or(&path)
-                            .display()
-                    )));
-                }
-                if !metadata.is_file()
-                    || path.extension().and_then(|value| value.to_str()) != Some("md")
-                {
-                    continue;
-                }
-                let canonical = std::fs::canonicalize(&path)?;
-                if !canonical.starts_with(&canonical_repo) {
-                    return Ok(ProbeOutcome::fail(format!(
-                        "located Codex prompt {} resolves outside the target repository",
-                        path.strip_prefix(&canonical_repo)
-                            .unwrap_or(&path)
-                            .display()
-                    )));
-                }
-                let name = path
-                    .file_stem()
-                    .and_then(|value| value.to_str())
-                    .ok_or_else(|| {
-                        std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            "Codex prompt name is not UTF-8",
-                        )
-                    })?;
-                codex_skills.insert(name.to_string());
-            }
-        }
-        Err(error)
-            if matches!(
-                error.kind(),
-                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
-            ) => {}
-        Err(error) => return Err(error),
-    }
-
-    let native_names = claude_skills
-        .union(&pi_skills)
-        .cloned()
-        .collect::<BTreeSet<_>>()
-        .union(&codex_skills)
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    for name in &native_names {
-        let mut missing = Vec::new();
-        if !claude_skills.contains(name) {
-            missing.push(".claude/skills/<name>/SKILL.md");
-        }
-        if !pi_skills.contains(name) {
-            missing.push(".pi/agent/skills/<name>/SKILL.md");
-        }
-        if !codex_skills.contains(name) {
-            missing.push(".codex/prompts/<name>.md");
-        }
-        if !missing.is_empty() {
-            return Ok(ProbeOutcome::fail(format!(
-                "checked-in skill {name:?} is missing maintained runtime artifact(s): {}",
-                missing.join(", ")
-            )));
         }
     }
 
@@ -1286,18 +1191,12 @@ fn probe_skill_description_lengths(repo: &Path) -> std::io::Result<ProbeOutcome>
         }
     }
 
-    Ok(if skill_files.is_empty() && native_names.is_empty() {
-        ProbeOutcome::pass("no repository Agent Skills or checked-in runtime artifacts found in supported directories")
-    } else if native_names.is_empty() {
-        ProbeOutcome::pass(format!(
-            "{} canonical Agent Skill description(s) are at most {SKILL_DESCRIPTION_MAX_CHARS} characters; no checked-in runtime layouts to compare",
-            skill_files.len()
-        ))
+    Ok(if skill_files.is_empty() {
+        ProbeOutcome::pass("no repository Agent Skills found in supported skill directories")
     } else {
         ProbeOutcome::pass(format!(
-            "{} located Agent Skill description(s) are at most {SKILL_DESCRIPTION_MAX_CHARS} characters; {} checked-in skill(s) cover Claude, pi, and Codex native destinations",
-            skill_files.len(),
-            native_names.len()
+            "{} located Agent Skill description(s) are at most {SKILL_DESCRIPTION_MAX_CHARS} characters",
+            skill_files.len()
         ))
     })
 }
@@ -2136,47 +2035,6 @@ mod tests {
     }
 
     #[test]
-    fn checked_in_claude_only_skill_is_a_three_runtime_gap() {
-        let repo = TmpRepo::new("skill-layout-claude-only");
-        repo.write(
-            ".claude/skills/fixture-skill/SKILL.md",
-            &rendered_skill("\"short description\""),
-        );
-        let outcome = probe_skill_description_lengths(&repo.path).unwrap();
-        assert!(!outcome.passed);
-        assert!(
-            outcome.message.contains("fixture-skill"),
-            "{}",
-            outcome.message
-        );
-        assert!(
-            outcome.message.contains(".pi/agent/skills"),
-            "{}",
-            outcome.message
-        );
-        assert!(
-            outcome.message.contains(".codex/prompts"),
-            "{}",
-            outcome.message
-        );
-    }
-
-    #[test]
-    fn checked_in_native_artifacts_cover_all_three_runtime_forms() {
-        let repo = TmpRepo::new("skill-layout-all");
-        let skill = rendered_skill("\"short description\"");
-        repo.write(".claude/skills/fixture-skill/SKILL.md", &skill);
-        repo.write(".pi/agent/skills/fixture-skill/SKILL.md", &skill);
-        repo.write(
-            ".codex/prompts/fixture-skill.md",
-            "# Self-contained prompt\n",
-        );
-        let outcome = probe_skill_description_lengths(&repo.path).unwrap();
-        assert!(outcome.passed, "{}", outcome.message);
-        assert!(outcome.message.contains("Claude, pi, and Codex"));
-    }
-
-    #[test]
     fn skill_description_probe_bounds_frontmatter_not_the_skill_body() {
         let repo = TmpRepo::new("skill-description-large-body");
         let mut content = rendered_skill("\"short description\"");
@@ -2732,6 +2590,61 @@ printf '{}\n'
         assert!(!outcomes[2].message.contains("not attempted"));
     }
 
+    fn complete_skill_install_metadata() -> Value {
+        serde_json::json!({
+            "supported_agents": ["claude", "pi", "codex", "future-agent"],
+            "install": {
+                "selection_flag": "--agent",
+                "default": "all",
+                "accepted_values": ["claude", "pi", "codex", "all", "future-agent"],
+                "target_flag": "--target",
+                "dry_run_flag": "--dry-run",
+                "force_flag": "--force",
+                "interactive": false,
+                "layouts": [
+                    {"agent": "claude", "path": ".claude/skills/<name>/...", "form": "agent-skill-tree"},
+                    {"agent": "pi", "path": ".pi/agent/skills/<name>/...", "form": "agent-skill-tree"},
+                    {"agent": "codex", "path": ".codex/prompts/<name>.md", "form": "self-contained-prompt"},
+                    {"agent": "future-agent", "path": ".future/skills/<name>", "form": "agent-skill-tree"}
+                ]
+            }
+        })
+    }
+
+    #[test]
+    fn skill_install_metadata_validates_each_required_capability_and_native_form() {
+        assert!(validate_skill_install_metadata(&complete_skill_install_metadata()).is_ok());
+
+        let mut cases = Vec::new();
+        let mut missing_install = complete_skill_install_metadata();
+        missing_install.as_object_mut().unwrap().remove("install");
+        cases.push((missing_install, "install capability object"));
+        let mut wrong_default = complete_skill_install_metadata();
+        wrong_default["install"]["default"] = Value::String("claude".to_string());
+        cases.push((wrong_default, "install.default"));
+        let mut interactive = complete_skill_install_metadata();
+        interactive["install"]["interactive"] = Value::Bool(true);
+        cases.push((interactive, "install.interactive"));
+        let mut wrong_codex_form = complete_skill_install_metadata();
+        wrong_codex_form["install"]["layouts"][2]["form"] =
+            Value::String("agent-skill-tree".to_string());
+        cases.push((wrong_codex_form, "self-contained-prompt"));
+        let mut missing_target = complete_skill_install_metadata();
+        missing_target["install"]
+            .as_object_mut()
+            .unwrap()
+            .remove("target_flag");
+        cases.push((missing_target, "install.target_flag"));
+
+        for (value, expected) in cases {
+            let error = validate_skill_install_metadata(&value).unwrap_err();
+            assert!(
+                error.contains(expected),
+                "{error:?} should name {expected:?}"
+            );
+        }
+    }
+
     #[cfg(unix)]
     #[test]
     fn runtime_skill_probe_distinguishes_claude_only_from_all_three() {
@@ -2739,11 +2652,7 @@ printf '{}\n'
             "runtime-skill-claude-only",
             r#"
 if [ "$1 $2" = "skill list" ]; then
-  printf '%s\n' '{"schema_version":1,"skills":[{"name":"fixture-skill","cli_version":"1.0.0","skill_schema_version":1,"supported_agents":["claude"]}]}'
-  exit 0
-fi
-if [ "$1 $2 $3 $4" = "skill install --help --json" ]; then
-  printf '%s\n' '{"schema_version":1,"flags":[{"name":"--agent","default":"all","accepted_values":["claude","pi","codex","all"]},{"name":"--target"}]}'
+  printf '%s\n' '{"schema_version":1,"supported_agents":["claude"],"install":{"selection_flag":"--agent","default":"all","accepted_values":["claude","pi","codex","all"],"target_flag":"--target","dry_run_flag":"--dry-run","force_flag":"--force","interactive":false,"layouts":[{"agent":"claude","path":".claude/skills/<name>/...","form":"agent-skill-tree"},{"agent":"pi","path":".pi/agent/skills/<name>/...","form":"agent-skill-tree"},{"agent":"codex","path":".codex/prompts/<name>.md","form":"self-contained-prompt"}]},"skills":[{"name":"fixture-skill","cli_version":"1.0.0","skill_schema_version":1}]}'
   exit 0
 fi
 exit 1
@@ -2762,11 +2671,7 @@ exit 1
             "runtime-skill-all",
             r#"
 if [ "$1 $2" = "skill list" ]; then
-  printf '%s\n' '{"schema_version":1,"skills":[{"name":"fixture-skill","cli_version":"1.0.0","skill_schema_version":1,"supported_agents":["claude","pi","codex"]}]}'
-  exit 0
-fi
-if [ "$1 $2 $3 $4" = "skill install --help --json" ]; then
-  printf '%s\n' '{"schema_version":1,"flags":[{"name":"--agent","default":"all","accepted_values":["claude","pi","codex","all"]},{"name":"--target"}]}'
+  printf '%s\n' '{"schema_version":1,"supported_agents":["claude","pi","codex","future-agent"],"install":{"selection_flag":"--agent","default":"all","accepted_values":["claude","pi","codex","all","future-agent"],"target_flag":"--target","dry_run_flag":"--dry-run","force_flag":"--force","interactive":false,"layouts":[{"agent":"claude","path":".claude/skills/<name>/...","form":"agent-skill-tree"},{"agent":"pi","path":".pi/agent/skills/<name>/...","form":"agent-skill-tree"},{"agent":"codex","path":".codex/prompts/<name>.md","form":"self-contained-prompt"},{"agent":"future-agent"}]},"skills":[{"name":"fixture-skill","cli_version":"1.0.0","skill_schema_version":1}]}'
   exit 0
 fi
 exit 1
@@ -2815,13 +2720,7 @@ exit 1
             Duration::from_secs(2),
         );
         let calls = std::fs::read_to_string(log).unwrap();
-        assert!(
-            calls
-                .lines()
-                .filter(|line| line.starts_with("skill install"))
-                .all(|line| line == "skill install --help --json"),
-            "{calls}"
-        );
+        assert!(!calls.contains("skill install"), "{calls}");
         assert!(
             !calls.lines().any(|line| line.starts_with("new ")),
             "{calls}"

@@ -944,7 +944,7 @@ fn absolute_lexical(path: &str) -> std::io::Result<PathBuf> {
 fn judgment_remainder(id: &str) -> Option<&'static str> {
     match id {
         "canon.s15" => Some(
-            "verify no-selection and explicit all installs cover Claude, pi, and Codex; verify each single-runtime selection, --target, native tree/prompt form, no-clobber behavior, and guidance freshness beyond observable metadata and checked-in artifacts",
+            "verify no-selection and explicit all installs cover Claude, pi, and Codex; verify each single-runtime selection, --target, native tree/prompt form, dry-run, explicit-force/no-clobber behavior, and guidance freshness beyond declared capabilities and source/tests",
         ),
         "canon.s23" => Some(
             "review hostnames, internal URLs, borderline names, and dependency legitimacy",

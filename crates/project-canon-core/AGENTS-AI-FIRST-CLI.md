@@ -633,16 +633,20 @@ the agent's *operating manual* for the tool — distinct from `--help`
 (reference) and the schema (data shape).
 
 - `<tool> skill list` — shows available skills shipped with this tool,
-  one-line descriptions; its `--json` payload declares the supported runtimes
-  so an agent can verify Claude/pi/Codex coverage without performing an install
+  one-line descriptions. Its `--json` payload declares `supported_agents` and
+  an `install` capability object with `selection_flag`, `default`,
+  `accepted_values`, `target_flag`, `dry_run_flag`, `force_flag`, `interactive`,
+  and `layouts: [{agent,path,form}]`. This metadata lets an agent verify
+  Claude/pi/Codex coverage and installation safety without invoking a mutating
+  command.
 - `<tool> skill install [<name>]` — copies the skill(s) into the maintained
   agent runtimes. The installer **MUST** support all three native destinations:
   Claude at `.claude/skills/<name>/...`, pi at
   `.pi/agent/skills/<name>/...`, and Codex at
   `.codex/prompts/<name>.md`. A no-runtime-selection/default invocation and an
-  explicit `all` selection **MUST** both install all three; an explicit
-  runtime selection (for example `--agent claude|pi|codex|all`) may install
-  only that runtime. `--target <dir>` overrides the install base without
+  explicit `all` selection **MUST** both install all three. The canonical
+  selector is `--agent claude|pi|codex|all`; an explicit single-runtime value
+  installs only that runtime. `--target <dir>` overrides the install base without
   changing the selected layouts. Claude and pi receive native Agent Skills
   resource trees; Codex may instead receive one self-contained prompt because
   its native artifact form differs. Installation remains non-interactive and

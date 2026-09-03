@@ -192,11 +192,12 @@ step has bound it to a real, read-only command.
   base without changing those layouts. Claude/pi preserve native Agent Skills resource trees;
   Codex may use one self-contained prompt. Installation is non-interactive, dry-runnable, and
   no-clobber by default; skills live in-repo and version with the binary.
-- **Probe:** `[exec-ro]` inspect `$TOOL skill list --json` for all three supported runtimes and
-  `$TOOL skill install --help --json` for runtime selection defaulting to `all`, explicit
-  `claude|pi|codex|all`, and `--target`. `[static]` compare any checked-in native runtime
-  artifacts across `.claude/skills`, `.pi/agent/skills`, and `.codex/prompts`; inspect tests and
-  source when generated artifacts are not checked in. `[sandbox-write]` only after verifying a
+- **Probe:** `[exec-ro]` inspect `$TOOL skill list --json` for `supported_agents` and the
+  `install` capability object: canonical `--agent` selection defaults to `all`, accepts
+  `claude|pi|codex|all`, lists all three native layouts, preserves `--target`, and advertises
+  non-interactive `--dry-run`/`--force` safety. `[static]` inspect canonical skill resources plus
+  installer source/tests; arbitrary project-local runtime files are not proof of installer
+  behavior. `[sandbox-write]` only after verifying a
   safe scratch base, compare no-selection with explicit `all`, then each single-runtime selection
   and `--target`; never use a shared/fixed path or a real runtime home.
 - **Fail:** no `skill` door; Claude-only support; default or explicit `all` omits pi/Codex;

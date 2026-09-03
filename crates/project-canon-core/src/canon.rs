@@ -283,8 +283,8 @@ pub(crate) fn canon_dimensions() -> Vec<Dimension> {
                 // tags it [sandbox-write]. The coarse single effect-class per section takes the
                 // most-dangerous member, so a review runner sandboxes the whole §15 probe.
                 effect: SandboxWrite,
-                signal: "skill list; skill install [<name>] supports claude/pi/codex native destinations; default and all select all three; one-runtime selection + --target remain available; native trees vs self-contained Codex prompt; skills live in-repo; descriptions ≤1024 characters",
-                command_hint: "$TOOL skill list --json  ·  $TOOL skill install --help --json  ·  inspect located .claude/.pi/.codex artifacts and SKILL.md descriptions  ·  (sandbox) compare default, all, one-runtime, and --target installs",
+                signal: "skill list --json declares supported_agents + install capabilities; skill install [<name>] supports claude/pi/codex native destinations; --agent defaults to all and accepts each runtime/all; --target + non-interactive safety preserved; native trees vs self-contained Codex prompt; skills live in-repo; descriptions ≤1024 characters",
+                command_hint: "$TOOL skill list --json  ·  inspect located SKILL.md descriptions and installer source/tests  ·  (sandbox) compare default, all, one-runtime, and --target installs",
                 fail: "no skill door; Claude-only support; default/all omits a maintained runtime; no runtime selection or --target; wrong native destination/form; stale guidance; description over 1024 characters",
             },
         ),

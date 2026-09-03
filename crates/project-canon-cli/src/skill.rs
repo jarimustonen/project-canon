@@ -737,6 +737,10 @@ mod install {
             for &agent in agents {
                 for resource in agent.resources(skill) {
                     let path = agent.path(base, skill.name, resource);
+                    validate_install_ancestors(base, &path).map_err(|source| Fault {
+                        path: path.display().to_string(),
+                        source,
+                    })?;
                     let desired = agent
                         .render(skill, resource)
                         .expect("catalog resource must render");
@@ -775,6 +779,48 @@ mod install {
             }
         }
         Ok(rows)
+    }
+
+    /// Reject an observed symlink or non-directory in the destination's parent chain. This keeps
+    /// an install from following a pre-existing `<base>/.claude`/`.pi`/`.codex` redirect outside
+    /// the declared target. The final component has its separate no-follow conflict check below.
+    fn validate_install_ancestors(base: &Path, path: &Path) -> std::io::Result<()> {
+        let parent = path.parent().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "path has no parent")
+        })?;
+        let relative = parent.strip_prefix(base).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "install path is outside the declared target base",
+            )
+        })?;
+        let mut current = base.to_path_buf();
+        for component in std::iter::once(None).chain(relative.components().map(Some)) {
+            if let Some(component) = component {
+                current.push(component.as_os_str());
+            }
+            match std::fs::symlink_metadata(&current) {
+                Ok(metadata) if metadata.file_type().is_symlink() => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!(
+                            "install parent is a symlink and may escape --target: {}",
+                            current.display()
+                        ),
+                    ));
+                }
+                Ok(metadata) if !metadata.is_dir() => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        format!("install parent is not a directory: {}", current.display()),
+                    ));
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(())
     }
 
     /// The resolved action for one target file.
@@ -1390,6 +1436,46 @@ mod list {
                                 .map(Json::str)
                                 .collect(),
                         ),
+                    ),
+                    (
+                        "install".into(),
+                        Json::Object(vec![
+                            ("selection_flag".into(), Json::str("--agent")),
+                            ("default".into(), Json::str("all")),
+                            (
+                                "accepted_values".into(),
+                                Json::Array(
+                                    ["claude", "pi", "codex", "all"]
+                                        .into_iter()
+                                        .map(Json::str)
+                                        .collect(),
+                                ),
+                            ),
+                            ("target_flag".into(), Json::str("--target")),
+                            ("dry_run_flag".into(), Json::str("--dry-run")),
+                            ("force_flag".into(), Json::str("--force")),
+                            ("interactive".into(), Json::Bool(false)),
+                            (
+                                "layouts".into(),
+                                Json::Array(vec![
+                                    Json::Object(vec![
+                                        ("agent".into(), Json::str("claude")),
+                                        ("path".into(), Json::str(".claude/skills/<name>/...")),
+                                        ("form".into(), Json::str("agent-skill-tree")),
+                                    ]),
+                                    Json::Object(vec![
+                                        ("agent".into(), Json::str("pi")),
+                                        ("path".into(), Json::str(".pi/agent/skills/<name>/...")),
+                                        ("form".into(), Json::str("agent-skill-tree")),
+                                    ]),
+                                    Json::Object(vec![
+                                        ("agent".into(), Json::str("codex")),
+                                        ("path".into(), Json::str(".codex/prompts/<name>.md")),
+                                        ("form".into(), Json::str("self-contained-prompt")),
+                                    ]),
+                                ]),
+                            ),
+                        ]),
                     ),
                     ("skills".into(), Json::Array(skills)),
                     ("exit_code".into(), Json::Int(EXIT_OK as i64)),

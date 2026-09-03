@@ -25,9 +25,9 @@ The probe argument vectors are fixed and read-only. They cover:
 - §8: `config path --json` and `config show --json`
 - §10: `version --json`
 - §14: `--help --json`
-- §15: `skill list --json` plus `skill install --help --json`; every listed skill must declare
-  Claude, pi, and Codex support, while structured install help must expose per-runtime selection,
-  explicit/default `all`, and `--target` (the probe never performs an installation)
+- §15: `skill list --json`; its read-only capability metadata must declare Claude, pi, and Codex,
+  canonical per-runtime selection, explicit/default `all`, native layouts, `--target`, and
+  non-interactive safety flags (the probe never invokes `skill install`)
 - §16: `skill print <listed-name> --json`
 - §17: version metadata, skill-list metadata, and printed skill frontmatter synchronization
 - §18: `doctor --json <repo>` without a fix flag

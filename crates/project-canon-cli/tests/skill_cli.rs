@@ -45,6 +45,28 @@ impl Tmp {
     fn named_codex_prompt(&self, name: &str) -> PathBuf {
         self.path.join(".codex/prompts").join(format!("{name}.md"))
     }
+    fn snapshot(&self) -> Vec<(String, Vec<u8>)> {
+        fn walk(root: &std::path::Path, dir: &std::path::Path, files: &mut Vec<(String, Vec<u8>)>) {
+            let mut entries = std::fs::read_dir(dir)
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .collect::<Vec<_>>();
+            entries.sort();
+            for path in entries {
+                if path.is_dir() {
+                    walk(root, &path, files);
+                } else {
+                    files.push((
+                        path.strip_prefix(root).unwrap().display().to_string(),
+                        std::fs::read(path).unwrap(),
+                    ));
+                }
+            }
+        }
+        let mut files = Vec::new();
+        walk(&self.path, &self.path, &mut files);
+        files
+    }
 }
 
 impl Drop for Tmp {
@@ -126,20 +148,11 @@ fn explicit_all_matches_the_default_three_runtime_layout() {
         0
     );
 
-    for relative in [
-        ".claude/skills/ai-first-cli-canon/SKILL.md",
-        ".pi/agent/skills/ai-first-cli-canon/SKILL.md",
-        ".codex/prompts/ai-first-cli-canon.md",
-        ".claude/skills/cli-canon/templates/conformance-probes.md",
-        ".pi/agent/skills/cli-canon/templates/conformance-probes.md",
-        ".codex/prompts/cli-canon.md",
-    ] {
-        assert_eq!(
-            std::fs::read(default.path.join(relative)).unwrap(),
-            std::fs::read(explicit.path.join(relative)).unwrap(),
-            "default and explicit all differ at {relative}"
-        );
-    }
+    assert_eq!(
+        default.snapshot(),
+        explicit.snapshot(),
+        "default and explicit all must emit identical complete trees"
+    );
 }
 
 #[test]
@@ -239,6 +252,16 @@ fn each_single_runtime_selection_stays_within_its_target_layout() {
         assert_eq!(t.path.join(".claude").exists(), agent == "claude");
         assert_eq!(t.path.join(".pi").exists(), agent == "pi");
         assert_eq!(t.path.join(".codex").exists(), agent == "codex");
+        let expected = match agent {
+            "claude" => ".claude/skills/ai-first-cli-canon/SKILL.md",
+            "pi" => ".pi/agent/skills/ai-first-cli-canon/SKILL.md",
+            "codex" => ".codex/prompts/ai-first-cli-canon.md",
+            _ => unreachable!(),
+        };
+        let files = t.snapshot();
+        assert_eq!(files.len(), 1, "{agent} install wrote unexpected files");
+        assert_eq!(files[0].0, expected);
+        assert!(!files[0].1.is_empty());
     }
 }
 
@@ -480,6 +503,15 @@ fn list_reports_the_shipped_skill() {
     assert!(stdout.contains("\"name\":\"ai-first-cli-canon\""));
     assert!(stdout.contains("\"name\":\"cli-canon\""));
     assert!(stdout.contains("\"supported_agents\":[\"claude\",\"pi\",\"codex\"]"));
+    assert!(stdout.contains("\"selection_flag\":\"--agent\""));
+    assert!(stdout.contains("\"default\":\"all\""));
+    assert!(stdout.contains("\"accepted_values\":[\"claude\",\"pi\",\"codex\",\"all\"]"));
+    assert!(stdout.contains("\"target_flag\":\"--target\""));
+    assert!(stdout.contains("\"dry_run_flag\":\"--dry-run\""));
+    assert!(stdout.contains("\"force_flag\":\"--force\""));
+    assert!(stdout.contains("\"interactive\":false"));
+    assert!(stdout.contains("\"form\":\"agent-skill-tree\""));
+    assert!(stdout.contains("\"form\":\"self-contained-prompt\""));
     assert!(stdout.contains("templates/conformance-probes.md"));
     assert!(stdout.contains("\"cli_version\""));
 }
@@ -635,6 +667,26 @@ fn a_symlink_at_the_target_is_refused_and_not_followed() {
     assert!(std::fs::read_to_string(&link)
         .unwrap()
         .contains(&master_canon()));
+}
+
+#[cfg(unix)]
+#[test]
+fn an_intermediate_runtime_symlink_is_refused_without_writing_outside_target() {
+    let t = Tmp::new("parent-symlink");
+    let external = Tmp::new("parent-symlink-external");
+    std::os::unix::fs::symlink(&external.path, t.path.join(".claude")).unwrap();
+
+    let out = run(&[
+        "install",
+        "ai-first-cli-canon",
+        "--target",
+        t.str(),
+        "--agent",
+        "claude",
+    ]);
+    assert_eq!(code(&out), 2);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("may escape --target"));
+    assert!(external.snapshot().is_empty());
 }
 
 #[test]

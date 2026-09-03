@@ -162,8 +162,8 @@ Follow `templates/conformance-probes.md` then `templates/review-report.md`:
 3. **Run the mechanical probes** — for each in-scope section, run its probe(s) under the
    safety rules above and record real evidence (`$TOOL version --json | jq …`, a `grep isatty`
    hit, `Cargo.toml` members, a shipped `SKILL.md`'s frontmatter). For §15, distinguish
-   Claude-only installation from full support: require Claude, pi, and Codex metadata or safe
-   sandbox/static evidence, with no-selection and explicit `all` covering all three while a
+   Claude-only installation from full support: require Claude, pi, and Codex `skill list --json`
+   capability metadata or safe sandbox/source-and-test evidence, with no-selection and explicit `all` covering all three while a
    single-runtime selection and `--target` remain usable. Preserve native tree artifacts for
    Claude/pi and the self-contained prompt form Codex may require. Handle the "tool doesn't
    speak the contract yet" branch: if `$TOOL version --json` errors, that *is* the §10 `fail`
