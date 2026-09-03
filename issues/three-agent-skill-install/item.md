@@ -6,6 +6,9 @@ reporter: jari
 status: in-progress
 priority: normal
 lane: build
+commits:
+- hash: 0f520ba
+  summary: start three-runtime skill install work
 ---
 
 # Require Claude, pi, and Codex skill installation
