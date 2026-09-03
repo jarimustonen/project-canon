@@ -24,10 +24,12 @@ journaled run was resumed with a disposable version-locked prefix and completed;
 manual publication was used. An older stale `0.6.1` journal was abandoned only after confirming it
 had long been superseded by verified `0.6.2` artifacts._
 
-_**Direction from here.** The execution agenda is deliberately empty: the live issue DAG has no
-lanes, no unscheduled candidates, and no spawnable heads. A new stint is therefore a genuine
-planning cold start driven by new intake or an explicit product direction; do not manufacture work
-from historical notes. The full Rust green gate passed for `0.7.0` before release._
+_**Direction from here.** The next accepted product direction is `three-agent-skill-install`:
+Canon §15 should require every companion-skill installer to support Claude, pi, and Codex in their
+native locations, with default/`all` covering all three. Project Canon itself already writes all
+three layouts; the missing work is the normative cross-tool requirement and conformance evidence.
+Use the live issue DAG for scheduling details. The full Rust green gate passed for `0.7.0` before
+release._
 
 ## Scheduling
 
