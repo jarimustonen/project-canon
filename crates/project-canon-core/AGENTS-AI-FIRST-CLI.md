@@ -633,11 +633,21 @@ the agent's *operating manual* for the tool — distinct from `--help`
 (reference) and the schema (data shape).
 
 - `<tool> skill list` — shows available skills shipped with this tool,
-  one-line descriptions
-- `<tool> skill install [<name>]` — copies the skill(s) into the active
-  agent runtime (`~/.claude/skills/` by default,
-  `--target <dir>` for other agent runtimes); installs all when no name
-  given
+  one-line descriptions; its `--json` payload declares the supported runtimes
+  so an agent can verify Claude/pi/Codex coverage without performing an install
+- `<tool> skill install [<name>]` — copies the skill(s) into the maintained
+  agent runtimes. The installer **MUST** support all three native destinations:
+  Claude at `.claude/skills/<name>/...`, pi at
+  `.pi/agent/skills/<name>/...`, and Codex at
+  `.codex/prompts/<name>.md`. A no-runtime-selection/default invocation and an
+  explicit `all` selection **MUST** both install all three; an explicit
+  runtime selection (for example `--agent claude|pi|codex|all`) may install
+  only that runtime. `--target <dir>` overrides the install base without
+  changing the selected layouts. Claude and pi receive native Agent Skills
+  resource trees; Codex may instead receive one self-contained prompt because
+  its native artifact form differs. Installation remains non-interactive and
+  must preserve the no-clobber, explicit-force, and dry-run safety rules of
+  §§3 and 11. Omitting `<name>` installs every bundled skill.
 - `<tool> skill show <name> --json` — prints the skill content without
   installing, so an agent can read it inline if needed
 
@@ -971,7 +981,7 @@ contract so every tool's `init` behaves identically:
   It must not scaffold into a surprising directory: if the resolution is
   ambiguous it errors (§4) asking for an explicit `--home` rather than guessing.
 - **Companion-skill install is not implicit.** Because §15 installs skills into
-  the *agent's* runtime (`~/.claude/skills/`), outside the data root, `init`
+  the *agent runtimes' native directories* outside the data root, `init`
   does **not** silently mutate that global directory. It either prints the
   recommended `<tool> skill install` follow-up, or performs it only under an
   explicit `--install-skill` flag. Bootstrapping the data home and mutating the

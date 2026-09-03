@@ -153,6 +153,7 @@ surface (never renumbered); new principles append as §19+. Highlights:
 | §10 | Schema versioning, errors, warnings, deprecation |
 | §11 | Dry-run, idempotency, retry safety |
 | §14 | `--help` is agent-first, structured, drill-down |
+| §15 | Companion skills install for Claude, pi, and Codex; default/`all` means all three |
 | §18 | `doctor`: read-only self-diagnostic |
 | §23 | Public artifacts contain no user-specific facts |
 

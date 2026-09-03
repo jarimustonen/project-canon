@@ -206,6 +206,37 @@ fn over_limit_located_skill_description_is_a_must_gap() {
 }
 
 #[test]
+fn checked_in_claude_only_skill_is_a_must_gap() {
+    let f = Fixture::conformant("skill-layout-claude-only");
+    let skill = f.path.join(".claude/skills/fixture-skill/SKILL.md");
+    std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
+    std::fs::write(
+        skill,
+        "---\nname: fixture-skill\ndescription: \"Fixture skill\"\n---\n",
+    )
+    .unwrap();
+
+    let out = run_doctor(&["--json", f.path.to_str().unwrap()]);
+    assert_eq!(code(&out), 1);
+    let payload: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let check = payload["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|check| check["id"] == "canon.s15")
+        .unwrap();
+    assert_eq!(check["status"], "fail");
+    assert!(check["message"]
+        .as_str()
+        .unwrap()
+        .contains(".pi/agent/skills"));
+    assert!(check["message"]
+        .as_str()
+        .unwrap()
+        .contains(".codex/prompts"));
+}
+
+#[test]
 fn configured_private_marker_is_a_must_gap_but_own_coordinates_are_allowed() {
     let f = Fixture::conformant("s23");
     std::fs::write(

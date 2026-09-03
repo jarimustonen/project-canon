@@ -111,6 +111,38 @@ fn install_writes_all_agent_forms() {
 }
 
 #[test]
+fn explicit_all_matches_the_default_three_runtime_layout() {
+    let default = Tmp::new("default-all");
+    let explicit = Tmp::new("explicit-all");
+    assert_eq!(code(&run(&["install", "--target", default.str()])), 0);
+    assert_eq!(
+        code(&run(&[
+            "install",
+            "--target",
+            explicit.str(),
+            "--agent",
+            "all",
+        ])),
+        0
+    );
+
+    for relative in [
+        ".claude/skills/ai-first-cli-canon/SKILL.md",
+        ".pi/agent/skills/ai-first-cli-canon/SKILL.md",
+        ".codex/prompts/ai-first-cli-canon.md",
+        ".claude/skills/cli-canon/templates/conformance-probes.md",
+        ".pi/agent/skills/cli-canon/templates/conformance-probes.md",
+        ".codex/prompts/cli-canon.md",
+    ] {
+        assert_eq!(
+            std::fs::read(default.path.join(relative)).unwrap(),
+            std::fs::read(explicit.path.join(relative)).unwrap(),
+            "default and explicit all differ at {relative}"
+        );
+    }
+}
+
+#[test]
 fn installed_skill_embeds_the_master_canon_verbatim() {
     // The single-source invariant: no drifting second copy — both forms embed the master bytes.
     let t = Tmp::new("single-source");
@@ -187,6 +219,27 @@ fn agent_flag_selects_a_single_form() {
     );
     assert!(t.claude_skill().is_file());
     assert!(!t.codex_prompt().exists(), "codex form must not be written");
+}
+
+#[test]
+fn each_single_runtime_selection_stays_within_its_target_layout() {
+    for agent in ["claude", "pi", "codex"] {
+        let t = Tmp::new(agent);
+        assert_eq!(
+            code(&run(&[
+                "install",
+                "ai-first-cli-canon",
+                "--target",
+                t.str(),
+                "--agent",
+                agent,
+            ])),
+            0
+        );
+        assert_eq!(t.path.join(".claude").exists(), agent == "claude");
+        assert_eq!(t.path.join(".pi").exists(), agent == "pi");
+        assert_eq!(t.path.join(".codex").exists(), agent == "codex");
+    }
 }
 
 #[test]

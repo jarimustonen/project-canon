@@ -184,14 +184,24 @@ step has bound it to a real, read-only command.
 
 ### §15 `skill` subcommand: install companion AI‑skills · **MUST**
 - **Applies:** always.
-- **Signal:** `$TOOL skill list` (available skills, one‑line descriptions); `$TOOL skill
-  install [<name>]` (into `~/.claude/skills/` by default, `--target <dir>`); skills live
-  in‑repo and version with the binary.
-- **Probe:** `[exec-ro]` `$TOOL skill list` · `[sandbox-write]` `$TOOL skill install --target
-  "$sandbox/skills"` (a `mktemp -d` target, never a shared/fixed path or the real
-  `~/.claude/skills`).
-- **Fail:** no `skill` door at all (three family tools miss this); a `skill list` referencing
-  a removed flag.
+- **Signal:** `$TOOL skill list` exposes available skills and one-line descriptions. `$TOOL
+  skill install [<name>]` supports all maintained runtimes in their native destinations:
+  Claude `.claude/skills/<name>/...`, pi `.pi/agent/skills/<name>/...`, and Codex
+  `.codex/prompts/<name>.md`. No runtime selection and explicit `all` both install all three;
+  an explicit runtime selection may install only one. `--target <dir>` changes the install
+  base without changing those layouts. Claude/pi preserve native Agent Skills resource trees;
+  Codex may use one self-contained prompt. Installation is non-interactive, dry-runnable, and
+  no-clobber by default; skills live in-repo and version with the binary.
+- **Probe:** `[exec-ro]` inspect `$TOOL skill list --json` for all three supported runtimes and
+  `$TOOL skill install --help --json` for runtime selection defaulting to `all`, explicit
+  `claude|pi|codex|all`, and `--target`. `[static]` compare any checked-in native runtime
+  artifacts across `.claude/skills`, `.pi/agent/skills`, and `.codex/prompts`; inspect tests and
+  source when generated artifacts are not checked in. `[sandbox-write]` only after verifying a
+  safe scratch base, compare no-selection with explicit `all`, then each single-runtime selection
+  and `--target`; never use a shared/fixed path or a real runtime home.
+- **Fail:** no `skill` door; Claude-only support; default or explicit `all` omits pi/Codex;
+  no runtime-specific selection or `--target`; an artifact in the wrong native destination/form;
+  a skill list referencing a removed flag; a frontmatter description over 1024 characters.
 
 ### §16 `skill print`: stream skill content, no side effects · **MUST**
 - **Applies:** always (pairs with §15).

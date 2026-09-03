@@ -944,7 +944,7 @@ fn absolute_lexical(path: &str) -> std::io::Result<PathBuf> {
 fn judgment_remainder(id: &str) -> Option<&'static str> {
     match id {
         "canon.s15" => Some(
-            "verify the skill list/install surface, install target behavior, and guidance freshness beyond the static description-length check",
+            "verify no-selection and explicit all installs cover Claude, pi, and Codex; verify each single-runtime selection, --target, native tree/prompt form, no-clobber behavior, and guidance freshness beyond observable metadata and checked-in artifacts",
         ),
         "canon.s23" => Some(
             "review hostnames, internal URLs, borderline names, and dependency legitimacy",
@@ -1213,7 +1213,7 @@ mod tests {
     fn unavailable_runtime_does_not_hide_a_static_s15_gap() {
         let repo = conformant_repo("s15-unavailable");
         repo.write(
-            ".claude/skills/fixture-skill/SKILL.md",
+            "skills/fixture-skill/SKILL.md",
             &format!(
                 "---\nname: fixture-skill\ndescription: \"{}\"\n---\n",
                 "x".repeat(1025)

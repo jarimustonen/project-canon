@@ -17,7 +17,8 @@
 //!
 //! ## Side-effect discipline
 //!
-//! `install` writes skill files under `--target` (default `$HOME` → §15's `~/.claude/skills/`).
+//! `install` writes skill files under `--target` (default `$HOME`) in the native Claude, pi,
+//! and Codex layouts required by §15; default and explicit `all` both select all three.
 //! That is its only effect: it never shells out, never touches the network. `--dry-run` computes
 //! the full per-file plan and writes nothing. `list`/`print` are read-only. All per-file actions
 //! are resolved up front (pure); a *blocking* conflict (a foreign/non-regular file, or an on-disk
@@ -191,8 +192,8 @@ Bundled skills:
 containing all support resources; the claude and pi layouts are native skill directories.
 
 INSTALL FLAGS:
-    --target <dir>          Install base (default: $HOME \u{2192} ~/.claude/skills/). Pass a repo
-                            root to install into that repo's agent dirs.
+    --target <dir>          Install base (default: $HOME). Pass a repo root to install into
+                            that repo's native agent dirs.
     --agent <claude|pi|codex|all>   Which runtime layout(s) to write (default: all).
     --force                 Overwrite a newer on-disk skill or a non-managed file at the path.
     --dry-run               Print the per-file plan; write nothing.
@@ -504,7 +505,8 @@ mod install {
             None => SHIPPED.iter().collect(),
         };
 
-        // Resolve the install base: --target, else $HOME (→ §15's ~/.claude/skills/).
+        // Resolve the install base: --target, else $HOME; each selected runtime appends its
+        // §15 native destination.
         let base = match resolve_base(&parsed.target) {
             Ok(b) => b,
             Err(err) => {
