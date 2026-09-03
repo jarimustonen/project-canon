@@ -3,7 +3,7 @@ created: 2026-09-03
 updated: 2026-09-03
 type: feature
 reporter: jari
-status: in-progress
+status: done
 priority: normal
 lane: build
 commits:
@@ -19,6 +19,8 @@ commits:
   summary: 'fix: harden three-runtime conformance evidence'
 - hash: 3329ed4aa3051d5322c262de3d7e28b5bf7d2cf5
   summary: 'issues: record three-runtime implementation'
+closed: 2026-09-03
+closed_by: pi
 ---
 
 # Require Claude, pi, and Codex skill installation
@@ -65,3 +67,9 @@ Rejected alternatives:
 - Rejected platform-specific `openat`/`openat2` confinement in this issue: the remaining concurrent directory-replacement race is rare for user-owned targets and would add major cross-platform complexity; the accepted hardening covers pre-existing descendant redirects.
 
 Review/assessment evidence: four-model, multi-round `/llm-review`; `history/assessment-three-agent-skill-install.{json,md}` records 13 resolved FIX findings and five dropped/incorrect or disproportionate findings, with no follow-up issue warranted.
+
+## Resolution
+
+### 2026-09-03T11:00:40Z · @pi
+
+Implemented and verified: Canon §15, resolved model and review probes, bundled skills, documentation, and tests now cover native Claude/pi/Codex installation with default/explicit all semantics and preserved safety. Multi-model review findings were assessed and resolved or deliberately dropped; the exact Rust green gate passes.
