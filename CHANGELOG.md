@@ -13,6 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 <!-- oss-changelog:unreleased-end -->
 
+## [0.8.0] - 2026-09-03
+
+### Added
+
+- Canon §15 now requires companion-skill installers to support Claude, pi, and Codex in
+  their native layouts, with default and explicit `all` installation covering all three runtimes.
+- Runtime `review` probes now distinguish complete three-runtime support from Claude-only
+  installers through structured, read-only capability metadata, while preserving runtime-specific
+  selection and custom `--target` behavior.
+
+### Fixed
+
+- Skill installation rejects pre-existing descendant symlinks that could redirect writes outside
+  the selected target.
+
 ## [0.7.0] - 2026-08-23
 
 ### Added
