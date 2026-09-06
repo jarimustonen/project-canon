@@ -43,7 +43,7 @@ const SCHEMA_VERSION: i64 = 1;
 /// The skill-format version (§17 `schema_version:` — the §10 contract applied to the skill
 /// payload itself, so an agent can detect a breaking skill-format change independently of the
 /// tool's data schema). Bump when the emitted SKILL.md/prompt *shape* changes incompatibly.
-const SKILL_SCHEMA_VERSION: i64 = 1;
+const SKILL_SCHEMA_VERSION: i64 = 2;
 
 /// The CLI release the shipped skill bodies were written against (§17 `cli_version:`). Pinned to
 /// the running binary so `skill print` is always version-consistent with `--version`.
@@ -215,8 +215,9 @@ PRINT FLAGS:
 
 SIDE EFFECTS:
     install writes skill files under <target> and never shells out or touches the network.
-    When Codex is selected, it also removes same-scope managed legacy .codex/prompts files;
-    foreign files and symlinks are preserved. list/print are read-only. --dry-run writes nothing.
+    When Codex is selected, it removes same-scope managed legacy .codex/prompts files from
+    this or an older version. Foreign files, symlinks, and newer managed prompts are preserved,
+    including with --force. list/print are read-only. --dry-run writes nothing.
 
 EXIT CODES:
     0   success (installed/upgraded/unchanged, dry-run plan, list, or print)
@@ -541,12 +542,13 @@ mod install {
             }
         };
 
-        let report = Report {
+        let mut report = Report {
             target: abs(&base),
             agents: parsed.agents.clone(),
             dry_run: parsed.dry_run,
             force: parsed.force,
             rows,
+            actual_legacy_removed: 0,
         };
 
         // Blocking conflicts: refuse the whole run before any write. Under --json the caller gets
@@ -587,22 +589,28 @@ mod install {
                     }
                 }
             }
+            let mut actual_legacy_removed = 0;
             for r in &report.rows {
                 if r.action.removes_file() {
-                    if let Err(source) = remove_managed_legacy(Path::new(&r.path)) {
-                        return fail(
-                            parsed.json,
-                            CliError::system(
-                                "io_error",
-                                format!(
-                                    "skill install: removing managed legacy {}: {source}",
-                                    r.path
+                    match remove_managed_legacy(&base, Path::new(&r.path), r.name) {
+                        Ok(RemovalOutcome::Removed) => actual_legacy_removed += 1,
+                        Ok(RemovalOutcome::AlreadyAbsent) => {}
+                        Err(source) => {
+                            return fail(
+                                parsed.json,
+                                CliError::system(
+                                    "io_error",
+                                    format!(
+                                        "skill install: removing managed legacy {}: {source}",
+                                        r.path
+                                    ),
                                 ),
-                            ),
-                        );
+                            );
+                        }
                     }
                 }
             }
+            report.actual_legacy_removed = actual_legacy_removed;
             // §17 drift / overwrite notes go to stderr only on a real run — advisory, never flips
             // the exit code (uniform with the canon's WARN discipline).
             for r in &report.rows {
@@ -810,7 +818,7 @@ mod install {
                         })
                     }
                 };
-                let action = legacy_action(&existing);
+                let action = legacy_action(&existing, skill.name);
                 if action != Action::LegacyAbsent {
                     rows.push(Row {
                         name: skill.name,
@@ -952,20 +960,57 @@ mod install {
         }
     }
 
-    fn legacy_action(existing: &Existing) -> Action {
+    fn legacy_action(existing: &Existing, expected_name: &str) -> Action {
         match existing {
             Existing::Absent => Action::LegacyAbsent,
             Existing::NonRegular => Action::PreserveLegacy,
-            Existing::Regular(bytes) if is_ours(bytes) => match marker_cli_version(bytes) {
+            Existing::Regular(bytes) => match managed_legacy_version(bytes, expected_name) {
                 Some(version)
-                    if cmp_versions(&version, CLI_VERSION) == std::cmp::Ordering::Greater =>
+                    if cmp_versions(&version, CLI_VERSION) != std::cmp::Ordering::Greater =>
                 {
-                    Action::PreserveLegacy
+                    Action::RemoveLegacy
                 }
-                _ => Action::RemoveLegacy,
+                _ => Action::PreserveLegacy,
             },
-            Existing::Regular(_) => Action::PreserveLegacy,
         }
+    }
+
+    /// Parse only the exact marker shape emitted at the start of historical Codex prompts.
+    /// Native frontmatter-form files, wrong-name markers, incomplete markers, and malformed
+    /// versions are not positively identified and therefore remain untouched.
+    fn managed_legacy_version(bytes: &[u8], expected_name: &str) -> Option<String> {
+        let text = std::str::from_utf8(bytes).ok()?;
+        let marker = text.lines().next()?;
+        if !marker.starts_with(MARKER_PREFIX) || !marker.ends_with("-->") {
+            return None;
+        }
+        let fields = marker
+            .strip_prefix(MARKER_PREFIX)?
+            .strip_prefix(" \u{2014} ")?;
+        let (name, fields) = fields.split_once(' ')?;
+        if name != expected_name {
+            return None;
+        }
+        let version = marker_field(fields, "cli_version=")?;
+        let schema = marker_field(fields, "schema_version=")?.trim_end_matches('.');
+        if version
+            .split('.')
+            .any(|part| part.is_empty() || part.parse::<u64>().is_err())
+            || schema
+                .parse::<u64>()
+                .ok()
+                .filter(|value| *value > 0)
+                .is_none()
+        {
+            return None;
+        }
+        Some(version.to_string())
+    }
+
+    fn marker_field<'a>(marker: &'a str, key: &str) -> Option<&'a str> {
+        marker
+            .split_whitespace()
+            .find_map(|field| field.strip_prefix(key))
     }
 
     /// Decide the action for one native file from what is currently at the path and desired bytes.
@@ -1074,11 +1119,23 @@ mod install {
     /// Revalidate a planned migration immediately before deletion. The final component must still
     /// be a regular, managed legacy prompt from this or an older version. An absent file is an
     /// idempotent no-op; any changed/foreign state fails closed rather than deleting it.
-    fn remove_managed_legacy(path: &Path) -> std::io::Result<()> {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum RemovalOutcome {
+        Removed,
+        AlreadyAbsent,
+    }
+
+    fn remove_managed_legacy(
+        base: &Path,
+        path: &Path,
+        expected_name: &str,
+    ) -> std::io::Result<RemovalOutcome> {
+        validate_install_ancestors(base, path)?;
         match inspect_path(path)? {
-            Existing::Absent => Ok(()),
-            existing if legacy_action(&existing) == Action::RemoveLegacy => {
-                std::fs::remove_file(path)
+            Existing::Absent => Ok(RemovalOutcome::AlreadyAbsent),
+            existing if legacy_action(&existing, expected_name) == Action::RemoveLegacy => {
+                std::fs::remove_file(path)?;
+                Ok(RemovalOutcome::Removed)
             }
             _ => Err(std::io::Error::other(
                 "legacy prompt changed after planning; refusing removal",
@@ -1128,6 +1185,7 @@ mod install {
         dry_run: bool,
         force: bool,
         rows: Vec<Row>,
+        actual_legacy_removed: usize,
     }
 
     impl Report {
@@ -1160,7 +1218,7 @@ mod install {
             let planned_writes = self.rows.iter().filter(|r| r.action.writes_file()).count();
             let written = if self.dry_run { 0 } else { planned_writes };
             let planned_removals = self.rows.iter().filter(|r| r.action.removes_file()).count();
-            let removed = if self.dry_run { 0 } else { planned_removals };
+            let removed = self.actual_legacy_removed;
             let summary = Json::Object(vec![
                 ("files".into(), Json::Int(self.rows.len() as i64)),
                 (
@@ -1238,7 +1296,7 @@ mod install {
             let (remove_verb, removals) = if self.dry_run {
                 ("would remove", planned_removals)
             } else {
-                ("removed", planned_removals)
+                ("removed", self.actual_legacy_removed)
             };
             let verb = if self.dry_run { "would write" } else { "wrote" };
             out.push_str(&format!(
@@ -1451,24 +1509,94 @@ mod install {
         }
 
         #[test]
-        fn legacy_action_only_removes_owned_non_newer_regular_files() {
-            let managed = format!(
-                "{MARKER_PREFIX} — ai-first-cli-canon cli_version=0.8.0 schema_version=1. -->\n"
-            );
-            let newer = format!(
-                "{MARKER_PREFIX} — ai-first-cli-canon cli_version=99.0.0 schema_version=1. -->\n"
-            );
-            assert_eq!(legacy_action(&Existing::Absent), Action::LegacyAbsent);
-            assert_eq!(legacy_action(&Existing::NonRegular), Action::PreserveLegacy);
-            assert_eq!(legacy_action(&reg(b"foreign")), Action::PreserveLegacy);
+        fn legacy_action_only_removes_strictly_identified_non_newer_prompts() {
+            let marker = |name: &str, version: &str| {
+                format!(
+                    "{MARKER_PREFIX} — {name} cli_version={version} schema_version=1. Generated. -->\n"
+                )
+            };
+            let equal = marker("ai-first-cli-canon", CLI_VERSION);
+            let older = marker("ai-first-cli-canon", "0.0.0");
+            let newer = marker("ai-first-cli-canon", "99.0.0");
             assert_eq!(
-                legacy_action(&reg(managed.as_bytes())),
-                Action::RemoveLegacy
+                legacy_action(&Existing::Absent, "ai-first-cli-canon"),
+                Action::LegacyAbsent
             );
             assert_eq!(
-                legacy_action(&reg(newer.as_bytes())),
+                legacy_action(&Existing::NonRegular, "ai-first-cli-canon"),
                 Action::PreserveLegacy
             );
+            assert_eq!(
+                legacy_action(&reg(b"foreign"), "ai-first-cli-canon"),
+                Action::PreserveLegacy
+            );
+            for removable in [equal, older] {
+                assert_eq!(
+                    legacy_action(&reg(removable.as_bytes()), "ai-first-cli-canon"),
+                    Action::RemoveLegacy
+                );
+            }
+            for preserved in [
+                newer,
+                marker("cli-canon", CLI_VERSION),
+                format!("{MARKER_PREFIX} — ai-first-cli-canon schema_version=1. -->"),
+                format!(
+                    "{MARKER_PREFIX} — ai-first-cli-canon cli_version=bad schema_version=1. -->"
+                ),
+                format!(
+                    "{MARKER_PREFIX} — ai-first-cli-canon cli_version={CLI_VERSION} schema_version=1."
+                ),
+                canon_bytes(Agent::Codex),
+            ] {
+                assert_eq!(
+                    legacy_action(&reg(preserved.as_bytes()), "ai-first-cli-canon"),
+                    Action::PreserveLegacy
+                );
+            }
+        }
+
+        #[test]
+        fn removal_reports_an_already_absent_artifact_without_counting_an_unlink() {
+            let base = std::env::temp_dir().join(format!(
+                "pc-legacy-absent-{}-{:?}",
+                std::process::id(),
+                std::thread::current().id()
+            ));
+            let path = base.join(".codex/prompts/ai-first-cli-canon.md");
+            assert_eq!(
+                remove_managed_legacy(&base, &path, "ai-first-cli-canon").unwrap(),
+                RemovalOutcome::AlreadyAbsent
+            );
+        }
+
+        #[cfg(unix)]
+        #[test]
+        fn removal_rejects_an_intermediate_symlink() {
+            let base = std::env::temp_dir().join(format!(
+                "pc-legacy-parent-link-{}-{:?}",
+                std::process::id(),
+                std::thread::current().id()
+            ));
+            let external = base.with_extension("external");
+            let _ = std::fs::remove_dir_all(&base);
+            let _ = std::fs::remove_dir_all(&external);
+            std::fs::create_dir_all(base.join(".codex")).unwrap();
+            std::fs::create_dir_all(&external).unwrap();
+            let external_prompt = external.join("ai-first-cli-canon.md");
+            std::fs::write(
+                &external_prompt,
+                format!(
+                    "{MARKER_PREFIX} — ai-first-cli-canon cli_version={CLI_VERSION} schema_version=1. -->\n"
+                ),
+            )
+            .unwrap();
+            std::os::unix::fs::symlink(&external, base.join(".codex/prompts")).unwrap();
+
+            let path = base.join(".codex/prompts/ai-first-cli-canon.md");
+            assert!(remove_managed_legacy(&base, &path, "ai-first-cli-canon").is_err());
+            assert!(external_prompt.is_file());
+            std::fs::remove_dir_all(&base).unwrap();
+            std::fs::remove_dir_all(&external).unwrap();
         }
 
         #[test]

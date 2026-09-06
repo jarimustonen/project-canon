@@ -6,7 +6,7 @@ move directories by hand.
 
 For agents and humans interacting with these issues, use the **`/issue`
 skill** installed alongside this file (`.claude/skills/issue/SKILL.md`
-for Claude Code, `.codex/skills/issue/SKILL.md` for Codex). The skill
+for Claude Code, `.codex/prompts/issue.md` for Codex). The skill
 documents every supported workflow (search, create, update, close,
 note, apply) and the JSON contract.
 

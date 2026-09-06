@@ -1147,11 +1147,12 @@ fn next_byte_line(bytes: &[u8], offset: usize) -> Option<(&[u8], usize)> {
 /// check; the rest of §15 remains a review judgment rather than being inferred from absence.
 fn probe_skill_description_lengths(repo: &Path) -> std::io::Result<ProbeOutcome> {
     const MAX_FRONTMATTER_BYTES: u64 = 1_048_576;
-    const ROOTS: [&str; 4] = [
+    const ROOTS: [&str; 5] = [
         "skills",
         ".agents/skills",
         ".claude/skills",
         ".pi/agent/skills",
+        ".codex/skills",
     ];
     let canonical_repo = std::fs::canonicalize(repo)?;
     let mut skill_files = BTreeSet::new();
@@ -2056,24 +2057,26 @@ mod tests {
     }
 
     #[test]
-    fn skill_description_probe_rejects_an_over_limit_description() {
-        let repo = TmpRepo::new("skill-description-over");
-        let content = rendered_skill(&format!(
-            "\"{}\"",
-            "x".repeat(SKILL_DESCRIPTION_MAX_CHARS + 1)
-        ));
-        repo.write(".agents/skills/fixture-skill/SKILL.md", &content);
+    fn skill_description_probe_rejects_over_limit_generic_and_codex_skills() {
+        for root in [".agents/skills", ".codex/skills"] {
+            let repo = TmpRepo::new("skill-description-over");
+            let content = rendered_skill(&format!(
+                "\"{}\"",
+                "x".repeat(SKILL_DESCRIPTION_MAX_CHARS + 1)
+            ));
+            repo.write(&format!("{root}/fixture-skill/SKILL.md"), &content);
 
-        let outcome = probe_skill_description_lengths(&repo.path).unwrap();
-        assert!(!outcome.passed);
-        assert!(
-            outcome.message.contains("1025-character"),
-            "{}",
-            outcome.message
-        );
-        assert!(outcome
-            .message
-            .contains(".agents/skills/fixture-skill/SKILL.md"));
+            let outcome = probe_skill_description_lengths(&repo.path).unwrap();
+            assert!(!outcome.passed);
+            assert!(
+                outcome.message.contains("1025-character"),
+                "{}",
+                outcome.message
+            );
+            assert!(outcome
+                .message
+                .contains(&format!("{root}/fixture-skill/SKILL.md")));
+        }
     }
 
     #[test]

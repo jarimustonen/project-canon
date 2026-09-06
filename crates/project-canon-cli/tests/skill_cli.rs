@@ -234,7 +234,15 @@ fn legacy_migration_preserves_foreign_and_newer_files() {
     )
     .unwrap();
 
-    let out = run(&["install", "--target", t.str(), "--agent", "codex", "--json"]);
+    let out = run(&[
+        "install",
+        "--target",
+        t.str(),
+        "--agent",
+        "codex",
+        "--force",
+        "--json",
+    ]);
     assert_eq!(code(&out), 0, "{}", String::from_utf8_lossy(&out.stderr));
     assert_eq!(std::fs::read_to_string(foreign).unwrap(), "FOREIGN PROMPT");
     assert!(std::fs::read_to_string(newer).unwrap().contains("FUTURE"));
@@ -335,6 +343,33 @@ fn legacy_migration_never_removes_a_symlink() {
         .file_type()
         .is_symlink());
     assert_eq!(std::fs::read_to_string(sentinel).unwrap(), "KEEP");
+}
+
+#[test]
+fn blocked_native_install_preserves_managed_legacy_prompt() {
+    let t = Tmp::new("legacy-blocked-native");
+    let legacy = write_managed_legacy_prompt(&t, "ai-first-cli-canon");
+    let native = t.codex_skill();
+    std::fs::create_dir_all(native.parent().unwrap()).unwrap();
+    std::fs::write(&native, "FOREIGN NATIVE SKILL").unwrap();
+
+    let out = run(&[
+        "install",
+        "ai-first-cli-canon",
+        "--target",
+        t.str(),
+        "--agent",
+        "codex",
+    ]);
+    assert_eq!(code(&out), 1);
+    assert!(
+        legacy.is_file(),
+        "preflight conflict must prevent legacy cleanup"
+    );
+    assert_eq!(
+        std::fs::read_to_string(native).unwrap(),
+        "FOREIGN NATIVE SKILL"
+    );
 }
 
 #[test]
@@ -675,7 +710,7 @@ fn print_json_carries_metadata_and_content() {
     assert_eq!(code(&out), 0);
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("\"name\":\"ai-first-cli-canon\""));
-    assert!(stdout.contains("\"skill_schema_version\":1"));
+    assert!(stdout.contains("\"skill_schema_version\":2"));
     assert!(stdout.contains("\"path_in_repo\":\"AGENTS-AI-FIRST-CLI.md\""));
     assert!(stdout.contains("\"content\":"));
     assert!(stdout.contains("\"exit_code\":0"));
@@ -737,7 +772,7 @@ fn list_json_envelope_is_consistent() {
     assert!(stdout.contains("\"exit_code\":0"));
     // Top-level cli_version + the per-skill skill_schema_version key (uniform with print).
     assert!(stdout.contains("\"cli_version\":"));
-    assert!(stdout.contains("\"skill_schema_version\":1"));
+    assert!(stdout.contains("\"skill_schema_version\":2"));
 }
 
 #[test]
