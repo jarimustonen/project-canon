@@ -3,10 +3,13 @@ created: 2026-09-06
 updated: 2026-09-06
 type: bug
 reporter: jari
-status: open
+status: in-progress
 priority: high
 lane: build
 lane_seq: 10
+commits:
+- hash: 11367f0db34931d0f0d27aa3247ae6c3eb5e40e9
+  summary: distribute native Codex skill trees
 ---
 
 # Distribute Codex skills as native skill trees
