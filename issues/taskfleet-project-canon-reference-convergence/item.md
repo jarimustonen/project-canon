@@ -4,6 +4,8 @@ updated: 2026-09-06
 type: task
 status: open
 priority: high
+lane: build
+lane_seq: 20
 ---
 
 # Converge project-canon references on Taskfleet
