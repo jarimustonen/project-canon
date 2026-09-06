@@ -3,7 +3,7 @@ created: 2026-09-06
 updated: 2026-09-06
 type: bug
 reporter: jari
-status: open
+status: fixed
 priority: high
 lane: build
 lane_seq: 10
@@ -16,6 +16,9 @@ commits:
   summary: record Codex migration decisions
 - hash: 73f9eba058b078ee1a52dcc1df83c90af70b36a4
   summary: update skill schema snapshot
+- hash: 85b7b00
+  summary: test isolate runtime process fixtures
+closed: 2026-09-06
 ---
 
 # Distribute Codex skills as native skill trees
@@ -70,6 +73,18 @@ Rejected alternatives:
 - Rejected changing Project Canon's repo-specific `issues/AGENTS.md` pointer ahead of issuectl's own release: Canon guidance now rejects prompt-only distribution, but operational documentation must still identify the artifact the currently released producer installs.
 
 Review evidence: four-model, two-cross-round `/llm-review`; `history/assessment-codex-native-skill-distribution.{json,md}` assessed 13 findings. Seven required fixes were applied; six incorrect, disproportionate, or latent findings were dropped, with no follow-up issue meeting the filing bar.
+
+### 2026-09-06T14:48:00Z · @pi
+
+Reopen diagnosis and follow-up design:
+
+- The failure was test-harness interference, not a Codex skill-distribution or runtime-probe cleanup regression. The focused redirected-descendant test passed 100/100 before the fix, while the complete 155-test unit binary at 16 test threads failed 5/20 times. Failures clustered in process-heavy runtime tests and exhausted the same short wall-clock capture deadlines. Production invokes runtime probes sequentially.
+- The Unix tests that execute shell fixtures, exercise capture deadlines, crash children, or inspect/kill process groups now share one poison-tolerant test mutex for the full fixture lifetime. This models production's sequential execution and prevents process-heavy fixtures from competing with one another, while retaining the exact timeout behavior and descendant-cleanup assertions. The original opaque `is_ok()` assertion now uses `expect` so any future failure reports the `RunFailure` variant.
+- Coverage was audited against every `executable_script`, `RuntimeRunner`, and successful `runtime_probes_with_timeout` test call. Missing/non-executable start-failure tests do not launch processes and do not require the guard.
+- Rejected increasing timeouts, adding sleeps/retries, weakening cleanup assertions, or changing production process management: those would mask the observed harness concurrency rather than isolate the fixtures. Rejected adding a serialization dependency or cross-process lock because the supported `cargo test` gate runs these unit tests in one libtest process and no cross-binary interference was observed.
+
+Verification: focused redirected-descendant test 100/100; complete concurrent unit binary 40/40 after the fix; exact full gate passed (`cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo build --workspace`, and `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`). The change is test-only, so the production-code-conditional `/llm-review` and `/assess-findings` requirement did not apply.
+
 
 ## Resolution
 
