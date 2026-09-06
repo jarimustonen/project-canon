@@ -12,7 +12,7 @@ name = "project-canon"
 path = "src/main.rs"
 
 [dependencies]
-toml = "0.8"
+toml = "1.1"
 serde_json = "1"
 serde_yaml = "0.9"
 libc = "0.2"
