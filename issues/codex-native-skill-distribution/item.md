@@ -3,7 +3,7 @@ created: 2026-09-06
 updated: 2026-09-06
 type: bug
 reporter: jari
-status: fixed
+status: open
 priority: high
 lane: build
 lane_seq: 10
@@ -16,8 +16,6 @@ commits:
   summary: record Codex migration decisions
 - hash: 73f9eba058b078ee1a52dcc1df83c90af70b36a4
   summary: update skill schema snapshot
-closed: 2026-09-06
-closed_by: pi
 ---
 
 # Distribute Codex skills as native skill trees
@@ -78,3 +76,13 @@ Review evidence: four-model, two-cross-round `/llm-review`; `history/assessment-
 ### 2026-09-06T14:07:21Z · @pi
 
 Implemented native Codex Agent Skills trees and conservative managed-prompt migration. Four-model review and assessment completed; all confirmed required findings resolved. Exact Rust green gate and manual default/all/Codex-only installation plus runtime-probe checks passed.
+
+## Reopen Notes — 2026-09-06
+
+_Add rationale for reopening here._
+
+## Comments
+
+### 2026-09-06T14:08:57Z · @pi
+
+Integration gate after landing failed in probes::tests::successful_probe_cleans_up_redirected_descendants: runner.run(&[]) unexpectedly returned an error. Reopened for root-cause correction and repeated full-gate verification; release is blocked until green.
