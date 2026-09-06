@@ -9,9 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
 ### Changed
+
 ### Fixed
 <!-- oss-changelog:unreleased-end -->
+
+## [0.8.2] - 2026-09-06
+
+### Changed
+
+- The canonical CLI canon skill and generated repository skill catalogs now use Taskfleet consistently.
+
+- Converge project-canon generator on Taskfleet identity (`taskfleet-zero-legacy-repository`).
+- Prepare Taskfleet convergence release notes (`taskfleet-convergence-release-notes`).
+
+### Fixed
+
+- Place Taskfleet release note in configured fragment mode (`taskfleet-release-note-fragment-mode`).
 
 ## [0.8.1] - 2026-09-06
 
