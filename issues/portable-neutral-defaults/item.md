@@ -31,7 +31,7 @@ user-specific facts at all; those belong in user configuration.
 gh_account: "<maintainer-account>".to_string(),          // EnvConfig::builtin_defaults
 repo_root:  "<personal-repo-root>".to_string(),
 const DEFAULT_FAMILY_TOOLS: [&str; 7] = [
-    "issuectl", "orchestratectl", "crmctl", "tilictl", "ossctl", "intakectl", "glasspad",
+    "issuectl", "taskfleet", "crmctl", "tilictl", "ossctl", "intakectl", "glasspad",
 ];
 ```
 

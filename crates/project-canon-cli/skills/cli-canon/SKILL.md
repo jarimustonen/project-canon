@@ -1,6 +1,6 @@
 ---
 name: cli-canon
-description: Apply the AI-first CLI canon (AGENTS-AI-FIRST-CLI.md, §1–§24) to a family CLI — REVIEW an existing CLI against the canon and emit a conformance matrix + prioritized, per-tool recommendation findings, or GENERATE canon-conformant surface scaffolding/guidance inside an existing repo. Reads the canon fresh (it grows §19+). Use for "review/audit tool X against AGENTS-AI-FIRST-CLI", "check shipshape/issuectl/orchestratectl against the CLI canon", "which canon sections is this CLI missing", "scaffold the CLI surface for a new family tool (inside an existing repo)". Review recommends, never fixes; it stages issue commands, it does not auto-file. NOT a generic code review (/llm-review), NOT a SKILL.md review (/llm-skill-review), NOT a domain-lens audit (/review-lens-audit), NOT new-repo bootstrap (/create-project — run it first, then generate the surface).
+description: Apply the AI-first CLI canon (AGENTS-AI-FIRST-CLI.md, §1–§24) to a family CLI — REVIEW an existing CLI against the canon and emit a conformance matrix + prioritized, per-tool recommendation findings, or GENERATE canon-conformant surface scaffolding/guidance inside an existing repo. Reads the canon fresh (it grows §19+). Use for "review/audit tool X against AGENTS-AI-FIRST-CLI", "check shipshape/issuectl/taskfleet against the CLI canon", "which canon sections is this CLI missing", "scaffold the CLI surface for a new family tool (inside an existing repo)". Review recommends, never fixes; it stages issue commands, it does not auto-file. NOT a generic code review (/llm-review), NOT a SKILL.md review (/llm-skill-review), NOT a domain-lens audit (/review-lens-audit), NOT new-repo bootstrap (/create-project — run it first, then generate the surface).
 allowed-tools: Bash, Glob, Grep, Read, Write
 ---
 
@@ -269,7 +269,7 @@ correct. Because such a gap recurs on **every** run, default known-aspirational 
   generic-input probes to read-only verbs. `unknown` beats an unsafe real mutation.
 - **Respect Applies-when** — a conditional section out of scope is `n/a`, not a failure — and
   **`unknown` is never a filed gap** (it is a coverage note).
-- **File tool bugs where they live.** A bug/idea in `issuectl`/`orchestratectl`/etc. found
+- **File tool bugs where they live.** A bug/idea in `issuectl`/`taskfleet`/etc. found
   while running this skill is filed in *that tool's* repo (`type: bug`/`feature`), on `main`,
   scoped with `(cd <repo> && …)`.
 - **Context discipline** — never read a tool's large outputs (or a whole transcript/corpus)

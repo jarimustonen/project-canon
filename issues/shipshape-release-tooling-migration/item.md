@@ -1,12 +1,12 @@
 ---
 created: 2026-08-23
-updated: 2026-08-23
+updated: 2026-09-06
 type: chore
 status: done
 priority: normal
 provenance: other
 provenance_detail: Fleet-wide product rename authorized by maintainer
-source_ref: orchestratectl:01m0qg3nr6vtghqydwdp1tdz01/task:shipshape-migration
+source_ref: taskfleet:01m0qg3nr6vtghqydwdp1tdz01/task:shipshape-migration
 originating_run: 01m0qg3nr6vtghqydwdp1tdz01
 originating_run_kind: spinoff
 commits:
@@ -21,7 +21,7 @@ closed: 2026-08-23
 
 Migrate this repository's active release-tool product references from ossctl to Shipshape, following Shipshape ADR 0005. Update executable calls, `/shipshape-*` skill names, generated ownership markers, release guidance, contract rationale, distribution comments, bundled skill examples, and tests/fixtures where applicable. Preserve historical issue/changelog/TODO evidence and permanent compatibility identifiers such as `OSS-RELEASE.md` and `oss-changelog:*` markers.
 
-Acceptance: semantic grep audit documents retained compatibility/history matches; the repository full green gate passes; changes are committed and merged by orchestratectl run 01m0qg3nr6vtghqydwdp1tdz01.
+Acceptance: semantic grep audit documents retained compatibility/history matches; the repository full green gate passes; changes are committed and merged by taskfleet run 01m0qg3nr6vtghqydwdp1tdz01.
 
 ## Decisions
 
@@ -44,4 +44,4 @@ Post-rebase semantic check found concurrent main had added transitional guidance
 
 ### 2026-08-23T14:39:25Z · @agent
 
-Delivered by orchestratectl run 01m0qg3nr6vtghqydwdp1tdz01 in commit e993c5d. Full repository green gate passed after review fixes: fmt, clippy -D warnings, workspace tests, workspace build, and rustdoc -D warnings. The item remains untriaged and unlaned for the required human lane-or-close disposition.
+Delivered by taskfleet run 01m0qg3nr6vtghqydwdp1tdz01 in commit e993c5d. Full repository green gate passed after review fixes: fmt, clippy -D warnings, workspace tests, workspace build, and rustdoc -D warnings. The item remains untriaged and unlaned for the required human lane-or-close disposition.

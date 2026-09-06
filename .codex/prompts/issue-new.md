@@ -10,10 +10,13 @@ never to this skill.
 
 `issuectl intake file` creates the item directly in the **`untriaged`**
 reception state; the filing agent never names the entry state and cannot spoof
-lifecycle fields. Your job is to capture the report faithfully and hand it to
-that one command.
+lifecycle fields. It is the sole reception filing path — never use the deprecated
+`create --inbox` path. Your job is to capture the report faithfully and hand it
+to that one command.
 
 Arguments: `$ARGUMENTS`
+
+Every `--json` response is the versioned envelope `{ "schema_version": 1, "data": …, "warnings": [] }`; read command fields under `.data`. Errors are `{ "schema_version": 1, "error": {…} }` on stderr.
 
 ## Hard constraints
 
@@ -50,10 +53,10 @@ From `$ARGUMENTS` and the surrounding context, assemble:
   reported it (the human or bot handle). An interactive filer should ask when the
   handle isn't obvious; a deterministic / non-interactive filer may omit it
   rather than block. Do not invent a name.
-- **`--provenance <source>`** *(required)* — where it came from: `telegram`,
+- **`--provenance <source>`** *(required)* — where it came from: `chat`,
   `email`, `slack`,
   `github`, `phone`, … This is a real field, **not** the body source-line
-  (`--source` on plain `new` is unrelated). The repo may constrain the accepted
+  (`--source` on plain `create` is unrelated). The repo may constrain the accepted
   value set; an unknown value is rejected with the list of accepted ones. For an
   open-ended source use `--provenance other --provenance-detail "<free text>"`.
 - **`--source-ref "<external id>"`** — the external message identity, e.g.
@@ -77,7 +80,7 @@ issuectl intake file \
   --title "Login redirect loops on Safari" \
   --body-file report.md \
   --reporter alice \
-  --provenance telegram \
+  --provenance chat \
   --source-ref "chat:123/message:456" \
   --priority high \
   --json
@@ -100,7 +103,7 @@ Output shape (exit 0):
   "already filed" and do **not** re-file. Filing and attaching are two separate,
   non-atomic calls, so on a dedup result do not blindly skip attachments —
   reconcile them (see step 3).
-- Read `.slug` from the JSON for the next step and the return value.
+- Read `.data.slug` from the JSON envelope for the next step and the return value.
 - On error the CLI exits non-zero with `{"error":{"code","message"}}` on stderr
   (empty stdout): empty title/body, unknown provenance, unknown type, or a
   `duplicate-source-ref` conflict. Read stderr and report it; do not retry blind.
@@ -146,7 +149,7 @@ the `deduplicated` flag so the caller can branch.
 
 ## Install or upgrade `issuectl`
 
-This skill was installed for `issuectl 0.9.0` and drives the
+This skill was installed for `issuectl 0.18.3` and drives the
 `issuectl intake` command group (issuectl ≥ 0.6.6). On first use in a session, run
 `issuectl --version`; if `intake` is missing (`issuectl intake --help` errors), the
 binary is too old — tell the user to upgrade (`brew upgrade

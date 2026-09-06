@@ -33,7 +33,7 @@ one this verb installs; `cli-canon` continues to ship as-is.
 
 ## Fork 2 — which command installs it? → **`project-canon skill install`** (the §15 meta-verb).
 
-Surface (mirrors §15/§16 and the family `issuectl`/`orchestratectl` ergonomics):
+Surface (mirrors §15/§16 and the family `issuectl`/`taskfleet` ergonomics):
 
 - `project-canon skill list [--json]` — the shipped skills + one-line descriptions.
 - `project-canon skill install [<name>] [--target <dir>] [--agent claude|codex|all] [--force]

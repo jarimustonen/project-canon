@@ -1504,8 +1504,30 @@ mod install {
             let native = Agent::Codex.render(skill, "SKILL.md").unwrap();
             assert!(native.contains("cli_version:"));
             assert!(native.contains("schema_version:"));
-            assert!(native.contains("check shipshape/issuectl/orchestratectl"));
-            assert!(!native.contains("check ossctl/issuectl/orchestratectl"));
+            assert!(native.contains("check shipshape/issuectl/taskfleet"));
+            assert!(!native.contains("check ossctl/issuectl/taskfleet"));
+        }
+
+        #[test]
+        fn shipped_skill_sources_exclude_retired_taskfleet_identities() {
+            let retired_product = concat!("orchestrate", "ctl");
+            let retired_env_prefix = concat!("O", "CTL_").to_ascii_lowercase();
+            let assert_canonical = |source: &str, label: &str| {
+                let source = source.to_ascii_lowercase();
+                assert!(
+                    !source.contains(retired_product),
+                    "{label} contains the retired Taskfleet product identity"
+                );
+                assert!(
+                    !source.contains(&retired_env_prefix),
+                    "{label} contains the retired Taskfleet environment prefix"
+                );
+            };
+
+            assert_canonical(CANON, "AI-first CLI canon");
+            for resource in CLI_CANON_RESOURCES {
+                assert_canonical(resource.content, resource.path);
+            }
         }
 
         #[test]

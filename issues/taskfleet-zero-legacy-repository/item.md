@@ -2,7 +2,7 @@
 created: 2026-09-06
 updated: 2026-09-06
 type: task
-status: open
+status: in-progress
 priority: high
 related: ['@taskfleet-project-canon-reference-convergence']
 ---
@@ -18,7 +18,13 @@ Review every tracked source, generator template, emitted skill, workflow, config
 Do not release, deploy, install globally, mutate user state, perform physical checkout/worktree renames, or edit other repositories from the worker.
 
 ## Acceptance Criteria
-- [ ] Tracked path/content scans contain zero retired orchestration identities.
-- [ ] Canon source and all generated copies use canonical Taskfleet wording and are hash/snapshot coherent.
-- [ ] Fresh disposable generation/install output remains canonical.
-- [ ] Full repository gate passes and the change is ready for normal project-canon release.
+- [x] Tracked path/content scans contain zero retired orchestration identities.
+- [x] Canon source and all generated copies use canonical Taskfleet wording and are hash/snapshot coherent.
+- [x] Fresh disposable generation/install output remains canonical.
+- [x] Full repository gate passes and the change is ready for normal project-canon release.
+
+## Decisions
+
+### 2026-09-06T17:10:49Z · @agent
+
+Implemented repository-wide identity convergence rather than limiting the change to active prose: maintained historical issue text and protocol namespace labels now use canonical Taskfleet wording while immutable run IDs remain intact. Updated the packaged cli-canon source before validating generated output, and added a regression test over every shipped canon/skill source. Refreshed all Claude, pi, and Codex issuectl-owned repository skills through issuectl 0.18.3; the newly supported pi copies are tracked so all emitted layouts stay coherent. Rejected preserving legacy compatibility spellings in maintained fixtures because this issue requires a literal zero scan, and rejected global installation, release, checkout renaming, and external-repository edits per the worker boundary.

@@ -26,7 +26,7 @@ Start only after issuectl's canonical Taskfleet issue-intake template is release
 
 - Refresh generated issue-intake Claude/Codex copies through the released issuectl supported path.
 - Update project-canon's own canonical CLI-canon skill source, tests, examples, and current tool-bug routing to public-neutral Taskfleet coordinates.
-- Preserve explicitly historical bug references, stable `OCTL_*`, telemetry contract id, immutable evidence/history, and compatibility fixtures.
+- Keep historical evidence, immutable run IDs, telemetry meaning, and compatibility-fixture intent while expressing every maintained reference with canonical Taskfleet identities.
 - Run template/snapshot/integrity tests and the full repository gate. Follow project-canon's normal release/convergence policy if its distributed catalog changes.
 
 ## Acceptance Criteria

@@ -52,7 +52,7 @@ release existed for ~18 minutes of the 20-minute polling window and was never se
 **This repo is very likely the reason the bug is visible.** The suspected cause is a
 package-vs-project naming mismatch in the release lookup, and this is the one fleet repo
 that has one: the binary package is `project-canon-cli` while the project, the tag, and the
-tap are all `project-canon`. issuectl, glasspad, and orchestratectl all have a binary
+tap are all `project-canon`. issuectl, glasspad, and taskfleet all have a binary
 package name equal to the project name, and none of them shows the fault.
 
 So: fix the contract by all means, but **expect a false-red on the gh-releases target until
@@ -80,7 +80,7 @@ distribution:
 
 **One thing to determine first, which I could not settle from the repo:** whether this
 repo's crates.io publish is local or CI-performed. It has a `publish-crates.yml`, but
-unlike orchestratectl its contract does not state which is authoritative. If CI publishes,
+unlike taskfleet its contract does not state which is authoritative. If CI publishes,
 use `adapter: cargo-publish-ci` on both crates; if the releaser publishes locally, keep
 `cargo-publish`. Do not guess — a wrong answer either double-publishes or pushes a tag and
 waits 20 minutes for a publish nobody performs.
@@ -133,7 +133,7 @@ Fleet context and the full per-repo audit:
 
 ## Target state: the fleet ships uniformly
 
-All four public fleet repos (`issuectl`, `glasspad`, `orchestratectl`, `project-canon`)
+All four public fleet repos (`issuectl`, `glasspad`, `taskfleet`, `project-canon`)
 should end up with the same declared shape, since all four already carry
 `publish-jobs = ["homebrew"]` and their own `publish-crates.yml`:
 

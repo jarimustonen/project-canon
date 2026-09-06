@@ -3,18 +3,22 @@
 
 The standard intake flow (`docs/design/intake-flow.md`) files reports into the
 tracker in the **`untriaged`** reception state (via `/issue-new` / `issuectl
-intake file`). This skill is the next step: **pull the untriaged queue in,
-understand the unclear items, and present them so the user can decide.** You fix
+intake file`). The deprecated `issues/inbox/` path is not a second queue;
+`issuectl doctor --fix` migrates any stranded drafts. This skill is the next
+step: **pull the untriaged queue in, understand the unclear items, and present
+them so the user can decide.** You fix
 nothing and file nothing; you *recommend* a disposition but neither decide nor
 apply it — that is the user's call.
 
 This **replaces `/triage-bugs`** (same job, now against the first-class intake
-state model instead of `via:telegram` labels) and **drives
+state model instead of `via:<channel>` labels) and **drives
 `/worktree-bug-analysis`** as its analysis engine — it does not reimplement
-analysis. It assumes the `issuectl` + `/worktree-*` toolchain and sits on top of
-them.
+analysis. It assumes `issuectl` plus Taskfleet's `/worktree-*` toolchain and sits
+on top of them.
 
 Arguments: `$ARGUMENTS`
+
+Every `--json` response is the versioned envelope `{ "schema_version": 1, "data": …, "warnings": [] }`; read command fields under `.data`. Errors are `{ "schema_version": 1, "error": {…} }` on stderr.
 
 ## What owns what (convention)
 
@@ -59,7 +63,7 @@ step — **presentation** — and moves **no** status:
 | `--no-pull` | Skip the `git pull` in Step 0. Use when the caller (e.g. `/stint`) already pulled this session. |
 | `--state deferred\|needs-info` | Process a non-default intake state instead of the default `untriaged` queue (e.g. resurface parked items). |
 | `--type <t>` | Restrict the queue to one type (`bug`, `feature`, …). |
-| `--provenance <p>` | Restrict the queue to one provenance (`telegram`, `email`, …). |
+| `--provenance <p>` | Restrict the queue to one provenance (`chat`, `email`, …). |
 
 No free-text task, no target slug — this operates on the current repo's queue.
 
@@ -77,7 +81,7 @@ or merge.
 issuectl intake queue --json            # default: untriaged, oldest first
 issuectl intake queue --json --needs-analysis        # only items lacking ## Triage analysis
 issuectl intake queue --json --state deferred        # a non-default view
-issuectl intake queue --json --type bug --provenance telegram
+issuectl intake queue --json --type bug --provenance chat
 ```
 
 Output shape:
@@ -86,13 +90,13 @@ Output shape:
 { "state": "untriaged",
   "items": [
     { "slug": "…", "type": "bug", "status": "untriaged", "priority": "high",
-      "created": "2026-08-05", "provenance": "telegram", "reporter": "alice",
+      "created": "2026-08-05", "provenance": "chat", "reporter": "alice",
       "title": "…", "needs_analysis": true, "version": "sha256:…" } ] }
 ```
 
 The queue is a stable projection (oldest `created` first). The default view is
 the **actionable `untriaged` set** — both bugs and feature requests, every
-provenance (not just `via:telegram` like the old `/triage-bugs`). `deferred` and
+provenance (not just `via:<channel>` like the old `/triage-bugs`). `deferred` and
 `needs-info` are excluded from the default view; pass `--state` to see them.
 
 If `items` is empty: report "Ei uusia intake-kohteita" (nothing in the queue)
@@ -239,9 +243,9 @@ briefing and decides in chat.
 
 ## Install or upgrade `issuectl`
 
-This skill was installed for `issuectl 0.9.0` and drives the
+This skill was installed for `issuectl 0.18.3` and drives the
 `issuectl intake` command group (issuectl ≥ 0.6.6). On first use in a session, run
 `issuectl --version`; if `intake` is missing (`issuectl intake --help` errors), the
 binary is too old — tell the user to upgrade and stop. To refresh this skill after
 an `issuectl` upgrade, re-run `issuectl skill install --force`.
-`/worktree-bug-analysis` additionally needs `orchestratectl`.
+`/worktree-bug-analysis` is provided by `taskfleet`, which must also be installed.

@@ -20,7 +20,7 @@ closed: 2026-08-14
 
 Turn the AI-first CLI canon (`AGENTS-AI-FIRST-CLI.md`, §1–§22) into a **skill that
 `project-canon` installs** into consuming repos, mirroring how `issuectl init` installs the
-`/issue` skill and `orchestratectl` installs its worktree skills. Today the canon is a
+`/issue` skill and `taskfleet` installs its worktree skills. Today the canon is a
 markdown doc that other repos are expected to **copy** ("homebase copies FROM here"); the
 adoption/distribution mechanism should instead be a `project-canon`-managed skill install, so
 consuming repos get the canon as an installed, versioned skill rather than a hand-copied file
@@ -29,7 +29,7 @@ that drifts.
 ## Why
 
 Owner call (2026-08-14). A copied `.md` drifts and has no install/upgrade story; the family's
-other tools (`issuectl`, `orchestratectl`) already distribute their canon/help **as installed
+other tools (`issuectl`, `taskfleet`) already distribute their canon/help **as installed
 skills**. Making the canon an installable skill gives it the same versioned install/upgrade
 path and removes the "copy the file" step from every adopting repo.
 
