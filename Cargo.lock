@@ -53,7 +53,7 @@ dependencies = [
 
 [[package]]
 name = "project-canon-cli"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "libc",
  "project-canon-core",
@@ -64,7 +64,7 @@ dependencies = [
 
 [[package]]
 name = "project-canon-core"
-version = "0.8.0"
+version = "0.8.1"
 
 [[package]]
 name = "quote"

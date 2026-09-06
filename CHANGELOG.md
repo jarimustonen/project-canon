@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 <!-- oss-changelog:unreleased-end -->
 
+## [0.8.1] - 2026-09-06
+
+### Fixed
+
+- Codex companion skills now install as complete native Agent Skills trees under
+  `.codex/skills/`, rather than flattened custom prompts. Canon §15 and its conformance probes
+  require the same native distribution from other CLIs.
+- Codex installation safely retires only Project Canon-managed legacy prompt files and preserves
+  foreign, malformed, symlinked, or newer artifacts.
+- Runtime-process tests are isolated from one another so their bounded capture deadlines remain
+  deterministic under concurrent test execution.
+
 ## [0.8.0] - 2026-09-03
 
 ### Added
