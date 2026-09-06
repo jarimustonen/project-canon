@@ -1970,6 +1970,21 @@ mod tests {
         outcome.expect("no I/O fault on a tmp repo").passed
     }
 
+    #[cfg(unix)]
+    fn runtime_process_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        use std::sync::{Mutex, OnceLock};
+
+        // These tests intentionally create, time out, and kill process groups. Running several
+        // at once can exhaust their short wall-clock deadlines before capture threads drain,
+        // even though production runs probes sequentially. Keep the process fixtures isolated
+        // without relaxing the deadlines that exercise production timeout behavior.
+        static GUARD: OnceLock<Mutex<()>> = OnceLock::new();
+        GUARD
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[test]
     fn doc_pattern_probe_distinguishes_missing_files() {
         let repo = TmpRepo::new("doc");
@@ -2492,6 +2507,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn every_runtime_section_rejects_an_absent_or_unstructured_surface() {
+        let _guard = runtime_process_test_guard();
         let target = executable_script("runtime-gaps", "printf '{}\\n'");
         let runner = RuntimeRunner {
             binary: target.path.join("probe-target"),
@@ -2540,6 +2556,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_hanging_runtime_binary_is_killed_at_the_timeout() {
+        let _guard = runtime_process_test_guard();
         let target = executable_script("runtime-timeout", "while :; do :; done");
         let started = Instant::now();
         let outcomes = runtime_probes_with_timeout(
@@ -2555,6 +2572,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn descendants_holding_capture_pipes_cannot_bypass_the_timeout() {
+        let _guard = runtime_process_test_guard();
         let state = TmpRepo::new("runtime-descendant-state");
         let pid_file = state.path.join("descendant.pid");
         let target = executable_script(
@@ -2588,6 +2606,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn successful_probe_cleans_up_redirected_descendants() {
+        let _guard = runtime_process_test_guard();
         let state = TmpRepo::new("runtime-redirected-state");
         let pid_file = state.path.join("descendant.pid");
         let target = executable_script(
@@ -2602,7 +2621,9 @@ mod tests {
             timeout: Duration::from_secs(2),
             current_dir: target.path.clone(),
         };
-        assert!(runner.run(&[]).is_ok());
+        runner
+            .run(&[])
+            .expect("redirected descendant probe succeeds");
         let pid: i32 = std::fs::read_to_string(pid_file)
             .unwrap()
             .trim()
@@ -2622,6 +2643,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_section_local_crash_does_not_suppress_later_probes() {
+        let _guard = runtime_process_test_guard();
         let body = r#"
 if [ "$1" = "--help" ]; then
   printf '%s\n' '{"schema_version":1,"exit_codes":[{"code":"0"},{"code":"1"},{"code":"2"}]}'
@@ -2743,6 +2765,7 @@ printf '{}\n'
     #[cfg(unix)]
     #[test]
     fn runtime_skill_probe_distinguishes_claude_only_from_all_three() {
+        let _guard = runtime_process_test_guard();
         let claude_only = executable_script(
             "runtime-skill-claude-only",
             r#"
@@ -2789,6 +2812,7 @@ exit 1
     #[cfg(unix)]
     #[test]
     fn runtime_invocation_passes_literal_arguments_without_a_shell() {
+        let _guard = runtime_process_test_guard();
         let target = executable_script("runtime-argv", "printf '%s\\n' \"$1\"");
         let runner = RuntimeRunner {
             binary: target.path.join("probe-target"),
@@ -2805,6 +2829,7 @@ exit 1
     #[cfg(unix)]
     #[test]
     fn runtime_suite_selects_only_read_only_verbs() {
+        let _guard = runtime_process_test_guard();
         let target = TmpRepo::new("runtime-readonly");
         let log = target.path.join("argv.log");
         let body = format!("printf '%s\\n' \"$*\" >> {:?}\nprintf '{{}}\\n'", log);
