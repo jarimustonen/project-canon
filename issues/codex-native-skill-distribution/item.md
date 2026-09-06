@@ -3,7 +3,7 @@ created: 2026-09-06
 updated: 2026-09-06
 type: bug
 reporter: jari
-status: in-progress
+status: fixed
 priority: high
 lane: build
 lane_seq: 10
@@ -12,6 +12,12 @@ commits:
   summary: distribute native Codex skill trees
 - hash: 63a16636ab47da7274546f014960c9505afda7e7
   summary: address review findings and harden migration
+- hash: 8814fef
+  summary: record Codex migration decisions
+- hash: 73f9eba058b078ee1a52dcc1df83c90af70b36a4
+  summary: update skill schema snapshot
+closed: 2026-09-06
+closed_by: pi
 ---
 
 # Distribute Codex skills as native skill trees
@@ -30,14 +36,14 @@ The incorrect design was inherited from an older custom-prompt convention. Compa
 
 ## Acceptance Criteria
 
-- [ ] Canon §15 identifies Codex's native destination as `.codex/skills/<name>/...` and requires an Agent Skills tree with `SKILL.md` plus resources.
-- [ ] `project-canon skill list --json` reports the native Codex layout and `agent-skill-tree` form.
-- [ ] Default/explicit `all` and `--agent codex` install complete native trees without flattening resources.
-- [ ] `skill print` exposes Codex resources consistently with the native tree.
-- [ ] Managed legacy `.codex/prompts/<name>.md` artifacts from earlier Project Canon versions are removed safely during installation; foreign files are never removed.
-- [ ] Runtime/static conformance probes reject custom-prompt-only Codex distribution and require native skill-tree support.
-- [ ] Tests, bundled guidance, and public documentation are updated from their canonical sources.
-- [ ] Claude and pi behavior, `--target`, no-clobber defaults, `--force`, dry-run, and non-interactive safety remain unchanged.
+- [x] Canon §15 identifies Codex's native destination as `.codex/skills/<name>/...` and requires an Agent Skills tree with `SKILL.md` plus resources.
+- [x] `project-canon skill list --json` reports the native Codex layout and `agent-skill-tree` form.
+- [x] Default/explicit `all` and `--agent codex` install complete native trees without flattening resources.
+- [x] `skill print` exposes Codex resources consistently with the native tree.
+- [x] Managed legacy `.codex/prompts/<name>.md` artifacts from earlier Project Canon versions are removed safely during installation; foreign files are never removed.
+- [x] Runtime/static conformance probes reject custom-prompt-only Codex distribution and require native skill-tree support.
+- [x] Tests, bundled guidance, and public documentation are updated from their canonical sources.
+- [x] Claude and pi behavior, `--target`, no-clobber defaults, `--force`, dry-run, and non-interactive safety remain unchanged.
 
 ## Quick Test
 
@@ -66,3 +72,9 @@ Rejected alternatives:
 - Rejected changing Project Canon's repo-specific `issues/AGENTS.md` pointer ahead of issuectl's own release: Canon guidance now rejects prompt-only distribution, but operational documentation must still identify the artifact the currently released producer installs.
 
 Review evidence: four-model, two-cross-round `/llm-review`; `history/assessment-codex-native-skill-distribution.{json,md}` assessed 13 findings. Seven required fixes were applied; six incorrect, disproportionate, or latent findings were dropped, with no follow-up issue meeting the filing bar.
+
+## Resolution
+
+### 2026-09-06T14:07:21Z · @pi
+
+Implemented native Codex Agent Skills trees and conservative managed-prompt migration. Four-model review and assessment completed; all confirmed required findings resolved. Exact Rust green gate and manual default/all/Codex-only installation plus runtime-probe checks passed.
