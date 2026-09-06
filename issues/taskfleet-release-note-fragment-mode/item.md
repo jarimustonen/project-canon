@@ -2,9 +2,13 @@
 created: 2026-09-06
 updated: 2026-09-06
 type: bug
-status: open
+status: fixed
 priority: high
 related: ['@taskfleet-convergence-release-notes']
+commits:
+- hash: 858941e131eebfccc525e2cdec959798f1614afd
+  summary: 'fix(changelog): honor fragment-mode release notes'
+closed: 2026-09-06
 ---
 
 # Place Taskfleet release note in configured fragment mode
@@ -21,7 +25,19 @@ Do not modify application code, bump, tag, publish, deploy, install, or edit ext
 
 ## Acceptance Criteria
 
-- [ ] The direct per-change bullet is absent from marker-owned `[Unreleased]`.
-- [ ] An equivalent collision-safe Taskfleet convergence fragment exists under the configured directory.
-- [ ] Contract/changelog validation and a fresh patch plan pass.
-- [ ] Zero-reference scan remains clean.
+- [x] The direct per-change bullet is absent from marker-owned `[Unreleased]`.
+- [x] An equivalent collision-safe Taskfleet convergence fragment exists under the configured directory.
+- [x] Contract/changelog validation and a fresh patch plan pass.
+- [x] Zero-reference scan remains clean.
+
+## Decisions
+
+### 2026-09-06T17:22:28Z · @agent
+
+Moved the explicit wording into the contract-configured fragment directory with an issue-derived category filename, leaving the marker-bounded Unreleased skeleton empty. Rejected direct CHANGELOG editing because fragment mode reserves per-change content for collision-safe fragments; rejected generic or timestamp-only naming because the issue slug and category are clearer and remain collision-safe.
+
+## Resolution
+
+### 2026-09-06T17:22:35Z · @issuectl
+
+Moved the explicit Taskfleet convergence note from the marker-owned Unreleased section into the configured collision-safe fragment, validated the approved fragment-mode contract and zero-reference scan, and sealed patch plan 5d652cf2426c3f52e4d24afb3993b3a39921d7045d3de109adfbdb37ba0240ae without cutting it.
