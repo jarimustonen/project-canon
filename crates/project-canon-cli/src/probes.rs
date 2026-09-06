@@ -793,7 +793,7 @@ fn validate_skill_install_metadata(list: &Value) -> Result<(), String> {
     for (agent, path, form) in [
         ("claude", ".claude/skills/<name>/...", "agent-skill-tree"),
         ("pi", ".pi/agent/skills/<name>/...", "agent-skill-tree"),
-        ("codex", ".codex/prompts/<name>.md", "self-contained-prompt"),
+        ("codex", ".codex/skills/<name>/...", "agent-skill-tree"),
     ] {
         if by_agent.get(agent).copied() != Some((path, form)) {
             return Err(format!(
@@ -2661,7 +2661,7 @@ printf '{}\n'
                 "layouts": [
                     {"agent": "claude", "path": ".claude/skills/<name>/...", "form": "agent-skill-tree"},
                     {"agent": "pi", "path": ".pi/agent/skills/<name>/...", "form": "agent-skill-tree"},
-                    {"agent": "codex", "path": ".codex/prompts/<name>.md", "form": "self-contained-prompt"},
+                    {"agent": "codex", "path": ".codex/skills/<name>/...", "form": "agent-skill-tree"},
                     {"agent": "future-agent", "path": ".future/skills/<name>", "form": "agent-skill-tree"}
                 ]
             }
@@ -2684,8 +2684,8 @@ printf '{}\n'
         cases.push((interactive, "install.interactive"));
         let mut wrong_codex_form = complete_skill_install_metadata();
         wrong_codex_form["install"]["layouts"][2]["form"] =
-            Value::String("agent-skill-tree".to_string());
-        cases.push((wrong_codex_form, "self-contained-prompt"));
+            Value::String("self-contained-prompt".to_string());
+        cases.push((wrong_codex_form, "agent-skill-tree"));
         let mut missing_target = complete_skill_install_metadata();
         missing_target["install"]
             .as_object_mut()
@@ -2724,6 +2724,19 @@ printf '{}\n'
         }
     }
 
+    #[test]
+    fn prompt_only_codex_skill_metadata_is_rejected() {
+        let mut prompt_only = complete_skill_install_metadata();
+        prompt_only["install"]["layouts"][2] = serde_json::json!({
+            "agent": "codex",
+            "path": ".codex/prompts/<name>.md",
+            "form": "self-contained-prompt"
+        });
+        let error = validate_skill_install_metadata(&prompt_only).unwrap_err();
+        assert!(error.contains(".codex/skills/<name>/..."), "{error}");
+        assert!(error.contains("agent-skill-tree"), "{error}");
+    }
+
     #[cfg(unix)]
     #[test]
     fn runtime_skill_probe_distinguishes_claude_only_from_all_three() {
@@ -2750,7 +2763,7 @@ exit 1
             "runtime-skill-all",
             r#"
 if [ "$1 $2" = "skill list" ]; then
-  printf '%s\n' '{"schema_version":1,"supported_agents":["claude","pi","codex","future-agent"],"install":{"selection_flag":"--agent","default":"all","accepted_values":["claude","pi","codex","all","future-agent"],"target_flag":"--target","dry_run_flag":"--dry-run","force_flag":"--force","interactive":false,"no_clobber_default":true,"overwrite_requires_force":true,"layouts":[{"agent":"claude","path":".claude/skills/<name>/...","form":"agent-skill-tree"},{"agent":"pi","path":".pi/agent/skills/<name>/...","form":"agent-skill-tree"},{"agent":"codex","path":".codex/prompts/<name>.md","form":"self-contained-prompt"},{"agent":"future-agent","path":".future/skills/<name>/...","form":"agent-skill-tree"}]},"skills":[{"name":"fixture-skill","cli_version":"1.0.0","skill_schema_version":1}]}'
+  printf '%s\n' '{"schema_version":1,"supported_agents":["claude","pi","codex","future-agent"],"install":{"selection_flag":"--agent","default":"all","accepted_values":["claude","pi","codex","all","future-agent"],"target_flag":"--target","dry_run_flag":"--dry-run","force_flag":"--force","interactive":false,"no_clobber_default":true,"overwrite_requires_force":true,"layouts":[{"agent":"claude","path":".claude/skills/<name>/...","form":"agent-skill-tree"},{"agent":"pi","path":".pi/agent/skills/<name>/...","form":"agent-skill-tree"},{"agent":"codex","path":".codex/skills/<name>/...","form":"agent-skill-tree"},{"agent":"future-agent","path":".future/skills/<name>/...","form":"agent-skill-tree"}]},"skills":[{"name":"fixture-skill","cli_version":"1.0.0","skill_schema_version":1}]}'
   exit 0
 fi
 exit 1

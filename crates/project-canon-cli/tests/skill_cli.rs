@@ -31,19 +31,20 @@ impl Tmp {
     fn claude_skill(&self) -> PathBuf {
         self.path.join(".claude/skills/ai-first-cli-canon/SKILL.md")
     }
-    fn codex_prompt(&self) -> PathBuf {
-        self.path.join(".codex/prompts/ai-first-cli-canon.md")
+    fn codex_skill(&self) -> PathBuf {
+        self.path.join(".codex/skills/ai-first-cli-canon/SKILL.md")
+    }
+    fn legacy_codex_prompt(&self, name: &str) -> PathBuf {
+        self.path.join(".codex/prompts").join(format!("{name}.md"))
     }
     fn skill_resource(&self, agent: &str, name: &str, resource: &str) -> PathBuf {
         let root = match agent {
             "claude" => ".claude/skills",
             "pi" => ".pi/agent/skills",
+            "codex" => ".codex/skills",
             other => panic!("unsupported native skill agent {other}"),
         };
         self.path.join(root).join(name).join(resource)
-    }
-    fn named_codex_prompt(&self, name: &str) -> PathBuf {
-        self.path.join(".codex/prompts").join(format!("{name}.md"))
     }
     fn snapshot(&self) -> Vec<(String, Vec<u8>)> {
         fn walk(root: &std::path::Path, dir: &std::path::Path, files: &mut Vec<(String, Vec<u8>)>) {
@@ -106,6 +107,19 @@ fn master_canon() -> String {
     project_canon_core::CANON.to_string()
 }
 
+fn write_managed_legacy_prompt(t: &Tmp, name: &str) -> PathBuf {
+    let path = t.legacy_codex_prompt(name);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &path,
+        format!(
+            "<!-- Installed by `project-canon skill install` — {name} cli_version=0.8.0 schema_version=1. -->\n\nLEGACY"
+        ),
+    )
+    .unwrap();
+    path
+}
+
 #[test]
 fn install_writes_all_agent_forms() {
     let t = Tmp::new("both");
@@ -122,14 +136,15 @@ fn install_writes_all_agent_forms() {
             .is_file(),
         "pi SKILL.md missing"
     );
-    assert!(t.codex_prompt().is_file(), "codex prompt missing");
+    assert!(t.codex_skill().is_file(), "codex SKILL.md missing");
 
     let claude = std::fs::read_to_string(t.claude_skill()).unwrap();
-    let codex = std::fs::read_to_string(t.codex_prompt()).unwrap();
-    // Claude form declares §17 frontmatter; codex form does not.
+    let codex = std::fs::read_to_string(t.codex_skill()).unwrap();
+    // Every native form declares §17 frontmatter.
     assert!(claude.starts_with("---\nname: ai-first-cli-canon"));
     assert!(claude.contains("cli_version:"));
-    assert!(!codex.starts_with("---"));
+    assert!(codex.starts_with("---\nname: ai-first-cli-canon"));
+    assert!(codex.contains("cli_version:"));
 }
 
 #[test]
@@ -162,14 +177,14 @@ fn installed_skill_embeds_the_master_canon_verbatim() {
     assert_eq!(code(&run(&["install", "--target", t.str()])), 0);
     let master = master_canon();
     let claude = std::fs::read_to_string(t.claude_skill()).unwrap();
-    let codex = std::fs::read_to_string(t.codex_prompt()).unwrap();
+    let codex = std::fs::read_to_string(t.codex_skill()).unwrap();
     assert!(
         claude.contains(&master),
         "claude skill must embed the master canon verbatim"
     );
     assert!(
         codex.contains(&master),
-        "codex prompt must embed the master canon verbatim"
+        "codex skill must embed the master canon verbatim"
     );
 }
 
@@ -185,6 +200,141 @@ fn dry_run_prints_but_writes_nothing() {
     assert!(!t.path.join(".claude").exists());
     assert!(!t.path.join(".codex").exists());
     assert!(!t.path.join(".pi").exists());
+}
+
+#[test]
+fn codex_install_removes_managed_legacy_prompts_after_writing_native_trees() {
+    let t = Tmp::new("legacy-managed");
+    let canon_legacy = write_managed_legacy_prompt(&t, "ai-first-cli-canon");
+    let cli_legacy = write_managed_legacy_prompt(&t, "cli-canon");
+
+    let out = run(&["install", "--target", t.str(), "--agent", "codex", "--json"]);
+    assert_eq!(code(&out), 0, "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(!canon_legacy.exists());
+    assert!(!cli_legacy.exists());
+    assert!(t.codex_skill().is_file());
+    assert!(t
+        .skill_resource("codex", "cli-canon", "templates/review-report.md")
+        .is_file());
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(stdout.contains("\"action\":\"remove-managed-legacy\""));
+    assert!(stdout.contains("\"managed_legacy_removed\":2"));
+}
+
+#[test]
+fn legacy_migration_preserves_foreign_and_newer_files() {
+    let t = Tmp::new("legacy-foreign");
+    let foreign = t.legacy_codex_prompt("ai-first-cli-canon");
+    std::fs::create_dir_all(foreign.parent().unwrap()).unwrap();
+    std::fs::write(&foreign, "FOREIGN PROMPT").unwrap();
+    let newer = t.legacy_codex_prompt("cli-canon");
+    std::fs::write(
+        &newer,
+        "<!-- Installed by `project-canon skill install` — cli-canon cli_version=99.0.0 schema_version=1. -->\n\nFUTURE",
+    )
+    .unwrap();
+
+    let out = run(&["install", "--target", t.str(), "--agent", "codex", "--json"]);
+    assert_eq!(code(&out), 0, "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(std::fs::read_to_string(foreign).unwrap(), "FOREIGN PROMPT");
+    assert!(std::fs::read_to_string(newer).unwrap().contains("FUTURE"));
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(stdout.contains("\"legacy_preserved\":2"));
+}
+
+#[test]
+fn legacy_migration_dry_run_reports_removal_without_writing() {
+    let t = Tmp::new("legacy-dry-run");
+    let legacy = write_managed_legacy_prompt(&t, "ai-first-cli-canon");
+    let before = t.snapshot();
+    let out = run(&[
+        "install",
+        "ai-first-cli-canon",
+        "--target",
+        t.str(),
+        "--agent",
+        "codex",
+        "--dry-run",
+        "--json",
+    ]);
+    assert_eq!(code(&out), 0);
+    assert_eq!(t.snapshot(), before);
+    assert!(legacy.is_file());
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(stdout.contains("\"action\":\"remove-managed-legacy\""));
+    assert!(stdout.contains("\"managed_legacy_would_remove\":1"));
+    assert!(stdout.contains("\"managed_legacy_removed\":0"));
+    assert!(stdout.contains("\"would_write\":1"));
+    assert!(stdout.contains("\"written\":0"));
+}
+
+#[test]
+fn legacy_migration_scope_follows_agent_and_skill_selection() {
+    let t = Tmp::new("legacy-scope");
+    let canon_legacy = write_managed_legacy_prompt(&t, "ai-first-cli-canon");
+    let cli_legacy = write_managed_legacy_prompt(&t, "cli-canon");
+
+    assert_eq!(
+        code(&run(&[
+            "install",
+            "ai-first-cli-canon",
+            "--target",
+            t.str(),
+            "--agent",
+            "claude",
+        ])),
+        0
+    );
+    assert!(
+        canon_legacy.is_file(),
+        "non-Codex install must not migrate Codex state"
+    );
+
+    assert_eq!(
+        code(&run(&[
+            "install",
+            "ai-first-cli-canon",
+            "--target",
+            t.str(),
+            "--agent",
+            "codex",
+        ])),
+        0
+    );
+    assert!(
+        !canon_legacy.exists(),
+        "selected skill's managed prompt should migrate"
+    );
+    assert!(
+        cli_legacy.is_file(),
+        "unselected skill's prompt must be untouched"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn legacy_migration_never_removes_a_symlink() {
+    let t = Tmp::new("legacy-symlink");
+    let sentinel = t.path.join("legacy-sentinel.md");
+    std::fs::write(&sentinel, "KEEP").unwrap();
+    let legacy = t.legacy_codex_prompt("ai-first-cli-canon");
+    std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&sentinel, &legacy).unwrap();
+
+    let out = run(&[
+        "install",
+        "ai-first-cli-canon",
+        "--target",
+        t.str(),
+        "--agent",
+        "codex",
+    ]);
+    assert_eq!(code(&out), 0, "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(std::fs::symlink_metadata(&legacy)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    assert_eq!(std::fs::read_to_string(sentinel).unwrap(), "KEEP");
 }
 
 #[test]
@@ -231,7 +381,7 @@ fn agent_flag_selects_a_single_form() {
         0
     );
     assert!(t.claude_skill().is_file());
-    assert!(!t.codex_prompt().exists(), "codex form must not be written");
+    assert!(!t.codex_skill().exists(), "codex form must not be written");
 }
 
 #[test]
@@ -255,7 +405,7 @@ fn each_single_runtime_selection_stays_within_its_target_layout() {
         let expected = match agent {
             "claude" => ".claude/skills/ai-first-cli-canon/SKILL.md",
             "pi" => ".pi/agent/skills/ai-first-cli-canon/SKILL.md",
-            "codex" => ".codex/prompts/ai-first-cli-canon.md",
+            "codex" => ".codex/skills/ai-first-cli-canon/SKILL.md",
             _ => unreachable!(),
         };
         let files = t.snapshot();
@@ -302,7 +452,7 @@ fn foreign_file_is_refused_without_force_then_overwritten_with_force() {
 fn a_managed_stale_file_upgrades_without_force() {
     // A file carrying our provenance marker but a different body is a managed upgrade — no --force.
     let t = Tmp::new("upgrade");
-    let p = t.codex_prompt();
+    let p = t.codex_skill();
     std::fs::create_dir_all(p.parent().unwrap()).unwrap();
     std::fs::write(
         &p,
@@ -324,7 +474,7 @@ fn a_managed_stale_file_upgrades_without_force() {
 #[test]
 fn newer_on_disk_is_refused_without_force() {
     let t = Tmp::new("newer");
-    let p = t.codex_prompt();
+    let p = t.codex_skill();
     std::fs::create_dir_all(p.parent().unwrap()).unwrap();
     std::fs::write(
         &p,
@@ -380,7 +530,7 @@ fn malformed_env_is_a_usage_error_but_help_still_exits_zero() {
 }
 
 #[test]
-fn cli_canon_installs_complete_native_trees_and_a_self_contained_codex_prompt() {
+fn cli_canon_installs_complete_native_trees_for_every_runtime() {
     let t = Tmp::new("cli-canon-tree");
     let out = run(&["install", "cli-canon", "--target", t.str()]);
     assert_eq!(
@@ -390,7 +540,7 @@ fn cli_canon_installs_complete_native_trees_and_a_self_contained_codex_prompt() 
         String::from_utf8_lossy(&out.stderr)
     );
 
-    for agent in ["claude", "pi"] {
+    for agent in ["claude", "pi", "codex"] {
         for resource in [
             "SKILL.md",
             "templates/conformance-probes.md",
@@ -407,55 +557,46 @@ fn cli_canon_installs_complete_native_trees_and_a_self_contained_codex_prompt() 
         assert!(skill.contains("cli_version:"));
         assert!(skill.contains("schema_version:"));
     }
-
-    let codex = std::fs::read_to_string(t.named_codex_prompt("cli-canon")).unwrap();
-    assert!(!codex.starts_with("---"));
-    for resource in [
-        "SKILL.md",
-        "templates/conformance-probes.md",
-        "templates/generate-plan.md",
-        "templates/review-report.md",
-    ] {
-        assert!(codex.contains(&format!("bundled resource: {resource}")));
-    }
 }
 
 #[test]
 fn cli_canon_print_discovers_and_streams_each_native_resource_exactly() {
     let t = Tmp::new("cli-canon-print");
-    assert_eq!(
-        code(&run(&[
-            "install",
-            "cli-canon",
-            "--target",
-            t.str(),
-            "--agent",
-            "pi",
-        ])),
-        0
-    );
-    for resource in [
-        "SKILL.md",
-        "templates/conformance-probes.md",
-        "templates/generate-plan.md",
-        "templates/review-report.md",
-    ] {
-        let printed = run(&[
-            "print",
-            "cli-canon",
-            "--agent",
-            "pi",
-            "--resource",
-            resource,
-        ]);
-        assert_eq!(code(&printed), 0);
+    for agent in ["pi", "codex"] {
         assert_eq!(
-            printed.stdout,
-            std::fs::read(t.skill_resource("pi", "cli-canon", resource)).unwrap()
+            code(&run(&[
+                "install",
+                "cli-canon",
+                "--target",
+                t.str(),
+                "--agent",
+                agent,
+            ])),
+            0
         );
+        for resource in [
+            "SKILL.md",
+            "templates/conformance-probes.md",
+            "templates/generate-plan.md",
+            "templates/review-report.md",
+        ] {
+            let printed = run(&[
+                "print",
+                "cli-canon",
+                "--agent",
+                agent,
+                "--resource",
+                resource,
+            ]);
+            assert_eq!(code(&printed), 0);
+            assert_eq!(
+                printed.stdout,
+                std::fs::read(t.skill_resource(agent, "cli-canon", resource)).unwrap()
+            );
+        }
     }
 
-    let json = run(&["print", "cli-canon", "--agent", "pi", "--json"]);
+    let json = run(&["print", "cli-canon", "--agent", "codex", "--json"]);
     let stdout = String::from_utf8(json.stdout).unwrap();
     assert!(stdout.contains("\"resource\":\"SKILL.md\""));
     assert!(stdout.contains("templates/conformance-probes.md"));
@@ -510,8 +651,9 @@ fn list_reports_the_shipped_skill() {
     assert!(stdout.contains("\"dry_run_flag\":\"--dry-run\""));
     assert!(stdout.contains("\"force_flag\":\"--force\""));
     assert!(stdout.contains("\"interactive\":false"));
-    assert!(stdout.contains("\"form\":\"agent-skill-tree\""));
-    assert!(stdout.contains("\"form\":\"self-contained-prompt\""));
+    assert_eq!(stdout.matches("\"form\":\"agent-skill-tree\"").count(), 3);
+    assert!(stdout.contains(".codex/skills/<name>/..."));
+    assert!(!stdout.contains("self-contained-prompt"));
     assert!(stdout.contains("templates/conformance-probes.md"));
     assert!(stdout.contains("\"cli_version\""));
 }
@@ -551,13 +693,13 @@ fn show_is_an_alias_for_print() {
 
 #[test]
 fn print_codex_is_byte_identical_to_install() {
-    // §16 for the Codex form too (the render path differs from Claude — no frontmatter).
+    // §16 for the native Codex tree too.
     let t = Tmp::new("print-codex");
     assert_eq!(
         code(&run(&["install", "--target", t.str(), "--agent", "codex"])),
         0
     );
-    let installed = std::fs::read_to_string(t.codex_prompt()).unwrap();
+    let installed = std::fs::read_to_string(t.codex_skill()).unwrap();
     let printed = run(&["print", "ai-first-cli-canon", "--agent", "codex"]);
     assert_eq!(String::from_utf8_lossy(&printed.stdout), installed);
 }
@@ -635,7 +777,7 @@ fn a_symlink_at_the_target_is_refused_and_not_followed() {
     let t = Tmp::new("symlink");
     let sentinel = t.path.join("sentinel.txt");
     std::fs::write(&sentinel, "DO NOT TOUCH").unwrap();
-    let link = t.codex_prompt();
+    let link = t.codex_skill();
     std::fs::create_dir_all(link.parent().unwrap()).unwrap();
     std::os::unix::fs::symlink(&sentinel, &link).unwrap();
 
@@ -723,7 +865,7 @@ fn a_nested_runtime_symlink_is_refused_but_a_symlinked_target_is_allowed() {
     assert_eq!(code(&out), 0, "{}", String::from_utf8_lossy(&out.stderr));
     assert!(external
         .path
-        .join(".codex/prompts/ai-first-cli-canon.md")
+        .join(".codex/skills/ai-first-cli-canon/SKILL.md")
         .is_file());
 }
 
@@ -752,6 +894,6 @@ fn install_never_touches_this_repos_real_dotclaude() {
     );
     assert!(home
         .path
-        .join(".codex/prompts/ai-first-cli-canon.md")
+        .join(".codex/skills/ai-first-cli-canon/SKILL.md")
         .is_file());
 }

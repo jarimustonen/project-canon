@@ -648,19 +648,22 @@ the agent's *operating manual* for the tool — distinct from `--help`
   agent runtimes. The installer **MUST** support all three native destinations:
   Claude at `.claude/skills/<name>/...`, pi at
   `.pi/agent/skills/<name>/...`, and Codex at
-  `.codex/prompts/<name>.md`. A no-runtime-selection/default invocation and an
+  `.codex/skills/<name>/...`. A no-runtime-selection/default invocation and an
   explicit `all` selection **MUST** both install all three. The canonical
   selector is `--agent claude|pi|codex|all`; an explicit single-runtime value
   installs only that runtime. `--target <dir>` overrides the install base without
-  changing the selected layouts. Claude and pi receive native Agent Skills
-  resource trees; Codex receives one self-contained prompt because its native
-  artifact form differs. The capability `path` strings above, including
-  `<name>`/`...`, are the exact machine-readable layout templates. Installation
+  changing the selected layouts. Claude, pi, and Codex all receive native Agent
+  Skills resource trees containing `SKILL.md` plus every bundled support file;
+  flattening a tree into a custom prompt is non-conformant. The capability `path`
+  strings above, including `<name>`/`...`, are the exact machine-readable layout
+  templates. Installation
   remains non-interactive, does not clobber by default, and uses canonical
   `--dry-run` and explicit `--force` flags for the safety rules of §§3 and 11.
   Omitting `<name>` installs every bundled skill.
-- `<tool> skill print <name> --json` (alias: `skill show`) — prints the skill
-  content without installing, so an agent can read it inline if needed
+- `<tool> skill print <name> --json` (alias: `skill show`) — prints `SKILL.md`
+  without installing, so an agent can read it inline if needed. For a multi-file
+  tree, the structured payload lists every resource and a resource selector can
+  print each file byte-identically to installation.
 
 The skills themselves live alongside the tool's source (in-repo) so they
 version with the binary. The CLI is responsible for keeping skill text

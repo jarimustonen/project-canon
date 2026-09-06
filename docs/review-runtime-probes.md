@@ -26,7 +26,8 @@ The probe argument vectors are fixed and read-only. They cover:
 - §10: `version --json`
 - §14: `--help --json`
 - §15: `skill list --json`; its read-only capability metadata must declare Claude, pi, and Codex,
-  canonical per-runtime selection, explicit/default `all`, native layouts, `--target`, and
+  canonical per-runtime selection, explicit/default `all`, native Agent Skills trees (including
+  `.codex/skills/<name>/...`, never prompt-only Codex distribution), `--target`, and
   non-interactive safety flags (the probe never invokes `skill install`)
 - §16: `skill print <listed-name> --json`
 - §17: version metadata, skill-list metadata, and printed skill frontmatter synchronization

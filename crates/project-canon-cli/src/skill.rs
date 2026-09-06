@@ -12,8 +12,7 @@
 //! The catalog keeps two artifacts deliberately distinct: `ai-first-cli-canon` is synthetic
 //! canon *content*, assembled from [`project_canon_core::CANON`], while `cli-canon` is the
 //! hand-authored reviewer/generator *behavior* skill. The latter's complete resource tree is
-//! packaged inside this crate and installed together; Codex receives a self-contained prompt
-//! containing the same resources because its runtime uses prompts rather than skill directories.
+//! packaged inside this crate and installed together for every supported runtime.
 //!
 //! ## Side-effect discipline
 //!
@@ -25,7 +24,9 @@
 //! skill newer than the running binary) aborts the whole run before any write. Each file is then
 //! written **atomically** (temp file + rename over the target — which never follows a final-
 //! component symlink); this is per-file atomic, **not** cross-file transactional, so a mid-run
-//! I/O failure can still leave a subset of the files installed (reported, non-zero exit).
+//! I/O failure can still leave a subset of the files installed (reported, non-zero exit). Once
+//! all native writes succeed, managed legacy Codex prompts are removed; foreign files and
+//! symlinks are preserved.
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -196,8 +197,8 @@ Bundled skills:
     cli-canon            Behavioral reviewer/generator plus its complete templates/ tree.
 
 `print` defaults to SKILL.md. For resource-tree skills, pass --resource <relative-path>;
-`--json` lists every printable resource. The codex layout is one self-contained prompt
-containing all support resources; the claude and pi layouts are native skill directories.
+`--json` lists every printable resource. Claude, pi, and Codex all receive native Agent Skills
+resource trees.
 
 INSTALL FLAGS:
     --target <dir>          Install base (default: $HOME). Pass a repo root to install into
@@ -209,13 +210,13 @@ INSTALL FLAGS:
 
 PRINT FLAGS:
     --agent <claude|pi|codex>   Render the selected runtime form (default: claude).
-    --resource <path>       Native-tree resource to print (default: SKILL.md). Codex has one
-                            self-contained SKILL.md prompt artifact.
+    --resource <path>       Native-tree resource to print (default: SKILL.md).
     --json                  Emit metadata, selected content, and the complete resource list.
 
 SIDE EFFECTS:
-    install writes skill files under <target> and nothing else \u{2014} it never shells out or
-    touches the network. list/print are read-only. --dry-run writes nothing.
+    install writes skill files under <target> and never shells out or touches the network.
+    When Codex is selected, it also removes same-scope managed legacy .codex/prompts files;
+    foreign files and symlinks are preserved. list/print are read-only. --dry-run writes nothing.
 
 EXIT CODES:
     0   success (installed/upgraded/unchanged, dry-run plan, list, or print)
@@ -232,7 +233,7 @@ enum Agent {
     Claude,
     /// The `pi` layout: `<base>/.pi/agent/skills/<name>/<resource>`.
     Pi,
-    /// The `codex` layout: `<base>/.codex/prompts/<name>.md`, one self-contained prompt.
+    /// The `codex` layout: `<base>/.codex/skills/<name>/<resource>`.
     Codex,
 }
 
@@ -249,7 +250,7 @@ impl Agent {
         match self {
             Agent::Claude => ".claude/skills",
             Agent::Pi => ".pi/agent/skills",
-            Agent::Codex => ".codex/prompts",
+            Agent::Codex => ".codex/skills",
         }
     }
 
@@ -257,39 +258,30 @@ impl Agent {
         match self {
             Agent::Claude => ".claude/skills/<name>/...",
             Agent::Pi => ".pi/agent/skills/<name>/...",
-            Agent::Codex => ".codex/prompts/<name>.md",
+            Agent::Codex => ".codex/skills/<name>/...",
         }
     }
 
     fn layout_form(self) -> &'static str {
-        match self {
-            Agent::Claude | Agent::Pi => "agent-skill-tree",
-            Agent::Codex => "self-contained-prompt",
-        }
+        "agent-skill-tree"
     }
 
     fn path(self, base: &Path, name: &str, resource: &str) -> PathBuf {
-        match self {
-            Agent::Claude | Agent::Pi => base.join(self.root()).join(name).join(resource),
-            Agent::Codex => base.join(self.root()).join(format!("{name}.md")),
-        }
+        base.join(self.root()).join(name).join(resource)
     }
 
-    /// Resources materialized by this runtime. Codex has one prompt artifact; native skill
-    /// runtimes preserve the complete relative resource tree.
+    /// Resources materialized by this runtime. Every runtime preserves the complete relative
+    /// resource tree; synthetic canon content consists only of `SKILL.md`.
     fn resources(self, skill: &ShippedSkill) -> Vec<&'static str> {
-        match (self, skill.kind) {
-            (Agent::Codex, _) | (_, SkillKind::SyntheticCanon) => vec!["SKILL.md"],
-            (_, SkillKind::ResourceTree(resources)) => {
+        match skill.kind {
+            SkillKind::SyntheticCanon => vec!["SKILL.md"],
+            SkillKind::ResourceTree(resources) => {
                 resources.iter().map(|resource| resource.path).collect()
             }
         }
     }
 
     fn render(self, skill: &ShippedSkill, resource: &str) -> Option<String> {
-        if self == Agent::Codex {
-            return (resource == "SKILL.md").then(|| render_codex(skill));
-        }
         match skill.kind {
             SkillKind::SyntheticCanon => (resource == "SKILL.md").then(|| {
                 format!(
@@ -330,22 +322,6 @@ fn source_path_for(skill: &ShippedSkill, resource: &str) -> String {
         SkillKind::SyntheticCanon => skill.source_path.to_string(),
         SkillKind::ResourceTree(_) if resource == "SKILL.md" => skill.source_path.to_string(),
         SkillKind::ResourceTree(_) => format!("skills/{}/{resource}", skill.name),
-    }
-}
-
-fn render_codex(skill: &ShippedSkill) -> String {
-    match skill.kind {
-        SkillKind::SyntheticCanon => format!("{}\n\n{CANON}", provenance_line(skill.name)),
-        SkillKind::ResourceTree(resources) => {
-            let mut out = format!("{}\n", provenance_line(skill.name));
-            for resource in resources {
-                out.push_str(&format!(
-                    "\n<!-- bundled resource: {} -->\n\n{}",
-                    resource.path, resource.content
-                ));
-            }
-            out
-        }
     }
 }
 
@@ -594,17 +570,34 @@ mod install {
             );
         }
 
-        // Apply the writes (skipped under --dry-run). Each file is written atomically (temp file +
-        // rename); a mid-run failure leaves the earlier files installed and is reported.
+        // Apply native writes first (skipped under --dry-run). Only after every write succeeds do
+        // we retire managed legacy Codex prompts, so a failed native install never removes the
+        // caller's last usable Project Canon artifact.
         if !parsed.dry_run {
             for r in &report.rows {
-                if let (Some(content), true) = (&r.desired, r.action.writes()) {
+                if let (Some(content), true) = (&r.desired, r.action.writes_file()) {
                     if let Err(source) = write_file_atomic(Path::new(&r.path), content) {
                         return fail(
                             parsed.json,
                             CliError::system(
                                 "io_error",
                                 format!("skill install: writing {}: {source}", r.path),
+                            ),
+                        );
+                    }
+                }
+            }
+            for r in &report.rows {
+                if r.action.removes_file() {
+                    if let Err(source) = remove_managed_legacy(Path::new(&r.path)) {
+                        return fail(
+                            parsed.json,
+                            CliError::system(
+                                "io_error",
+                                format!(
+                                    "skill install: removing managed legacy {}: {source}",
+                                    r.path
+                                ),
                             ),
                         );
                     }
@@ -722,7 +715,8 @@ mod install {
         Ok(())
     }
 
-    /// One planned skill file: its target path, the bytes to write, and the resolved action.
+    /// One planned native skill file or legacy Codex prompt: its target path, desired bytes, and
+    /// resolved action.
     #[derive(Debug)]
     pub(super) struct Row {
         pub name: &'static str,
@@ -743,6 +737,7 @@ mod install {
 
     /// What is currently at a target path — resolved with **no-follow** metadata so a symlink or
     /// other non-regular file is never read through or written through.
+    #[derive(Debug)]
     enum Existing {
         /// Nothing at the path (the install case).
         Absent,
@@ -774,41 +769,77 @@ mod install {
                     let desired = agent
                         .render(skill, resource)
                         .expect("catalog resource must render");
-                    let existing = match std::fs::symlink_metadata(&path) {
-                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Existing::Absent,
-                        Err(source) => {
-                            return Err(Fault {
-                                path: path.display().to_string(),
-                                source,
-                            })
-                        }
-                        Ok(md) if !md.file_type().is_file() => Existing::NonRegular,
-                        Ok(_) => match std::fs::read(&path) {
-                            Ok(bytes) => Existing::Regular(bytes),
-                            // A file that vanished between the stat and the read: treat as absent.
-                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Existing::Absent,
-                            Err(source) => {
-                                return Err(Fault {
-                                    path: path.display().to_string(),
-                                    source,
-                                })
-                            }
-                        },
-                    };
+                    let existing = inspect_path(&path).map_err(|source| Fault {
+                        path: path.display().to_string(),
+                        source,
+                    })?;
                     let (action, note) = decide(&existing, desired.as_bytes(), force);
                     rows.push(Row {
                         name: skill.name,
                         resource,
                         agent,
                         path: path.display().to_string(),
-                        desired: action.writes().then_some(desired),
+                        desired: action.writes_file().then_some(desired),
                         action,
                         note,
                     });
                 }
             }
         }
+
+        // Migration scope follows selection scope: only an invocation selecting Codex considers
+        // legacy prompts, and a named install considers only that skill. Foreign files, symlinks,
+        // and prompts written by a newer binary are reported but never removed.
+        if agents.contains(&Agent::Codex) {
+            for skill in skills {
+                let path = base
+                    .join(".codex/prompts")
+                    .join(format!("{}.md", skill.name));
+                let existing = match validate_install_ancestors(base, &path) {
+                    Ok(()) => inspect_path(&path).map_err(|source| Fault {
+                        path: path.display().to_string(),
+                        source,
+                    })?,
+                    Err(error) if error.kind() == std::io::ErrorKind::InvalidInput => {
+                        Existing::NonRegular
+                    }
+                    Err(source) => {
+                        return Err(Fault {
+                            path: path.display().to_string(),
+                            source,
+                        })
+                    }
+                };
+                let action = legacy_action(&existing);
+                if action != Action::LegacyAbsent {
+                    rows.push(Row {
+                        name: skill.name,
+                        resource: "legacy-prompt",
+                        agent: Agent::Codex,
+                        path: path.display().to_string(),
+                        desired: None,
+                        action,
+                        note: (action == Action::PreserveLegacy).then(|| {
+                            "preserve foreign, non-regular, or newer legacy prompt".to_string()
+                        }),
+                    });
+                }
+            }
+        }
         Ok(rows)
+    }
+
+    fn inspect_path(path: &Path) -> std::io::Result<Existing> {
+        match std::fs::symlink_metadata(path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Existing::Absent),
+            Err(error) => Err(error),
+            Ok(metadata) if !metadata.file_type().is_file() => Ok(Existing::NonRegular),
+            Ok(_) => match std::fs::read(path) {
+                Ok(bytes) => Ok(Existing::Regular(bytes)),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Existing::Absent),
+                Err(error) => Err(error),
+            },
+        }
     }
 
     /// Reject an observed symlink or non-directory in the destination's parent chain. This keeps
@@ -866,6 +897,12 @@ mod install {
         Blocked(BlockReason),
         /// A blocked case the caller passed `--force` for — overwrite.
         Overwrite,
+        /// A positively identified Project Canon legacy Codex prompt from this or an older version.
+        RemoveLegacy,
+        /// A legacy-path artifact that is foreign, non-regular, or newer; never remove it.
+        PreserveLegacy,
+        /// No legacy artifact exists. Used internally and omitted from reports.
+        LegacyAbsent,
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -877,8 +914,14 @@ mod install {
     }
 
     impl Action {
-        pub(super) fn writes(self) -> bool {
+        pub(super) fn writes_file(self) -> bool {
             matches!(self, Action::Install | Action::Upgrade | Action::Overwrite)
+        }
+        pub(super) fn removes_file(self) -> bool {
+            self == Action::RemoveLegacy
+        }
+        pub(super) fn mutates(self) -> bool {
+            self.writes_file() || self.removes_file()
         }
         pub(super) fn is_blocking(self) -> bool {
             matches!(self, Action::Blocked(_))
@@ -902,11 +945,30 @@ mod install {
                 Action::Blocked(BlockReason::Foreign) => "blocked-foreign",
                 Action::Blocked(BlockReason::NewerOnDisk) => "blocked-newer",
                 Action::Overwrite => "overwrite",
+                Action::RemoveLegacy => "remove-managed-legacy",
+                Action::PreserveLegacy => "preserve-legacy",
+                Action::LegacyAbsent => "legacy-absent",
             }
         }
     }
 
-    /// Decide the action for one file from what is currently at the path and the desired bytes.
+    fn legacy_action(existing: &Existing) -> Action {
+        match existing {
+            Existing::Absent => Action::LegacyAbsent,
+            Existing::NonRegular => Action::PreserveLegacy,
+            Existing::Regular(bytes) if is_ours(bytes) => match marker_cli_version(bytes) {
+                Some(version)
+                    if cmp_versions(&version, CLI_VERSION) == std::cmp::Ordering::Greater =>
+                {
+                    Action::PreserveLegacy
+                }
+                _ => Action::RemoveLegacy,
+            },
+            Existing::Regular(_) => Action::PreserveLegacy,
+        }
+    }
+
+    /// Decide the action for one native file from what is currently at the path and desired bytes.
     /// Notes are tense-neutral (they describe the planned action, so they read correctly under
     /// both `--dry-run` and a real run).
     fn decide(existing: &Existing, desired: &[u8], force: bool) -> (Action, Option<String>) {
@@ -965,16 +1027,15 @@ mod install {
         }
     }
 
-    /// True when `cur` is a project-canon-managed skill: the marker appears at the **anchored**
-    /// position — the file start (Codex) or the first body line right after the YAML frontmatter
-    /// (Claude). This deliberately does NOT match a marker floating anywhere in the bytes, so a
-    /// user file that merely quotes the marker is treated as foreign, not silently upgraded.
+    /// True when `cur` is a project-canon-managed artifact: the marker appears at the
+    /// **anchored** position — either the file start (legacy Codex prompt) or the first body line
+    /// after Agent Skills YAML frontmatter. A marker merely quoted elsewhere remains foreign.
     fn is_ours(cur: &[u8]) -> bool {
         let text = String::from_utf8_lossy(cur);
         if text.starts_with(MARKER_PREFIX) {
-            return true; // Codex form.
+            return true; // Legacy Codex prompt form.
         }
-        // Claude form: `---\n<frontmatter>\n---\n\n<marker>…`.
+        // Native form: `---\n<frontmatter>\n---\n\n<marker>…`.
         if let Some(rest) = text.strip_prefix("---\n") {
             if let Some(idx) = rest.find("\n---\n") {
                 let after = &rest[idx + "\n---\n".len()..];
@@ -1007,6 +1068,21 @@ mod install {
         match (parse(a), parse(b)) {
             (Some(a), Some(b)) => a.cmp(&b),
             _ => a.cmp(b),
+        }
+    }
+
+    /// Revalidate a planned migration immediately before deletion. The final component must still
+    /// be a regular, managed legacy prompt from this or an older version. An absent file is an
+    /// idempotent no-op; any changed/foreign state fails closed rather than deleting it.
+    fn remove_managed_legacy(path: &Path) -> std::io::Result<()> {
+        match inspect_path(path)? {
+            Existing::Absent => Ok(()),
+            existing if legacy_action(&existing) == Action::RemoveLegacy => {
+                std::fs::remove_file(path)
+            }
+            _ => Err(std::io::Error::other(
+                "legacy prompt changed after planning; refusing removal",
+            )),
         }
     }
 
@@ -1081,11 +1157,10 @@ mod install {
                 })
                 .collect();
 
-            let written = if self.dry_run {
-                0
-            } else {
-                self.rows.iter().filter(|r| r.action.writes()).count()
-            };
+            let planned_writes = self.rows.iter().filter(|r| r.action.writes_file()).count();
+            let written = if self.dry_run { 0 } else { planned_writes };
+            let planned_removals = self.rows.iter().filter(|r| r.action.removes_file()).count();
+            let removed = if self.dry_run { 0 } else { planned_removals };
             let summary = Json::Object(vec![
                 ("files".into(), Json::Int(self.rows.len() as i64)),
                 (
@@ -1107,10 +1182,20 @@ mod install {
                     Json::Int(self.count(Action::Unchanged) as i64),
                 ),
                 (
+                    "managed_legacy_would_remove".into(),
+                    Json::Int(planned_removals as i64),
+                ),
+                ("managed_legacy_removed".into(), Json::Int(removed as i64)),
+                (
+                    "legacy_preserved".into(),
+                    Json::Int(self.count(Action::PreserveLegacy) as i64),
+                ),
+                (
                     "blocked".into(),
                     Json::Int(self.rows.iter().filter(|r| r.action.is_blocking()).count() as i64),
                 ),
-                // `written` = rows actually written this run (0 under --dry-run or a blocked run).
+                // Actual changes are zero under --dry-run; planned totals remain explicit.
+                ("would_write".into(), Json::Int(planned_writes as i64)),
                 ("written".into(), Json::Int(written as i64)),
             ]);
 
@@ -1141,23 +1226,26 @@ mod install {
                 self.target
             ));
             for r in &self.rows {
-                let verb = if self.dry_run && r.action.writes() {
+                let verb = if self.dry_run && r.action.mutates() {
                     "would-".to_string() + r.action.as_str()
                 } else {
                     r.action.as_str().to_string()
                 };
                 out.push_str(&format!("  {:<16} {} [{}]\n", verb, r.path, r.agent.slug()));
             }
-            let written = if self.dry_run {
-                0
+            let written = self.rows.iter().filter(|r| r.action.writes_file()).count();
+            let planned_removals = self.rows.iter().filter(|r| r.action.removes_file()).count();
+            let (remove_verb, removals) = if self.dry_run {
+                ("would remove", planned_removals)
             } else {
-                self.rows.iter().filter(|r| r.action.writes()).count()
+                ("removed", planned_removals)
             };
             let verb = if self.dry_run { "would write" } else { "wrote" };
             out.push_str(&format!(
-                "summary: {verb} {written} file{}, {} unchanged\n",
+                "summary: {verb} {written} file{}, {} unchanged, {remove_verb} {removals} managed legacy, {} legacy preserved\n",
                 if written == 1 { "" } else { "s" },
                 self.count(Action::Unchanged),
+                self.count(Action::PreserveLegacy),
             ));
             out
         }
@@ -1220,7 +1308,7 @@ mod install {
 
         #[test]
         fn our_stale_file_upgrades() {
-            // Codex-form managed file (marker at start), older/equal body → upgrade, no force.
+            // Legacy managed form (marker at start), older/equal body → upgrade, no force.
             let old = format!(
                 "{MARKER_PREFIX} \u{2014} ai-first-cli-canon cli_version={CLI_VERSION} schema_version=1. -->\n\nOLD BODY"
             );
@@ -1229,7 +1317,7 @@ mod install {
         }
 
         #[test]
-        fn claude_form_marker_is_anchored_after_frontmatter() {
+        fn native_form_marker_is_anchored_after_frontmatter() {
             let claude = canon_bytes(Agent::Claude);
             assert!(is_ours(claude.as_bytes()));
             // The same body with an extra user line pushed ABOVE the frontmatter is not anchored.
@@ -1255,7 +1343,7 @@ mod install {
                 "{MARKER_PREFIX} \u{2014} ai-first-cli-canon cli_version=0.0.0 schema_version=1. -->\n\nBODY"
             );
             let (a, _) = decide(&reg(older.as_bytes()), b"desired", false);
-            assert!(a.writes() && !a.is_blocking());
+            assert!(a.writes_file() && !a.is_blocking());
         }
 
         #[test]
@@ -1281,15 +1369,13 @@ mod install {
         }
 
         #[test]
-        fn rendered_forms_embed_the_canon_and_marker() {
-            let claude = canon_bytes(Agent::Claude);
-            let codex = canon_bytes(Agent::Codex);
-            assert!(claude.contains(CANON));
-            assert!(codex.contains(CANON));
-            assert!(claude.starts_with("---\nname: ai-first-cli-canon"));
-            assert!(!codex.starts_with("---"));
-            assert!(claude.contains(MARKER_PREFIX));
-            assert!(codex.contains(MARKER_PREFIX));
+        fn rendered_forms_embed_the_canon_frontmatter_and_marker() {
+            for agent in [Agent::Claude, Agent::Pi, Agent::Codex] {
+                let rendered = canon_bytes(agent);
+                assert!(rendered.contains(CANON));
+                assert!(rendered.starts_with("---\nname: ai-first-cli-canon"));
+                assert!(rendered.contains(MARKER_PREFIX));
+            }
         }
 
         #[test]
@@ -1328,8 +1414,7 @@ mod install {
 
         #[test]
         fn every_bundled_native_skill_render_has_a_compliant_description() {
-            // Codex prompts are not Agent Skills frontmatter; both native layouts are.
-            for agent in [Agent::Claude, Agent::Pi] {
+            for agent in [Agent::Claude, Agent::Pi, Agent::Codex] {
                 for skill in SHIPPED {
                     let rendered = agent.render(skill, "SKILL.md").unwrap();
                     let length = crate::probes::skill_description_length(&rendered).unwrap_or_else(
@@ -1353,15 +1438,12 @@ mod install {
         }
 
         #[test]
-        fn cli_canon_native_forms_include_every_resource_and_codex_is_self_contained() {
+        fn cli_canon_native_forms_expose_every_resource() {
             let skill = lookup_skill("cli-canon").unwrap();
-            assert_eq!(Agent::Claude.resources(skill).len(), 4);
-            assert_eq!(Agent::Pi.resources(skill).len(), 4);
-            let codex = Agent::Codex.render(skill, "SKILL.md").unwrap();
-            for resource in CLI_CANON_RESOURCES {
-                assert!(codex.contains(resource.content));
+            for agent in [Agent::Claude, Agent::Pi, Agent::Codex] {
+                assert_eq!(agent.resources(skill).len(), 4);
             }
-            let native = Agent::Pi.render(skill, "SKILL.md").unwrap();
+            let native = Agent::Codex.render(skill, "SKILL.md").unwrap();
             assert!(native.contains("cli_version:"));
             assert!(native.contains("schema_version:"));
             assert!(native.contains("check shipshape/issuectl/orchestratectl"));
@@ -1369,8 +1451,29 @@ mod install {
         }
 
         #[test]
+        fn legacy_action_only_removes_owned_non_newer_regular_files() {
+            let managed = format!(
+                "{MARKER_PREFIX} — ai-first-cli-canon cli_version=0.8.0 schema_version=1. -->\n"
+            );
+            let newer = format!(
+                "{MARKER_PREFIX} — ai-first-cli-canon cli_version=99.0.0 schema_version=1. -->\n"
+            );
+            assert_eq!(legacy_action(&Existing::Absent), Action::LegacyAbsent);
+            assert_eq!(legacy_action(&Existing::NonRegular), Action::PreserveLegacy);
+            assert_eq!(legacy_action(&reg(b"foreign")), Action::PreserveLegacy);
+            assert_eq!(
+                legacy_action(&reg(managed.as_bytes())),
+                Action::RemoveLegacy
+            );
+            assert_eq!(
+                legacy_action(&reg(newer.as_bytes())),
+                Action::PreserveLegacy
+            );
+        }
+
+        #[test]
         fn canon_master_has_no_leading_frontmatter_delimiter() {
-            // Guards a future refactor: the Claude form uses `---` as the frontmatter fence, so the
+            // Guards a future refactor: native forms use `---` as the frontmatter fence, so the
             // canon body itself must not begin with one.
             assert!(!CANON.starts_with("---"));
         }

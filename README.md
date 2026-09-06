@@ -177,9 +177,11 @@ project-canon skill list --json
 project-canon skill print ai-first-cli-canon   # stream content without installing
 ```
 
-Supported agent layouts (`--agent`, default: all) are `claude`, `pi`, and `codex`:
-the `claude` and `pi` layouts receive native skill directories; `codex` receives a
-self-contained prompt. Skills are version-synchronized with the binary (§17).
+Supported agent layouts (`--agent`, default: all) are `claude`, `pi`, and `codex`.
+All three receive native skill directories with `SKILL.md` plus bundled resources. When
+Codex is selected, installation retires only Project Canon-managed legacy prompt files for
+the selected skill(s); foreign files and symlinks under `.codex/prompts/` are preserved.
+Skills are version-synchronized with the binary (§17).
 
 ## Configuration
 

@@ -187,11 +187,12 @@ step has bound it to a real, read-only command.
 - **Signal:** `$TOOL skill list` exposes available skills and one-line descriptions. `$TOOL
   skill install [<name>]` supports all maintained runtimes in their native destinations:
   Claude `.claude/skills/<name>/...`, pi `.pi/agent/skills/<name>/...`, and Codex
-  `.codex/prompts/<name>.md`. No runtime selection and explicit `all` both install all three;
+  `.codex/skills/<name>/...`. No runtime selection and explicit `all` both install all three;
   an explicit runtime selection may install only one. `--target <dir>` changes the install
-  base without changing those layouts. Claude/pi preserve native Agent Skills resource trees;
-  Codex uses one self-contained prompt. Installation is non-interactive, dry-runnable, and
-  no-clobber by default; skills live in-repo and version with the binary.
+  base without changing those layouts. Claude, pi, and Codex preserve native Agent Skills
+  resource trees with `SKILL.md` plus support files; a prompt-only Codex artifact fails this
+  requirement. Installation is non-interactive, dry-runnable, and no-clobber by default; skills
+  live in-repo and version with the binary.
 - **Probe:** `[exec-ro]` inspect `$TOOL skill list --json` for `supported_agents` and the
   `install` capability object: canonical `--agent` selection defaults to `all`, accepts
   `claude|pi|codex|all`, lists all three native layouts, preserves `--target`, and declares
@@ -208,8 +209,9 @@ step has bound it to a real, read-only command.
 ### §16 `skill print`: stream skill content, no side effects · **MUST**
 - **Applies:** always (pairs with §15).
 - **Signal:** `$TOOL skill print <name>` writes the SKILL.md to stdout byte‑identical to what
-  install would persist; `--json` → `{schema_version,name,cli_version,schema_version_skill,
-  content,path_in_repo}`; unknown name → §10 envelope, exit 1; no writes, no network.
+  install would persist; multi-file skills expose and print each native resource; `--json` →
+  `{schema_version,name,cli_version,schema_version_skill,content,path_in_repo}`; unknown name →
+  §10 envelope, exit 1; no writes, no network.
 - **Probe:** `$TOOL skill print <name> | head` · `$TOOL skill print <name> --json | jq keys`.
 - **Fail:** a rendered‑vs‑raw distinction; a side effect on print.
 
