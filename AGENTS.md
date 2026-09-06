@@ -70,8 +70,7 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
 
 `/stint` reads this section for how to run a work-session in this repo.
 
-- **🔒 THIS REPO IS PUBLIC — no user-specific facts, anywhere** (maintainer rule,
-  2026-08-16). A public artifact MUST NOT contain private repo/project names, personal
+- **🔒 THIS REPO IS PUBLIC — no user-specific facts, anywhere.** A public artifact MUST NOT contain private repo/project names, personal
   filesystem-layout conventions, personal machine hostnames, internal URLs, or org-internal
   identifiers — not in source, **not in built-in defaults**, not in generated scaffold output,
   not in installed skill content, not in docs, not in tests or fixtures.
@@ -88,16 +87,13 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
   built-in default is neutral/absent plus an actionable error naming the config key to set —
   never a guess at someone's environment. Fixtures and examples use obviously fictional
   values. **Check this before every publish**, and treat any new default, scaffold template,
-  or `config`-surfaced value as a place this can regress. This rule was written after
-  `0.1.1`/`0.2.0` shipped a maintainer account, a personal repository-root convention, and a
-  family-tool list naming three *private* repos to crates.io: see `portable-neutral-defaults`
-  (the cleanup) and `canon-no-user-specifics` (making it a `doctor`-enforced canon section).
-- **No `CODE_OF_CONDUCT.md`** (maintainer decision, 2026-08-23): it was removed deliberately;
-  do not re-add it on a future `/shipshape-contributing` run even though the mvp tier proposes one.
-- **The release engine is `shipshape` (2026-08-23).** Use the canonical `shipshape` binary and
+  or `config`-surfaced value as a place this can regress.
+- **No `CODE_OF_CONDUCT.md`.** Do not add one on a future `/shipshape-contributing` run even
+  though the mvp tier proposes one.
+- **The release engine is `shipshape`.** Use the canonical `shipshape` binary and
   `/shipshape-*` skill catalog. If Shipshape is not installed, stop and report the convergence gap;
-  do not substitute the frozen `ossctl` rollback binary for a new cut. The upstream GitHub remote
-  may still contain `ossctl` in its coordinate, which is deliberate historical continuity.
+  do not substitute another release binary for a new cut. Existing remote coordinates do not
+  select the release engine.
 - **Green gate** (must pass before a unit counts as landed):
   - `cargo fmt --all --check`
   - `cargo clippy --workspace --all-targets -- -D warnings`
@@ -108,8 +104,7 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
     item, redundant explicit link targets) fail the `docs` job even when tests pass. Run it
     before landing any unit that touches doc comments (`//!` / `///`).
 - **Releases MAY be cut automatically whenever there is something to release, and the agent
-  also OWNS THE DECISION to cut one** (maintainer decision, 2026-08-05; decision-ownership
-  clarified 2026-08-16). Publishing `project-canon` itself (crates.io / GitHub Release /
+  also OWNS THE DECISION to cut one.** Publishing `project-canon` itself (crates.io / GitHub Release /
   Homebrew) requires neither an explicit per-release go **nor a question about whether to
   release at all**: when `main` carries unreleased user-facing changes, `/stint` may bump the
   version, finalize the CHANGELOG, and run the release recipe as an owned Phase-3 act — no
@@ -118,7 +113,7 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
   Preconditions still hold: the green gate passes, and the engine's `dry-run-all` phase succeeds.
   crates.io publishes are irreversible (yank-only), so never publish red, and report each step.
 - **The ENGINE-DRIVEN cut (`shipshape release cut`) is fully autonomous — NO go/no-go checkpoint,
-  ever** (maintainer decision, 2026-08-06). Running the release *through the engine* — the full
+  ever.** Running the release *through the engine* — the full
   multi-target flow (crates.io ×2 + cargo-dist binaries + the Homebrew tap) — requires **no
   permission and no pause before the irreversible publish**, not for the first-ever engine cut,
   not for the homebrew leg (the homebrew leg is the most important target — it must be cut, not
@@ -131,8 +126,7 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
   on the host running the cut; there is deliberately no tag-triggered crates.io workflow. Never
   add one alongside `cargo-publish`, because that recreates a double writer. Still: green gate
   first, dry-run/plan first, never publish red, report each phase.
-- **Git: `pull --rebase` → `push` is always allowed, no confirmation** (maintainer
-  decision, 2026-08-05). On this repo the agent may run the pull-rebase-push sequence
+- **Git: `pull --rebase` → `push` is always allowed, no confirmation.** On this repo the agent may run the pull-rebase-push sequence
   (`git pull --rebase origin main` then `git push origin main`, and pushing tags) on its own
   whenever `main` is clean and green — publishing commits to the remote does not need a
   separate go. Release tags are created and pushed only by `shipshape release cut` or
@@ -156,13 +150,10 @@ All planning documents (plans, analyses, validations, designs, breakdowns, todos
 - **Worker briefs MUST require design reasoning in the ISSUE, not only in the run report.**
   Every brief handed to a worktree worker must include: *"append your design decisions and
   rejected alternatives as an `issuectl` comment on the issue before merging."* Treat this as
-  non-optional, exactly like the green gate and the terminal `run merge` call. **Why:** the
-  structured report is lossy in practice (the `orchestratectl` `spinoff-report-fields-null`
-  bug returns empty `discussion_items` even when the brief asks for them, and a run-store-only
-  report is invisible from the repo) — prompting harder does not fix it; the issue comment is
-  transport-independent, in-repo, and in git next to the work. Keep the structured report for
-  orchestrator sequencing, but never let it be the only copy: a decision that exists only in
-  the run store is a decision the next agent will silently re-litigate or inherit blindly.
+  non-optional, exactly like the green gate and the terminal `run merge` call. **Why:** issue
+  comments are durable, visible in the repository, and available to later agents. Keep the
+  structured report for orchestrator sequencing, but never let it be the only copy of a design
+  decision.
 - **Migration rules:** N/A (no schema/DB).
 - **Test-account reset preference:** none.
 
