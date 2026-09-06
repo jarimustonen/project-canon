@@ -2,9 +2,13 @@
 created: 2026-09-06
 updated: 2026-09-06
 type: task
-status: in-progress
+status: done
 priority: high
 related: ['@taskfleet-project-canon-reference-convergence']
+closed: 2026-09-06
+commits:
+- hash: 7434efd
+  summary: converge repository on Taskfleet identity
 ---
 
 # Converge project-canon generator on Taskfleet identity
@@ -28,3 +32,9 @@ Do not release, deploy, install globally, mutate user state, perform physical ch
 ### 2026-09-06T17:10:49Z · @agent
 
 Implemented repository-wide identity convergence rather than limiting the change to active prose: maintained historical issue text and protocol namespace labels now use canonical Taskfleet wording while immutable run IDs remain intact. Updated the packaged cli-canon source before validating generated output, and added a regression test over every shipped canon/skill source. Refreshed all Claude, pi, and Codex issuectl-owned repository skills through issuectl 0.18.3; the newly supported pi copies are tracked so all emitted layouts stay coherent. Rejected preserving legacy compatibility spellings in maintained fixtures because this issue requires a literal zero scan, and rejected global installation, release, checkout renaming, and external-repository edits per the worker boundary.
+
+## Resolution
+
+### 2026-09-06T17:12:00Z · @issuectl
+
+Canonical Taskfleet identity now covers all maintained sources, generated issuectl skills, bundled project-canon skill output, tests, docs, and issue history. The full repository gate and final tracked path/content zero scan passed; release is intentionally handed off to the normal project-canon release workflow.
