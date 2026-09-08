@@ -2,10 +2,14 @@
 created: 2026-09-06
 updated: 2026-09-08
 type: task
-status: open
+status: done
 priority: high
 lane: build
 lane_seq: 20
+closed: 2026-09-08
+commits:
+- hash: 08ac429
+  summary: converge Taskfleet reference artifacts
 ---
 
 # Converge project-canon references on Taskfleet
@@ -44,3 +48,9 @@ The canonical CLI-canon Taskfleet examples and focused Rust guard were already p
 Rejected alternatives: blind repository-wide replacement; rewriting immutable issues/evidence or compatibility fixtures; refreshing pi, other Issuectl skills, or `issues/AGENTS.md` for symmetry; hand-editing generated content; changing Codex's Issuectl-owned layout; substituting Issuectl 0.18.3 for the explicitly pinned generator; and adding an improvised network-backed regeneration CI framework. The last is separate policy design, not required to prove this exact byte-verified refresh.
 
 Validation: focused skill/template/integrity tests passed, then the exact full gate passed in order: fmt, clippy with warnings denied, workspace tests, workspace build, and rustdoc with warnings denied. `/llm-review` completed with gemini-3.1-pro-preview, gpt-5.6-sol, claude-fable-5, and deepseek-v4-pro over two cross-review rounds; `/assess-findings` classified the localized OCTL guard fix as confirmed and found no spin-off requiring a new issue.
+
+## Resolution
+
+### 2026-09-08T09:03:44Z · @issuectl
+
+Completed the scoped Issuectl 0.18.2 dogfood refresh and corrected the packaged guidance guard to preserve stable protocol identifiers. Exact focused checks, multi-model review plus assessment, and the complete five-command repository gate passed. Project Canon v0.8.2 already released the active CLI-canon Taskfleet wording; this operational dogfood/test-only follow-up requires no additional product release.
