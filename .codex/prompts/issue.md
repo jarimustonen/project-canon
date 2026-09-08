@@ -86,7 +86,7 @@ issuectl --json skill list
 
 ## Install or upgrade `issuectl`
 
-This skill was installed for `issuectl 0.18.3`. On the
+This skill was installed for `issuectl 0.18.4`. On the
 first invocation in a session, run `issuectl --version` and compare:
 
 - **Missing**: install one of:
@@ -94,12 +94,12 @@ first invocation in a session, run `issuectl --version` and compare:
   - **Cargo** (any platform with a Rust toolchain): `cargo install issuectl`
   - **Shell installer** (no toolchain):
     `curl -LsSf https://github.com/jarimustonen/issuectl/releases/latest/download/issuectl-installer.sh | sh`
-- **Older than `0.18.3`**: tell the user the skill expects
-  `0.18.3` and suggest upgrading via the same channel
+- **Older than `0.18.4`**: tell the user the skill expects
+  `0.18.4` and suggest upgrading via the same channel
   they originally used (`brew upgrade jarimustonen/issuectl/issuectl`,
   `cargo install issuectl --force`, or re-run the shell installer).
   Stop and wait — schema/CLI surface may have changed.
-- **Newer than `0.18.3`**: the installed binary is ahead
+- **Newer than `0.18.4`**: the installed binary is ahead
   of what this skill was written for. Tell the user to refresh the
   skill so the instructions match the CLI surface they actually have:
   `issuectl skill install --force` (all bundled skills for Claude, pi, and
@@ -206,8 +206,9 @@ result as a compact list when displaying back to the user (e.g.
 
 ### Action: Close
 
-Closing means setting a **closing status** and moving the issue to `closed/`.
-The CLI does both atomically — never `git mv` by hand.
+Closing means setting a **closing status** and recording the close metadata.
+In the canonical flat layout, the issue remains at `issues/<slug>/`; cold-storage
+movement is a separate `issuectl archive` operation. Never `git mv` by hand.
 
 - `issuectl --json close <slug>` — defaults to `fixed` for bugs, `done` otherwise
 - `issuectl --json close <slug> --status wontfix` — explicit closing status
@@ -220,13 +221,17 @@ Output shape (`closed_by` present only when `--as` is passed; `stamp` present on
 
 ```json
 { "slug": "extremely-quiet-otter",
-  "dir": "/abs/path/issues/closed/extremely-quiet-otter",
+  "dir": "/abs/path/issues/extremely-quiet-otter",
   "moved_to_closed": true, "version": "sha256:...", "closed_by": "alice" }
 ```
 
-Reopening (`update --status <active>`) clears `closed_by` alongside `closed:`.
+`moved_to_closed` is the legacy-named lifecycle-transition indicator: `true`
+means the issue entered a closing status, not that its flat directory moved.
+Reopening (`update --status <active>`) similarly reports `moved_to_open` and
+clears `closed_by` alongside `closed:`; only reopening an archived issue moves
+its directory back to the flat root.
 
-**Closing statuses** (any of these triggers move to `closed/`):
+**Closing statuses** (any of these enters the closed lifecycle class):
 
 - `done` — work completed successfully (tasks, features, chores, epics)
 - `fixed` — bug fix committed and verified
@@ -255,8 +260,9 @@ classifying the status as `closing` under `status_classes` and including it in
 ### Action: Update
 
 Use `issuectl --json update <slug>` with one or more flags. The CLI updates
-frontmatter and bumps `updated:` automatically. If the new status is a
-closing status, the issue is also moved to `closed/` (same as `close`).
+frontmatter and bumps `updated:` automatically. If the new status is a closing
+status, the issue receives the same close metadata as `close`; its flat-layout
+directory is not relocated.
 
 Common flags:
 
@@ -705,9 +711,10 @@ issuectl intake reopen    <slug> [--to untriaged|open] --reason "…"  --json  #
 **Never file a reception item with plain `create`** — `create` fixes the creation
 status at `open`. Reception filing goes through `issuectl intake file`.
 
-The `/issue-intake` skill drives the developer/PM side (queue → drive
-`/worktree-bug-analysis` on unclear items → PO briefing → stop; the disposition
-is the user's).
+The `/issue-intake` skill drives the developer/PM side (queue → drive the
+bug-only `/worktree-bug-analysis` workflow on unclear bug items → PO briefing →
+stop; unclear non-bugs are not sent to that worker, and the disposition is the
+user's).
 
 ### Action: Render an agent context bundle
 
@@ -806,8 +813,11 @@ On `--fix`, the JSON envelope carries an `apply_outcome` object with a
 - There is no default type — always pass `--type`
 - All images must be AVIF — convert PNG/JPG/WebP first
 - **Epic linkage**: prefer the `epic:` frontmatter field, value is the parent epic's slug
-- **Closing statuses** also move the directory to `closed/`. Use `issuectl
-  --json close` (or `update --status`) — never `git mv` by hand
-- For raw filesystem operations, `issues/open/<slug>/item.md` is the format;
-  but prefer the CLI for anything it supports
+- **Closing statuses** update lifecycle metadata without moving a flat-layout
+  directory. Use `issuectl --json close` (or `update --status`) — never `git mv`
+  by hand
+- For raw filesystem operations, unarchived items (active or closed) use
+  `issues/<slug>/item.md`; archived closed items use
+  `issues/archive/YYYY/MM/<slug>/item.md`. Prefer `.data.path` / `.data.dir`
+  from the CLI instead of reconstructing any path
 - **Always `--json`** when invoking `issuectl` from this skill
