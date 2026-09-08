@@ -670,11 +670,32 @@ version with the binary. The CLI is responsible for keeping skill text
 and CLI surface in sync (a tool whose `skill list` references a removed
 flag is a release-blocker, same as a broken `--help`).
 
-Respect the Agent Skills format limits: the frontmatter `description`
-field is **at most 1024 characters**. It is the trigger surface an agent
-loads at startup, so keep it dense — an over-limit description is
-rejected or truncated by consuming runtimes, which silently breaks skill
-discovery.
+Every installed tree **MUST** be a portable Agent Skill, not merely a file that
+one lenient runtime happens to load. Conventional repository paths (`skills/`,
+`.agents/skills/`, `.claude/skills/`, `.pi/skills/`, `.pi/agent/skills/`, and
+`.codex/skills/`) are skill collection roots: each skill lives in a named child
+directory, not in a collection-root `SKILL.md`. `SKILL.md` starts with valid YAML
+frontmatter whose top level is a mapping. It declares:
+
+- required string `name`: 1–64 ASCII lowercase letters, digits, or single
+  interior hyphens; no leading/trailing/consecutive hyphens; exactly matches
+  the parent directory;
+- required string `description`: non-empty and at most 1024 Unicode
+  characters;
+- optional string `license`, optional non-empty string `compatibility` of at
+  most 500 Unicode characters, optional `metadata` mapping with string keys
+  and string values, and optional string `allowed-tools` (experimental).
+
+The description **SHOULD** explain both what the skill does and when to use it;
+that quality is reviewed rather than inferred mechanically. Runtime-specific
+extension fields are allowed alongside this portable core. When present, pi's
+`disable-model-invocation` extension is a boolean. Quote a
+single-line YAML value, or use a block scalar, whenever punctuation such as
+`: ` could change its YAML meaning. Malformed frontmatter and a missing or
+non-string description cause pi to skip the skill entirely; other format
+violations may only warn in lenient runtimes, but remain release-blocking for a
+three-runtime artifact. Keep descriptions dense because every skill's trigger
+surface is loaded at startup.
 
 Rationale: `--help` tells an agent *what* a command does; a skill tells
 it *when and how to use it in a multi-step workflow* — when to combine

@@ -643,6 +643,18 @@ fn probe_help_surface(runner: &RuntimeRunner) -> RuntimeCheck {
 
 type SkillRows = Vec<(String, String, i64)>;
 
+pub(crate) fn is_portable_skill_name(name: &str) -> bool {
+    let length = name.chars().count();
+    length > 0
+        && length <= SKILL_NAME_MAX_CHARS
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        && !name.starts_with('-')
+        && !name.ends_with('-')
+        && !name.contains("--")
+}
+
 fn probe_skill_list(runner: &RuntimeRunner) -> RuntimeCheck<(SkillRows, Value)> {
     let args = ["skill", "list", "--json"];
     let value = expect_json(&invoke(runner, &args)?, &args, &[0])?;
@@ -659,14 +671,10 @@ fn probe_skill_list(runner: &RuntimeRunner) -> RuntimeCheck<(SkillRows, Value)> 
     let rows = skills
         .iter()
         .map(|skill| {
-            let name = skill.get("name").and_then(Value::as_str).filter(|name| {
-                !name.is_empty()
-                    && name.len() <= 64
-                    && name.bytes().next().is_some_and(|b| b.is_ascii_lowercase())
-                    && name
-                        .bytes()
-                        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-            });
+            let name = skill
+                .get("name")
+                .and_then(Value::as_str)
+                .filter(|name| is_portable_skill_name(name));
             let version = skill
                 .get("cli_version")
                 .and_then(Value::as_str)
@@ -976,7 +984,7 @@ pub fn mechanical_probe(
         "base.git-hygiene" => Some(|repo, _| probe_git_hygiene(repo)),
         "base.readme" => Some(|repo, _| probe_readme(repo)),
         "base.gitignore" => Some(|repo, _| probe_gitignore(repo)),
-        "canon.s15" => Some(|repo, _| probe_skill_description_lengths(repo)),
+        "canon.s15" => Some(|repo, _| probe_agent_skills(repo)),
         "canon.s22" => Some(|repo, _| probe_core_cli_split(repo)),
         "canon.s23" => Some(probe_public_artifact_specifics),
         "canon.s24" => Some(probe_verified_deferrals),
@@ -1056,21 +1064,135 @@ fn probe_gitignore(repo: &Path) -> std::io::Result<ProbeOutcome> {
     )
 }
 
-/// Agent Skills frontmatter description limit from canon §15.
+/// Portable Agent Skills frontmatter limits enforced by canon §15.
+pub(crate) const SKILL_NAME_MAX_CHARS: usize = 64;
 pub(crate) const SKILL_DESCRIPTION_MAX_CHARS: usize = 1024;
+pub(crate) const SKILL_COMPATIBILITY_MAX_CHARS: usize = 500;
+
+fn parse_skill_frontmatter(content: &str) -> Result<serde_yaml::Value, String> {
+    let frontmatter = extract_skill_frontmatter(content)?;
+    let yaml: serde_yaml::Value = serde_yaml::from_str(frontmatter).map_err(|error| {
+        format!(
+            "invalid YAML frontmatter: {error} (line numbers are relative to the frontmatter after its opening fence)"
+        )
+    })?;
+    if yaml.is_mapping() {
+        Ok(yaml)
+    } else {
+        Err("YAML frontmatter must be a mapping".to_string())
+    }
+}
 
 /// Parse a rendered `SKILL.md` and return its YAML frontmatter description length in Unicode
 /// characters. YAML parsing matters here: escaped and block scalars must be measured as the value
 /// an Agent Skills consumer sees, not as source bytes.
+#[cfg(test)]
 pub(crate) fn skill_description_length(content: &str) -> Result<usize, String> {
-    let frontmatter = extract_skill_frontmatter(content)?;
-    let yaml: serde_yaml::Value = serde_yaml::from_str(frontmatter)
-        .map_err(|error| format!("invalid YAML frontmatter: {error}"))?;
+    let yaml = parse_skill_frontmatter(content)?;
     let description = yaml
         .get("description")
         .and_then(serde_yaml::Value::as_str)
         .ok_or_else(|| "frontmatter description is missing or not a string".to_string())?;
     Ok(description.chars().count())
+}
+
+pub(crate) fn validate_agent_skill_frontmatter(content: &str, parent_name: &str) -> Vec<String> {
+    let yaml = match parse_skill_frontmatter(content) {
+        Ok(yaml) => yaml,
+        Err(error) => return vec![error],
+    };
+    let mut errors = Vec::new();
+
+    let mapping = yaml
+        .as_mapping()
+        .expect("parse_skill_frontmatter guarantees a mapping");
+    if mapping.keys().any(|key| key.as_str().is_none()) {
+        errors.push("frontmatter field names must be strings".to_string());
+    }
+
+    let field = |name: &str| yaml.get(name);
+    match field("name") {
+        Some(value) => match value.as_str() {
+            Some(name) => {
+                let length = name.chars().count();
+                if length == 0 || length > SKILL_NAME_MAX_CHARS {
+                    errors.push(format!(
+                        "frontmatter name must contain 1–{SKILL_NAME_MAX_CHARS} characters (found {length})"
+                    ));
+                }
+                if (1..=SKILL_NAME_MAX_CHARS).contains(&length) && !is_portable_skill_name(name) {
+                    errors.push(
+                        "frontmatter name must use lowercase a-z, 0-9, and single interior hyphens"
+                            .to_string(),
+                    );
+                }
+                if name != parent_name {
+                    errors.push(format!(
+                        "frontmatter name {name:?} does not match parent directory {parent_name:?}"
+                    ));
+                }
+            }
+            None => errors.push("frontmatter name is not a string".to_string()),
+        },
+        None => errors.push("frontmatter name is missing".to_string()),
+    }
+
+    match field("description") {
+        Some(value) => match value.as_str() {
+            Some(description) => {
+                let length = description.chars().count();
+                if description.trim().is_empty() {
+                    errors.push("frontmatter description is empty".to_string());
+                } else if length > SKILL_DESCRIPTION_MAX_CHARS {
+                    errors.push(format!(
+                        "frontmatter has a {length}-character description (maximum {SKILL_DESCRIPTION_MAX_CHARS})"
+                    ));
+                }
+            }
+            None => errors.push("frontmatter description is not a string".to_string()),
+        },
+        None => errors.push("frontmatter description is missing".to_string()),
+    }
+
+    if let Some(value) = field("license") {
+        if value.as_str().is_none() {
+            errors.push("frontmatter license is not a string".to_string());
+        }
+    }
+    if let Some(value) = field("compatibility") {
+        match value.as_str() {
+            Some(compatibility) => {
+                let length = compatibility.chars().count();
+                if compatibility.trim().is_empty() {
+                    errors.push("frontmatter compatibility is empty".to_string());
+                } else if length > SKILL_COMPATIBILITY_MAX_CHARS {
+                    errors.push(format!(
+                        "frontmatter compatibility has {length} characters (maximum {SKILL_COMPATIBILITY_MAX_CHARS})"
+                    ));
+                }
+            }
+            None => errors.push("frontmatter compatibility is not a string".to_string()),
+        }
+    }
+    if let Some(value) = field("metadata") {
+        match value.as_mapping() {
+            Some(metadata)
+                if metadata
+                    .iter()
+                    .all(|(key, value)| key.as_str().is_some() && value.as_str().is_some()) => {}
+            Some(_) => errors
+                .push("frontmatter metadata must map string keys to string values".to_string()),
+            None => errors.push("frontmatter metadata is not a mapping".to_string()),
+        }
+    }
+    if field("allowed-tools").is_some_and(|value| value.as_str().is_none()) {
+        errors.push("frontmatter allowed-tools is not a string".to_string());
+    }
+    if field("disable-model-invocation").is_some_and(|value| value.as_bool().is_none()) {
+        errors.push("pi extension disable-model-invocation is not a boolean".to_string());
+    }
+
+    errors
 }
 
 fn extract_skill_frontmatter(content: &str) -> Result<&str, String> {
@@ -1142,116 +1264,414 @@ fn next_byte_line(bytes: &[u8], offset: usize) -> Option<(&[u8], usize)> {
     }
 }
 
-/// Locate repository-native Agent Skills directories and enforce the §15 description limit over
-/// every direct child `SKILL.md`. Repositories with no locatable skill files pass this scoped
-/// check; the rest of §15 remains a review judgment rather than being inferred from absence.
-fn probe_skill_description_lengths(repo: &Path) -> std::io::Result<ProbeOutcome> {
-    const MAX_FRONTMATTER_BYTES: u64 = 1_048_576;
-    const ROOTS: [&str; 5] = [
-        "skills",
-        ".agents/skills",
-        ".claude/skills",
-        ".pi/agent/skills",
-        ".codex/skills",
-    ];
-    let canonical_repo = std::fs::canonicalize(repo)?;
-    let mut skill_files = BTreeSet::new();
-    for root in ROOTS {
-        let directory = repo.join(root);
-        let canonical_root = match std::fs::canonicalize(&directory) {
-            Ok(path) if path.starts_with(&canonical_repo) && path.is_dir() => path,
-            Ok(_) => {
-                return Ok(ProbeOutcome::fail(format!(
-                    "supported skill directory {root} resolves outside the target repository"
-                )))
-            }
+const MAX_SKILL_FRONTMATTER_BYTES: u64 = 1_048_576;
+const MAX_REPORTED_SKILL_VIOLATIONS: usize = 8;
+const MAX_SKILL_VIOLATION_CHARS: usize = 1_000;
+const MAX_SKILL_SCAN_DIRECTORIES: usize = 10_000;
+const MAX_SKILL_SCAN_ENTRIES: usize = 50_000;
+const MAX_SKILL_SCAN_DEPTH: usize = 64;
+const MAX_LOCATED_SKILLS: usize = 2_000;
+const SKILL_ROOTS: [&str; 6] = [
+    "skills",
+    ".agents/skills",
+    ".claude/skills",
+    ".pi/skills",
+    ".pi/agent/skills",
+    ".codex/skills",
+];
+
+#[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct LocatedAgentSkill {
+    logical_path: PathBuf,
+    canonical_path: PathBuf,
+}
+
+fn record_skill_violation(total: &mut usize, reported: &mut Vec<String>, message: String) {
+    *total += 1;
+    if reported.len() < MAX_REPORTED_SKILL_VIOLATIONS {
+        let message = message.replace(['\r', '\n'], " ");
+        if message.chars().count() > MAX_SKILL_VIOLATION_CHARS {
+            reported.push(format!(
+                "{}…",
+                message
+                    .chars()
+                    .take(MAX_SKILL_VIOLATION_CHARS)
+                    .collect::<String>()
+            ));
+        } else {
+            reported.push(message);
+        }
+    }
+}
+
+/// Iteratively locate portable skill trees using pi's stop-at-skill-root rule: a directory
+/// containing `SKILL.md` ends traversal below that directory. Hidden descendants and
+/// `node_modules` are not skill groups. This release gate intentionally examines materialized
+/// trees without treating ignore files as a portability waiver. Canonical paths provide cycle
+/// detection and stable-repository confinement; logical paths are retained for parent-name
+/// validation and actionable diagnostics.
+#[allow(clippy::too_many_arguments)]
+fn collect_agent_skill_files(
+    repo: &Path,
+    canonical_repo: &Path,
+    initial_directory: &Path,
+    visited: &mut BTreeSet<PathBuf>,
+    files: &mut BTreeSet<LocatedAgentSkill>,
+    scanned_directories: &mut usize,
+    scanned_entries: &mut usize,
+    violation_count: &mut usize,
+    violations: &mut Vec<String>,
+) -> std::io::Result<()> {
+    let mut pending = vec![(initial_directory.to_path_buf(), 0usize)];
+    while let Some((directory, depth)) = pending.pop() {
+        if depth > MAX_SKILL_SCAN_DEPTH {
+            record_skill_violation(
+                violation_count,
+                violations,
+                format!(
+                    "{}: skill scan exceeds the maximum depth of {MAX_SKILL_SCAN_DEPTH}",
+                    directory.strip_prefix(repo).unwrap_or(&directory).display()
+                ),
+            );
+            continue;
+        }
+        *scanned_directories += 1;
+        if *scanned_directories > MAX_SKILL_SCAN_DIRECTORIES {
+            record_skill_violation(
+                violation_count,
+                violations,
+                format!(
+                    "skill scan exceeds the {MAX_SKILL_SCAN_DIRECTORIES}-directory safety limit"
+                ),
+            );
+            return Ok(());
+        }
+
+        let canonical_directory = match std::fs::canonicalize(&directory) {
+            Ok(path) => path,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(error) if error.kind() == std::io::ErrorKind::NotADirectory => continue,
             Err(error) => return Err(error),
         };
-        for entry in std::fs::read_dir(canonical_root)? {
+        if !canonical_directory.starts_with(canonical_repo) {
+            record_skill_violation(
+                violation_count,
+                violations,
+                format!(
+                    "supported skill directory {} resolves outside the target repository",
+                    directory.strip_prefix(repo).unwrap_or(&directory).display()
+                ),
+            );
+            continue;
+        }
+
+        // Bound entry materialization incrementally: checking only after `collect` would let one
+        // hostile directory allocate beyond the intended scan budget.
+        let mut entries = Vec::new();
+        for entry in std::fs::read_dir(&canonical_directory)? {
             let entry = entry?;
-            let candidate = entry.path().join("SKILL.md");
-            let _metadata = match std::fs::symlink_metadata(&candidate) {
-                Ok(metadata) if metadata.file_type().is_file() => metadata,
-                Ok(metadata) if metadata.file_type().is_symlink() => {
-                    return Ok(ProbeOutcome::fail(format!(
-                        "located skill {} is a symlink and cannot be safely inspected",
-                        candidate
-                            .strip_prefix(&canonical_repo)
-                            .unwrap_or(&candidate)
-                            .display()
-                    )))
-                }
-                Ok(_) => continue,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(error) if error.kind() == std::io::ErrorKind::NotADirectory => continue,
-                Err(error) => return Err(error),
-            };
-            let canonical = std::fs::canonicalize(&candidate)?;
-            if !canonical.starts_with(&canonical_repo) {
-                return Ok(ProbeOutcome::fail(format!(
-                    "located skill {} resolves outside the target repository",
-                    candidate
-                        .strip_prefix(&canonical_repo)
-                        .unwrap_or(&candidate)
-                        .display()
-                )));
+            *scanned_entries += 1;
+            if *scanned_entries > MAX_SKILL_SCAN_ENTRIES {
+                record_skill_violation(
+                    violation_count,
+                    violations,
+                    format!("skill scan exceeds the {MAX_SKILL_SCAN_ENTRIES}-entry safety limit"),
+                );
+                return Ok(());
             }
-            skill_files.insert(canonical);
+            entries.push(entry);
+        }
+        entries.sort_by_key(std::fs::DirEntry::file_name);
+
+        // Check for a skill before cycle deduplication so every logical symlink alias is validated
+        // against its own parent directory name. Enumerating the actual entry also enforces exact
+        // `SKILL.md` casing on case-insensitive filesystems.
+        let exact_skill_entry = entries.iter().find(|entry| entry.file_name() == "SKILL.md");
+        let logical_candidate = directory.join("SKILL.md");
+        let candidate_metadata = std::fs::symlink_metadata(&logical_candidate);
+        if candidate_metadata.is_ok() && exact_skill_entry.is_none() {
+            record_skill_violation(
+                violation_count,
+                violations,
+                format!(
+                    "{}: skill filename must be exactly SKILL.md",
+                    logical_candidate
+                        .strip_prefix(repo)
+                        .unwrap_or(&logical_candidate)
+                        .display()
+                ),
+            );
+            // A mis-cased skill file is still a discovery boundary on a case-insensitive
+            // filesystem. Do not descend into its resource tree.
+            if depth > 0 {
+                continue;
+            }
+        } else {
+            match candidate_metadata {
+                Ok(metadata) if metadata.file_type().is_file() => {
+                    let canonical_candidate = std::fs::canonicalize(&logical_candidate)?;
+                    if !canonical_candidate.starts_with(canonical_repo) {
+                        record_skill_violation(
+                            violation_count,
+                            violations,
+                            format!(
+                                "located skill {} resolves outside the target repository",
+                                logical_candidate
+                                    .strip_prefix(repo)
+                                    .unwrap_or(&logical_candidate)
+                                    .display()
+                            ),
+                        );
+                        continue;
+                    }
+                    if depth == 0 {
+                        record_skill_violation(
+                            violation_count,
+                            violations,
+                            format!(
+                                "{}: SKILL.md must be inside a named child of this skill collection root",
+                                logical_candidate
+                                    .strip_prefix(repo)
+                                    .unwrap_or(&logical_candidate)
+                                    .display()
+                            ),
+                        );
+                    } else {
+                        let located = LocatedAgentSkill {
+                            logical_path: logical_candidate,
+                            canonical_path: canonical_candidate,
+                        };
+                        if !files.contains(&located) && files.len() >= MAX_LOCATED_SKILLS {
+                            record_skill_violation(
+                                violation_count,
+                                violations,
+                                format!(
+                                    "skill scan exceeds the {MAX_LOCATED_SKILLS}-skill safety limit"
+                                ),
+                            );
+                            return Ok(());
+                        }
+                        files.insert(located);
+                        continue;
+                    }
+                }
+                Ok(metadata) if metadata.file_type().is_symlink() => {
+                    record_skill_violation(
+                        violation_count,
+                        violations,
+                        format!(
+                            "located skill {} is a symlink and cannot be safely inspected",
+                            logical_candidate
+                                .strip_prefix(repo)
+                                .unwrap_or(&logical_candidate)
+                                .display()
+                        ),
+                    );
+                    if depth > 0 {
+                        continue;
+                    }
+                }
+                Ok(_) => {}
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                    ) => {}
+                Err(error) => return Err(error),
+            }
+        }
+
+        if !visited.insert(canonical_directory.clone()) {
+            continue;
+        }
+        // Reverse push order so the lexically first path is processed first by the LIFO stack.
+        for entry in entries.into_iter().rev() {
+            let name = entry.file_name();
+            if name == "node_modules" || name.to_string_lossy().starts_with('.') {
+                continue;
+            }
+            let path = directory.join(&name);
+            let file_type = entry.file_type()?;
+            let is_directory = if file_type.is_dir() {
+                true
+            } else if file_type.is_symlink() {
+                match std::fs::metadata(entry.path()) {
+                    Ok(metadata) => metadata.is_dir(),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+                    Err(error) => return Err(error),
+                }
+            } else {
+                false
+            };
+            if is_directory {
+                pending.push((path, depth + 1));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Locate repository-native Agent Skills and enforce the mechanically decidable portable format
+/// requirements from canon §15. Repositories with no locatable skill files pass this scoped check;
+/// the installer behavior and authoring-quality remainder stay review judgments.
+fn probe_agent_skills(repo: &Path) -> std::io::Result<ProbeOutcome> {
+    let canonical_repo = std::fs::canonicalize(repo)?;
+    let mut skill_files = BTreeSet::new();
+    let mut visited = BTreeSet::new();
+    let mut scanned_directories = 0usize;
+    let mut scanned_entries = 0usize;
+    let mut violations = Vec::new();
+    let mut violation_count = 0usize;
+    for root in SKILL_ROOTS {
+        let directory = repo.join(root);
+        match std::fs::metadata(&directory) {
+            Ok(metadata) if metadata.is_dir() => collect_agent_skill_files(
+                repo,
+                &canonical_repo,
+                &directory,
+                &mut visited,
+                &mut skill_files,
+                &mut scanned_directories,
+                &mut scanned_entries,
+                &mut violation_count,
+                &mut violations,
+            )?,
+            Ok(_) => continue,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                ) =>
+            {
+                continue
+            }
+            Err(error) => return Err(error),
+        }
+        if scanned_directories > MAX_SKILL_SCAN_DIRECTORIES
+            || scanned_entries > MAX_SKILL_SCAN_ENTRIES
+            || skill_files.len() > MAX_LOCATED_SKILLS
+        {
+            break;
         }
     }
 
     for file in &skill_files {
-        let rel = file.strip_prefix(&canonical_repo).unwrap_or(file);
+        let rel = file
+            .logical_path
+            .strip_prefix(repo)
+            .unwrap_or(&file.logical_path);
+        let current_canonical = match std::fs::canonicalize(&file.logical_path) {
+            Ok(path) => path,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                record_skill_violation(
+                    &mut violation_count,
+                    &mut violations,
+                    format!("{}: skill disappeared during inspection", rel.display()),
+                );
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        if current_canonical != file.canonical_path
+            || !current_canonical.starts_with(&canonical_repo)
+        {
+            record_skill_violation(
+                &mut violation_count,
+                &mut violations,
+                format!(
+                    "{}: skill target changed or escaped the repository during inspection",
+                    rel.display()
+                ),
+            );
+            continue;
+        }
+
         let mut bytes = Vec::new();
-        std::fs::File::open(file)?
-            .take(MAX_FRONTMATTER_BYTES + 1)
+        std::fs::File::open(&file.canonical_path)?
+            .take(MAX_SKILL_FRONTMATTER_BYTES + 1)
             .read_to_end(&mut bytes)?;
         let Some(frontmatter_end) = skill_frontmatter_extent(&bytes) else {
-            if bytes.len() as u64 > MAX_FRONTMATTER_BYTES {
-                return Ok(ProbeOutcome::fail(format!(
-                    "located skill {} frontmatter exceeds the {MAX_FRONTMATTER_BYTES}-byte scan limit or has no closing fence within it",
-                    rel.display()
-                )));
-            }
-            return Ok(ProbeOutcome::fail(format!(
-                "cannot measure located skill {}: missing YAML frontmatter fences",
-                rel.display()
-            )));
+            let reason = if bytes.len() as u64 > MAX_SKILL_FRONTMATTER_BYTES {
+                format!(
+                    "frontmatter exceeds the {MAX_SKILL_FRONTMATTER_BYTES}-byte scan safety limit or has no closing fence within it"
+                )
+            } else {
+                "missing YAML frontmatter fences".to_string()
+            };
+            record_skill_violation(
+                &mut violation_count,
+                &mut violations,
+                format!("{}: {reason}", rel.display()),
+            );
+            continue;
         };
+        if frontmatter_end as u64 > MAX_SKILL_FRONTMATTER_BYTES {
+            record_skill_violation(
+                &mut violation_count,
+                &mut violations,
+                format!(
+                    "{}: frontmatter exceeds the {MAX_SKILL_FRONTMATTER_BYTES}-byte scan safety limit",
+                    rel.display()
+                ),
+            );
+            continue;
+        }
         bytes.truncate(frontmatter_end);
         let content = match std::str::from_utf8(&bytes) {
             Ok(content) => content,
             Err(_) => {
-                return Ok(ProbeOutcome::fail(format!(
-                    "located skill {} is not UTF-8",
-                    rel.display()
-                )))
+                record_skill_violation(
+                    &mut violation_count,
+                    &mut violations,
+                    format!("{}: frontmatter is not UTF-8", rel.display()),
+                );
+                continue;
             }
         };
-        let length = match skill_description_length(content) {
-            Ok(length) => length,
-            Err(error) => {
-                return Ok(ProbeOutcome::fail(format!(
-                    "cannot measure located skill {}: {error}",
+        let parent_name = file
+            .logical_path
+            .parent()
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str());
+        if parent_name.is_none() {
+            record_skill_violation(
+                &mut violation_count,
+                &mut violations,
+                format!(
+                    "{}: parent directory name is not UTF-8 and cannot be a portable skill name",
                     rel.display()
-                )))
-            }
-        };
-        if length > SKILL_DESCRIPTION_MAX_CHARS {
-            return Ok(ProbeOutcome::fail(format!(
-                "located skill {} has a {length}-character frontmatter description (maximum {SKILL_DESCRIPTION_MAX_CHARS})",
-                rel.display()
-            )));
+                ),
+            );
         }
+        for error in validate_agent_skill_frontmatter(content, parent_name.unwrap_or("")) {
+            if parent_name.is_none() && error.contains("does not match parent directory") {
+                continue;
+            }
+            record_skill_violation(
+                &mut violation_count,
+                &mut violations,
+                format!("{}: {error}", rel.display()),
+            );
+        }
+    }
+
+    if violation_count > 0 {
+        let omitted = violation_count - violations.len();
+        let suffix = if omitted == 0 {
+            String::new()
+        } else {
+            format!("; and {omitted} more violation(s)")
+        };
+        return Ok(ProbeOutcome::fail(format!(
+            "{violation_count} Agent Skill probe violation(s): {}{suffix}",
+            violations.join("; ")
+        )));
     }
 
     Ok(if skill_files.is_empty() {
         ProbeOutcome::pass("no repository Agent Skills found in supported skill directories")
     } else {
         ProbeOutcome::pass(format!(
-            "{} located Agent Skill description(s) are at most {SKILL_DESCRIPTION_MAX_CHARS} characters",
+            "{} located Agent Skill tree(s) have portable YAML frontmatter",
             skill_files.len()
         ))
     })
@@ -2064,16 +2484,106 @@ mod tests {
             "first line second line".chars().count()
         );
 
-        let literal = "---\nname: fixture-skill\ndescription: |-\n  first\n  second\n---\n";
+        let literal = "---\nname: fixture-skill\ndescription: |-\n  first\n  ---\n  second\n---\n";
         assert_eq!(
             skill_description_length(literal).unwrap(),
-            "first\nsecond".chars().count()
+            "first\n---\nsecond".chars().count()
         );
     }
 
     #[test]
-    fn skill_description_probe_rejects_over_limit_generic_and_codex_skills() {
-        for root in [".agents/skills", ".codex/skills"] {
+    fn skill_frontmatter_validation_rejects_malformed_yaml_and_wrong_field_types() {
+        let malformed =
+            "---\nname: fixture-skill\ndescription: Analyze one report: verify it\n---\n";
+        let errors = validate_agent_skill_frontmatter(malformed, "fixture-skill");
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(errors[0].contains("invalid YAML frontmatter"), "{errors:?}");
+
+        let non_mapping = "---\n- name\n- description\n---\n";
+        assert_eq!(
+            validate_agent_skill_frontmatter(non_mapping, "fixture-skill"),
+            ["YAML frontmatter must be a mapping"]
+        );
+
+        let missing = "---\nlicense: MIT\n---\n";
+        let errors = validate_agent_skill_frontmatter(missing, "fixture-skill");
+        assert!(errors.iter().any(|error| error.contains("name is missing")));
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("description is missing")));
+
+        let duplicate = "---\nname: fixture-skill\nname: other-skill\ndescription: valid\n---\n";
+        let errors = validate_agent_skill_frontmatter(duplicate, "fixture-skill");
+        assert!(errors[0].contains("duplicate entry"), "{errors:?}");
+
+        let wrong_types = "---\nname: 42\ndescription: [not, a, string]\nlicense: {}\ncompatibility: 7\nmetadata:\n  author: 42\nallowed-tools: [Read]\ndisable-model-invocation: yes\n---\n";
+        let errors = validate_agent_skill_frontmatter(wrong_types, "fixture-skill");
+        for expected in [
+            "name is not a string",
+            "description is not a string",
+            "license is not a string",
+            "compatibility is not a string",
+            "metadata must map string keys to string values",
+            "allowed-tools is not a string",
+            "disable-model-invocation is not a boolean",
+        ] {
+            assert!(
+                errors.iter().any(|error| error.contains(expected)),
+                "missing {expected:?} in {errors:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn skill_frontmatter_validation_enforces_portable_names_and_optional_fields() {
+        let valid = "---\nname: fixture-skill\ndescription: A useful skill. Use for fixtures.\nlicense: MIT\ncompatibility: Requires git\nmetadata:\n  author: example-org\n  version: \"1\"\nallowed-tools: Read Bash(git:*)\ndisable-model-invocation: true\ncli_version: \"1.0.0\"\nschema_version: 1\n---\n";
+        assert!(
+            validate_agent_skill_frontmatter(valid, "fixture-skill").is_empty(),
+            "valid portable fields and pi/Project Canon extensions must pass"
+        );
+        assert!(is_portable_skill_name("1password-helper"));
+        assert!(!is_portable_skill_name("fixture-"));
+        assert!(!is_portable_skill_name("fixture--skill"));
+
+        for (name, parent, expected) in [
+            ("Fixture", "Fixture", "lowercase"),
+            ("-fixture", "-fixture", "single interior hyphens"),
+            ("fixture-", "fixture-", "single interior hyphens"),
+            (
+                "fixture--skill",
+                "fixture--skill",
+                "single interior hyphens",
+            ),
+            (
+                "fixture-skill",
+                "different",
+                "does not match parent directory",
+            ),
+        ] {
+            let content = format!("---\nname: {name}\ndescription: valid\n---\n");
+            let errors = validate_agent_skill_frontmatter(&content, parent);
+            assert!(
+                errors.iter().any(|error| error.contains(expected)),
+                "missing {expected:?} for {name:?}: {errors:?}"
+            );
+        }
+
+        let long_name = "a".repeat(SKILL_NAME_MAX_CHARS + 1);
+        let content = format!("---\nname: {long_name}\ndescription: valid\n---\n");
+        let errors = validate_agent_skill_frontmatter(&content, &long_name);
+        assert!(errors.iter().any(|error| error.contains("1–64")));
+
+        let compatibility = "x".repeat(SKILL_COMPATIBILITY_MAX_CHARS + 1);
+        let content = format!(
+            "---\nname: fixture-skill\ndescription: valid\ncompatibility: {compatibility}\n---\n"
+        );
+        let errors = validate_agent_skill_frontmatter(&content, "fixture-skill");
+        assert!(errors.iter().any(|error| error.contains("maximum 500")));
+    }
+
+    #[test]
+    fn skill_description_probe_rejects_over_limit_generic_pi_and_codex_skills() {
+        for root in [".agents/skills", ".pi/skills", ".codex/skills"] {
             let repo = TmpRepo::new("skill-description-over");
             let content = rendered_skill(&format!(
                 "\"{}\"",
@@ -2081,7 +2591,7 @@ mod tests {
             ));
             repo.write(&format!("{root}/fixture-skill/SKILL.md"), &content);
 
-            let outcome = probe_skill_description_lengths(&repo.path).unwrap();
+            let outcome = probe_agent_skills(&repo.path).unwrap();
             assert!(!outcome.passed);
             assert!(
                 outcome.message.contains("1025-character"),
@@ -2097,14 +2607,58 @@ mod tests {
     #[test]
     fn skill_description_probe_accepts_located_compliant_skills_and_no_skills() {
         let empty = TmpRepo::new("skill-description-empty");
-        assert!(passed(probe_skill_description_lengths(&empty.path)));
+        assert!(passed(probe_agent_skills(&empty.path)));
 
         let repo = TmpRepo::new("skill-description-ok");
         repo.write(
             "skills/fixture-skill/SKILL.md",
             &rendered_skill(&format!("\"{}\"", "x".repeat(SKILL_DESCRIPTION_MAX_CHARS))),
         );
-        assert!(passed(probe_skill_description_lengths(&repo.path)));
+        assert!(passed(probe_agent_skills(&repo.path)));
+    }
+
+    #[test]
+    fn skill_probe_recurses_to_skill_roots_and_aggregates_violations() {
+        let repo = TmpRepo::new("skill-recursive");
+        repo.write(
+            "skills/group/first-skill/SKILL.md",
+            "---\nname: first-skill\ndescription: Analyze: broken\n---\n",
+        );
+        repo.write(
+            "skills/group/second-skill/SKILL.md",
+            "---\nname: wrong-name\ndescription: valid\n---\n",
+        );
+        repo.write(
+            "skills/.hidden/ignored/SKILL.md",
+            "---\nname: INVALID\ndescription: invalid but undiscovered\n---\n",
+        );
+        repo.write(
+            "skills/node_modules/ignored/SKILL.md",
+            "---\nname: INVALID\ndescription: invalid but undiscovered\n---\n",
+        );
+
+        let outcome = probe_agent_skills(&repo.path).unwrap();
+        assert!(!outcome.passed);
+        assert!(outcome.message.contains("first-skill/SKILL.md"));
+        assert!(outcome.message.contains("invalid YAML frontmatter"));
+        assert!(outcome.message.contains("second-skill/SKILL.md"));
+        assert!(outcome.message.contains("does not match parent directory"));
+        assert!(!outcome.message.contains("ignored"));
+    }
+
+    #[test]
+    fn skill_probe_bounds_reported_violations() {
+        let repo = TmpRepo::new("skill-bounded-evidence");
+        for index in 0..10 {
+            repo.write(
+                &format!("skills/bad-skill-{index}/SKILL.md"),
+                "---\ndescription: valid\n---\n",
+            );
+        }
+        let outcome = probe_agent_skills(&repo.path).unwrap();
+        assert!(!outcome.passed);
+        assert!(outcome.message.contains("10 Agent Skill probe violation"));
+        assert!(outcome.message.contains("and 2 more violation"));
     }
 
     #[test]
@@ -2113,7 +2667,21 @@ mod tests {
         let mut content = rendered_skill("\"short description\"");
         content.push_str(&"x".repeat(1_048_576));
         repo.write("skills/fixture-skill/SKILL.md", &content);
-        assert!(passed(probe_skill_description_lengths(&repo.path)));
+        assert!(passed(probe_agent_skills(&repo.path)));
+    }
+
+    #[test]
+    fn skill_probe_rejects_frontmatter_over_the_scan_limit_even_with_a_closing_fence() {
+        let repo = TmpRepo::new("skill-frontmatter-limit");
+        let prefix = "---\nname: fixture-skill\ndescription: valid\npadding: ";
+        let suffix = "\n---\n";
+        let padding = MAX_SKILL_FRONTMATTER_BYTES as usize + 1 - prefix.len() - suffix.len();
+        let content = format!("{prefix}{}{suffix}", "x".repeat(padding));
+        assert_eq!(content.len(), MAX_SKILL_FRONTMATTER_BYTES as usize + 1);
+        repo.write("skills/fixture-skill/SKILL.md", &content);
+        let outcome = probe_agent_skills(&repo.path).unwrap();
+        assert!(!outcome.passed);
+        assert!(outcome.message.contains("frontmatter exceeds"));
     }
 
     #[cfg(unix)]
@@ -2126,9 +2694,125 @@ mod tests {
             &rendered_skill("\"short description\""),
         );
         repo.symlink(external.path.to_str().unwrap(), "skills");
-        let outcome = probe_skill_description_lengths(&repo.path).unwrap();
+        let outcome = probe_agent_skills(&repo.path).unwrap();
         assert!(!outcome.passed);
         assert!(outcome.message.contains("outside the target repository"));
+    }
+
+    #[test]
+    fn skill_probe_rejects_a_collection_root_skill_without_masking_children() {
+        let repo = TmpRepo::new("skill-root-mask");
+        repo.write(
+            "skills/SKILL.md",
+            "---\nname: skills\ndescription: valid root metadata\n---\n",
+        );
+        repo.write(
+            "skills/nested-skill/SKILL.md",
+            "---\nname: nested-skill\ndescription: Analyze: broken\n---\n",
+        );
+        let outcome = probe_agent_skills(&repo.path).unwrap();
+        assert!(!outcome.passed);
+        assert!(outcome.message.contains("inside a named child"));
+        assert!(outcome.message.contains("nested-skill/SKILL.md"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn skill_probe_validates_logical_symlink_aliases_and_confines_nested_links() {
+        let repo = TmpRepo::new("skill-links");
+        repo.write(
+            "skills/real-skill/SKILL.md",
+            "---\nname: real-skill\ndescription: valid\n---\n",
+        );
+        repo.symlink("real-skill", "skills/alias-skill");
+
+        let external = TmpRepo::new("skill-link-external");
+        external.write(
+            "escaped-skill/SKILL.md",
+            "---\nname: escaped-skill\ndescription: valid\n---\n",
+        );
+        repo.mkdir("skills/group");
+        repo.symlink(
+            external.path.join("escaped-skill").to_str().unwrap(),
+            "skills/group/escaped-skill",
+        );
+
+        let outcome = probe_agent_skills(&repo.path).unwrap();
+        assert!(!outcome.passed);
+        assert!(outcome.message.contains("alias-skill/SKILL.md"));
+        assert!(outcome.message.contains("does not match parent directory"));
+        assert!(outcome.message.contains("resolves outside"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn skill_probe_rejects_symlinked_skill_files_and_handles_directory_cycles() {
+        let repo = TmpRepo::new("skill-link-file");
+        repo.mkdir("skills/linked-skill");
+        repo.write("skills/target.md", &rendered_skill("valid"));
+        repo.symlink("../target.md", "skills/linked-skill/SKILL.md");
+        repo.mkdir("skills/group");
+        repo.symlink("..", "skills/group/cycle");
+
+        let outcome = probe_agent_skills(&repo.path).unwrap();
+        assert!(!outcome.passed);
+        assert!(outcome.message.contains("is a symlink"));
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn skill_probe_rejects_non_utf8_parent_names() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let repo = TmpRepo::new("skill-non-utf8");
+        let directory = repo
+            .path
+            .join("skills")
+            .join(OsString::from_vec(vec![b's', b'k', 0xff]));
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(
+            directory.join("SKILL.md"),
+            "---\nname: fixture-skill\ndescription: valid\n---\n",
+        )
+        .unwrap();
+
+        let outcome = probe_agent_skills(&repo.path).unwrap();
+        assert!(!outcome.passed);
+        assert!(outcome
+            .message
+            .contains("parent directory name is not UTF-8"));
+    }
+
+    #[test]
+    fn skill_probe_bounds_traversal_depth() {
+        let repo = TmpRepo::new("skill-depth");
+        let mut path = repo.path.join("skills");
+        for _ in 0..=MAX_SKILL_SCAN_DEPTH {
+            path.push("a");
+        }
+        std::fs::create_dir_all(path).unwrap();
+
+        let outcome = probe_agent_skills(&repo.path).unwrap();
+        assert!(!outcome.passed);
+        assert!(outcome.message.contains("maximum depth"));
+    }
+
+    #[test]
+    fn skill_violation_messages_are_single_line_and_bounded() {
+        let mut total = 0;
+        let mut reported = Vec::new();
+        record_skill_violation(
+            &mut total,
+            &mut reported,
+            format!(
+                "before\n{}\rafter",
+                "x".repeat(MAX_SKILL_VIOLATION_CHARS + 20)
+            ),
+        );
+        assert_eq!(total, 1);
+        assert!(!reported[0].contains(['\n', '\r']));
+        assert_eq!(reported[0].chars().count(), MAX_SKILL_VIOLATION_CHARS + 1);
     }
 
     #[test]

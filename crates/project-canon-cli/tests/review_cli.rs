@@ -160,6 +160,33 @@ fn over_limit_located_skill_is_an_advisory_confirmed_gap() {
 }
 
 #[test]
+fn malformed_skill_yaml_is_an_advisory_confirmed_gap() {
+    let f = Fixture::conformant("skill-yaml");
+    let skill = f.path.join(".pi/skills/fixture-skill/SKILL.md");
+    std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
+    std::fs::write(
+        skill,
+        "---\nname: fixture-skill\ndescription: Analyze: broken\n---\n",
+    )
+    .unwrap();
+
+    let out = run_review(&["--json", f.path.to_str().unwrap()]);
+    assert_eq!(code(&out), 0, "review remains advisory");
+    let payload: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let finding = payload["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|finding| finding["id"] == "canon.s15")
+        .expect("§15 finding");
+    assert_eq!(finding["kind"], "confirmed-gap");
+    assert!(finding["observed"]
+        .as_str()
+        .unwrap()
+        .contains("invalid YAML frontmatter"));
+}
+
+#[test]
 fn a_conformant_repo_exits_zero_and_stages_nothing() {
     let f = Fixture::conformant("clean");
     let out = run_review(&[f.path.to_str().unwrap()]);

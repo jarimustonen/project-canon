@@ -206,6 +206,28 @@ fn over_limit_located_skill_description_is_a_must_gap() {
 }
 
 #[test]
+fn malformed_pi_skill_frontmatter_is_an_actionable_must_gap() {
+    let f = Fixture::conformant("skill-yaml");
+    let skill = f.path.join(".pi/skills/worktree-bug-analysis/SKILL.md");
+    std::fs::create_dir_all(skill.parent().unwrap()).unwrap();
+    std::fs::write(
+        skill,
+        "---\nname: worktree-bug-analysis\ndescription: Spawn a worker: analyze one bug\n---\n",
+    )
+    .unwrap();
+
+    let out = run_doctor(&["--json", f.path.to_str().unwrap()]);
+    assert_eq!(code(&out), 1);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("canon.s15"), "{stdout}");
+    assert!(
+        stdout.contains("worktree-bug-analysis/SKILL.md"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("invalid YAML frontmatter"), "{stdout}");
+}
+
+#[test]
 fn configured_private_marker_is_a_must_gap_but_own_coordinates_are_allowed() {
     let f = Fixture::conformant("s23");
     std::fs::write(

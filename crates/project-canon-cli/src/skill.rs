@@ -142,19 +142,12 @@ fn lookup_skill(name: &str) -> Option<&'static ShippedSkill> {
     SHIPPED.iter().find(|s| s.name == name)
 }
 
-/// A strict path-safe / YAML-safe skill slug: ASCII lowercase letters, digits, and `-`, starting
-/// with a letter. This is the boundary that keeps a catalog name out of trouble everywhere it
-/// flows — it can be neither `..`/`/` (path traversal in [`Agent::path`]) nor a YAML-significant
-/// token in the Claude frontmatter. Enforced over the whole `SHIPPED` table by a test (its only
-/// consumer — the catalog is static, so this is a compile-time-shaped invariant, not a runtime gate).
+/// The portable Agent Skills name rule shared with runtime/static §15 validation. This keeps a
+/// catalog name path-safe everywhere it flows; numeric-leading names remain valid per the standard,
+/// while edge/consecutive hyphens and path-significant characters do not.
 #[cfg_attr(not(test), allow(dead_code))]
 fn is_valid_skill_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= 64
-        && name.chars().next().is_some_and(|c| c.is_ascii_lowercase())
-        && name
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    crate::probes::is_portable_skill_name(name)
 }
 
 // ===== dispatch =====================================================================
@@ -1471,25 +1464,17 @@ mod install {
         }
 
         #[test]
-        fn every_bundled_native_skill_render_has_a_compliant_description() {
+        fn every_bundled_native_skill_render_has_portable_frontmatter() {
             for agent in [Agent::Claude, Agent::Pi, Agent::Codex] {
                 for skill in SHIPPED {
                     let rendered = agent.render(skill, "SKILL.md").unwrap();
-                    let length = crate::probes::skill_description_length(&rendered).unwrap_or_else(
-                        |error| {
-                            panic!(
-                                "{} {} render has invalid frontmatter: {error}",
-                                agent.slug(),
-                                skill.name
-                            )
-                        },
-                    );
+                    let errors =
+                        crate::probes::validate_agent_skill_frontmatter(&rendered, skill.name);
                     assert!(
-                        length <= crate::probes::SKILL_DESCRIPTION_MAX_CHARS,
-                        "{} {} rendered description is {length} characters (maximum {})",
+                        errors.is_empty(),
+                        "{} {} render has non-portable Agent Skills frontmatter: {errors:?}",
                         agent.slug(),
-                        skill.name,
-                        crate::probes::SKILL_DESCRIPTION_MAX_CHARS
+                        skill.name
                     );
                 }
             }

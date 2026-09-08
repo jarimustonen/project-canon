@@ -199,12 +199,16 @@ step has bound it to a real, read-only command.
   non-interactive `--dry-run`/`--force`, no-clobber-default, and force-required overwrite safety.
   Treat this as declared interface evidence, not behavioral proof. `[static]` inspect canonical skill resources plus
   installer source/tests; arbitrary project-local runtime files are not proof of installer
-  behavior. `[sandbox-write]` only after verifying a
+  behavior. Validate every located `SKILL.md` as strict portable Agent Skills YAML: a mapping with
+  required typed `name`/`description`, portable name syntax and parent-directory match, published
+  length limits, and correctly typed optional fields. Permit typed runtime extension fields; pi's
+  `disable-model-invocation`, when present, is boolean. `[sandbox-write]` only after verifying a
   safe scratch base, compare no-selection with explicit `all`, then each single-runtime selection
   and `--target`; never use a shared/fixed path or a real runtime home.
 - **Fail:** no `skill` door; Claude-only support; default or explicit `all` omits pi/Codex;
   no runtime-specific selection or `--target`; an artifact in the wrong native destination/form;
-  a skill list referencing a removed flag; a frontmatter description over 1024 characters.
+  a skill list referencing a removed flag; malformed YAML, a missing/non-string required field,
+  a non-portable name, an over-limit value, or an incorrectly typed optional/extension field.
 
 ### §16 `skill print`: stream skill content, no side effects · **MUST**
 - **Applies:** always (pairs with §15).
