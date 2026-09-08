@@ -1,1 +1,0 @@
-- Validate portable Agent Skills frontmatter comprehensively, including malformed YAML, required and optional field types, name rules, and pi-compatible discovery paths.

@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 <!-- oss-changelog:unreleased-end -->
 
+## [0.9.0] - 2026-09-08
+
+### Changed
+
+- Validate portable Agent Skills frontmatter comprehensively, including malformed YAML,
+  required and optional field types, name rules, and pi-compatible discovery paths.
+
 ## [0.8.2] - 2026-09-06
 
 ### Changed
