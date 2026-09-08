@@ -5,29 +5,22 @@ Pointers to open issues. Descriptions and plans live in the linked
 
 ## 🔄 Continue here (handoff)
 
-_**2026-09-06 — `0.8.1` is live and verified on every declared channel.** Shipshape run
-`01M1VKGRGG2XXCAPYYWQ264ECH` completed dry-run, build, crates.io publication
-(`project-canon-core` + `project-canon-cli`), `v0.8.1`, cargo-dist/GitHub Release, Homebrew,
-registry verification, and fast-forwarding `main`. The installed binary also reports
-`project-canon 0.8.1`. The isolated, version-locked cargo-dist prefix used for the cut was removed,
-and no Project Canon worker or release run remains active._
+_**2026-09-08 — Taskfleet reference convergence is complete.** Project Canon `0.8.2` is the
+current published release; its GitHub release and the installed `project-canon 0.8.2` binary were
+verified. That release already ships the canonical CLI-canon and generated catalog wording with
+the Taskfleet product name._
 
-_**What shipped.** Canon §15 and Project Canon now require companion-skill installers to support
-Claude, pi, and Codex as native Agent Skills trees, with default/`all` covering all three. The
-initial `0.8.0` implementation incorrectly treated Codex custom prompts as its native skill form;
-`0.8.1` corrects the destination to `.codex/skills/<name>/...`, preserves complete resource trees,
-and makes runtime conformance reject prompt-only Codex distribution. Installation migrates only
-positively identified Project Canon-managed legacy prompts and preserves foreign, malformed,
-symlinked, or newer artifacts. The full Rust green gate passed after process-heavy runtime tests
-were isolated from one another to keep their bounded deadlines deterministic under concurrent
-test execution._
+_**What landed after the release.** `taskfleet-project-canon-reference-convergence` refreshed the
+repo-local Claude and Codex Issuectl dogfood artifacts byte-for-byte from released Issuectl
+`0.18.2`, so their analysis-worker prerequisite now identifies Taskfleet. A focused integrity test
+was corrected to preserve stable `OCTL_*` protocol identifiers rather than treating them as retired
+product branding. Multi-model review and assessment completed, and the full Rust green gate passed:
+fmt, clippy with warnings denied, workspace tests, workspace build, and rustdoc with warnings
+denied. These operational dogfood and test changes require no additional Project Canon release.
+The issue is closed and no Project Canon worker or release run remains active._
 
-_**Direction from here.** The next accepted item is
-`taskfleet-project-canon-reference-convergence`: update active distributed and dogfooded guidance
-to Taskfleet while preserving historical and compatibility references. Do not begin that work
-until its stated upstream preconditions are verified: the canonical issue-intake template must be
-released and the canonical `taskfleet` intake key must be accepted. Use the live issue DAG for all
-scheduling state; this narrative records intent only._
+_**Direction from here.** There is no accepted follow-up agenda prepared. Use the live issue DAG
+for scheduling state and perform a fresh planning pass before starting new product work._
 
 ## Scheduling
 
