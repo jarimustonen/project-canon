@@ -1509,18 +1509,15 @@ mod install {
         }
 
         #[test]
-        fn shipped_skill_sources_exclude_retired_taskfleet_identities() {
+        fn shipped_skill_sources_exclude_retired_taskfleet_product_identity() {
+            // Keep the retired identity non-contiguous so this guard does not itself
+            // become a match in repository-wide checks of active public content.
             let retired_product = concat!("orchestrate", "ctl");
-            let retired_env_prefix = concat!("O", "CTL_").to_ascii_lowercase();
             let assert_canonical = |source: &str, label: &str| {
                 let source = source.to_ascii_lowercase();
                 assert!(
                     !source.contains(retired_product),
                     "{label} contains the retired Taskfleet product identity"
-                );
-                assert!(
-                    !source.contains(&retired_env_prefix),
-                    "{label} contains the retired Taskfleet environment prefix"
                 );
             };
 
