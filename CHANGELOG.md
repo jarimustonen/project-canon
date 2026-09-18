@@ -13,9 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 ### Fixed
+<!-- oss-changelog:unreleased-end -->
+
+## [0.9.1] - 2026-09-18
+
+### Fixed
 
 - New repositories now reference the installed `/ai-first-cli-canon` skill instead of receiving a duplicate `AGENTS-AI-FIRST-CLI.md` copy that can become stale.
-<!-- oss-changelog:unreleased-end -->
 
 ## [0.9.0] - 2026-09-08
 
