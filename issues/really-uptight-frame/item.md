@@ -2,7 +2,7 @@
 created: 2026-09-18
 updated: 2026-09-18
 type: chore
-status: untriaged
+status: done
 priority: normal
 provenance: other
 provenance_detail: Taskfleet implementation brief
@@ -12,6 +12,8 @@ originating_run_kind: spinoff
 commits:
 - hash: f21e6ef2736e3a78c95f51fbdce69d5d25c6fce2
   summary: upgrade cargo-dist release workflow
+lane: build
+closed: 2026-09-18
 ---
 
 # Upgrade cargo-dist release workflow to 0.33.0
@@ -49,3 +51,9 @@ Rejected alternatives: a global cargo-dist install would mutate the machine and 
 ### 2026-09-18T06:45:40Z · @taskfleet:01m2sm2cvpcd9cfwxwd5210nwr
 
 Verified cargo-dist 0.33.0 regeneration with `dist generate --check` and a JSON `dist plan`. The plan retains the three configured targets and selects the self-hosted runner for Apple ARM64. The generated YAML parses and retains the release tag trigger, Homebrew publish job/token, and build attestations. The repository fmt, clippy, test, build, and rustdoc gates all pass.
+
+## Resolution
+
+### 2026-09-18T07:51:05Z · @issuectl
+
+cargo-dist 0.33.0 is pinned, the generated workflow was refreshed, and the recorded verification passed.
