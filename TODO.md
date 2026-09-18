@@ -5,19 +5,24 @@ Pointers to open issues. Descriptions and plans live in the linked
 
 ## 🔄 Continue here (handoff)
 
-_**2026-09-08 — Taskfleet reference convergence is complete.** Project Canon `0.8.2` is the
-current published release; its GitHub release and the installed `project-canon 0.8.2` binary were
-verified. That release already ships the canonical CLI-canon and generated catalog wording with
-the Taskfleet product name._
+_**2026-09-18 — Canon skill-only scaffolding shipped in Project Canon 0.9.1.** `project-canon new`
+no longer generates a repo-local `AGENTS-AI-FIRST-CLI.md`; generated `AGENTS.md` and
+`CONFORMANCE.md` direct agents to the versioned `/ai-first-cli-canon` skill instead. The full Rust
+green gate passed, and Shipshape verified the crates.io packages, GitHub Release, cargo-dist
+artifacts, Homebrew formula, tag, and advanced `main`._
 
-_**What landed after the release.** `taskfleet-project-canon-reference-convergence` refreshed the
-repo-local Claude and Codex Issuectl dogfood artifacts byte-for-byte from released Issuectl
-`0.18.2`, so their analysis-worker prerequisite now identifies Taskfleet. A focused integrity test
-was corrected to preserve stable `OCTL_*` protocol identifiers rather than treating them as retired
-product branding. Multi-model review and assessment completed, and the full Rust green gate passed:
-fmt, clippy with warnings denied, workspace tests, workspace build, and rustdoc with warnings
-denied. These operational dogfood and test changes require no additional Project Canon release.
-The issue is closed and no Project Canon worker or release run remains active._
+_**Consumer and machine convergence.** The downstream CLI repository removed its stale canon copy
+and updated its two references; `project-canon doctor` reports it conformant. Project Canon 0.9.1
+and its complete skill catalog are installed on the Linux release host and through Homebrew on the
+attached macOS seat. The cargo-dist family is aligned on the newest stable 0.33.0 release, and the
+disposable release binary was removed after use._
+
+_**Follow-up context.** Release execution exposed two Homebase integration gaps: autonomous
+Shipshape cuts need a safe, non-persistent path for disposable cargo-dist plus SOPS-backed registry
+credentials, and focused fleet convergence must detect an outdated but correctly owned Homebrew
+formula instead of skipping it. These are being filed to Homebase intake. The repository/CLI-name
+feature request remains untriaged context awaiting a human lane-or-close decision; it is not an
+accepted agenda item._
 
 _**Direction from here.** There is no accepted follow-up agenda prepared. Use the live issue DAG
 for scheduling state and perform a fresh planning pass before starting new product work._
