@@ -8,7 +8,7 @@
 members = ["cargo:."]
 
 [dist]
-cargo-dist-version = "0.28.2"
+cargo-dist-version = "0.33.0"
 ci = "github"
 # curl-to-shell installer plus the Homebrew formula pushed to the tap below by
 # the tag-triggered workflow (publish-homebrew-formula job, HOMEBREW_TAP_TOKEN
