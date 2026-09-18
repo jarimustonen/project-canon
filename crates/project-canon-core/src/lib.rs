@@ -49,8 +49,8 @@ pub use routing::{suggested_layer, Breadth};
 /// (ADR 0009 §6). The physical master lives beside this crate
 /// (`crates/project-canon-core/AGENTS-AI-FIRST-CLI.md`) so it packages *inside* core and ships on
 /// crates.io; the repo-root `AGENTS-AI-FIRST-CLI.md` is a symlink to it for external consumers.
-/// Every canon consumer (the `new` scaffolder, the `skill` installer, both here and in the CLI)
-/// reads exactly these bytes, so no second copy can drift.
+/// The `skill` installer and print surface read exactly these bytes, while generated repositories
+/// refer to that versioned skill instead of receiving a duplicate canon copy.
 pub const CANON: &str = include_str!("../AGENTS-AI-FIRST-CLI.md");
 
 /// Current normative canon revision.

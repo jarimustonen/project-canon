@@ -73,7 +73,6 @@ fn generates_the_base_and_cli_scaffold() {
     for rel in [
         "AGENTS.md",
         "CLAUDE.md",
-        "AGENTS-AI-FIRST-CLI.md",
         "README.md",
         ".gitignore",
         ".workmux.yaml",
@@ -92,14 +91,16 @@ fn generates_the_base_and_cli_scaffold() {
         .path
         .join(format!("crates/{name}-cli/src/main.rs"))
         .is_file());
-    // The canon copy is byte-identical to the single source (`project_canon_core::CANON`) — the
-    // same bytes `new` embeds. Asserting against the const, not a repo-relative path, keeps this
-    // test self-contained inside the published crate tarball and free of root-symlink fragility.
-    let bundled = std::fs::read_to_string(t.path.join("AGENTS-AI-FIRST-CLI.md")).unwrap();
-    assert_eq!(
-        bundled,
-        project_canon_core::CANON,
-        "bundled canon must match the single-source canon"
+    // The canon is consumed through project-canon's installed skill, not duplicated into each repo.
+    assert!(!t.path.join("AGENTS-AI-FIRST-CLI.md").exists());
+    let agents = std::fs::read_to_string(t.path.join("AGENTS.md")).unwrap();
+    assert!(agents.contains("/ai-first-cli-canon"), "{agents}");
+    assert!(agents.contains("project-canon skill install"), "{agents}");
+    let conformance = std::fs::read_to_string(t.path.join("CONFORMANCE.md")).unwrap();
+    assert!(conformance.contains("/ai-first-cli-canon"), "{conformance}");
+    assert!(
+        !conformance.contains("AGENTS-AI-FIRST-CLI.md"),
+        "{conformance}"
     );
     // `new` does NOT create .git or issues/ (those are hook products).
     assert!(!t.path.join(".git").exists());
