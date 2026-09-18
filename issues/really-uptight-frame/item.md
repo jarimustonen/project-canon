@@ -9,6 +9,9 @@ provenance_detail: Taskfleet implementation brief
 source_ref: taskfleet:01m2sm2cvpcd9cfwxwd5210nwr/task:upgrade-cargo-dist-0.33.0
 originating_run: 01m2sm2cvpcd9cfwxwd5210nwr
 originating_run_kind: spinoff
+commits:
+- hash: f21e6ef2736e3a78c95f51fbdce69d5d25c6fce2
+  summary: upgrade cargo-dist release workflow
 ---
 
 # Upgrade cargo-dist release workflow to 0.33.0
@@ -40,3 +43,9 @@ The generated release workflow still installs cargo-dist 0.28.2. The approved up
 Upgraded only the declared cargo-dist version and regenerated the workflow with the mandated disposable cargo-dist 0.33.0 binary. Kept `dist-workspace.toml` as the source of truth because direct workflow edits would be overwritten and could diverge from the release plan. Preserved the existing targets, custom self-hosted macOS runner, shell and Homebrew installers, Homebrew publishing job, Git tag trigger, and build attestations.
 
 Rejected alternatives: a global cargo-dist install would mutate the machine and violate the task's reproducibility boundary; hand-editing only the installer URL would leave the generated workflow stale; running `shipshape dist generate` would strip the repository-specific custom runner block; cutting or testing via a real release tag would publish the prepared release and is explicitly out of scope.
+
+## Agent Runs
+
+### 2026-09-18T06:45:40Z · @taskfleet:01m2sm2cvpcd9cfwxwd5210nwr
+
+Verified cargo-dist 0.33.0 regeneration with `dist generate --check` and a JSON `dist plan`. The plan retains the three configured targets and selects the self-hosted runner for Apple ARM64. The generated YAML parses and retains the release tag trigger, Homebrew publish job/token, and build attestations. The repository fmt, clippy, test, build, and rustdoc gates all pass.
