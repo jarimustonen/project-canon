@@ -3,10 +3,14 @@ created: 2026-09-18
 updated: 2026-09-18
 type: bug
 reporter: jari
-status: open
+status: fixed
 priority: normal
 lane: build
 collision: [crates/project-canon-cli/src/new.rs]
+commits:
+- hash: e6dba1589281e2056d502e2170c7bd428c59bcaa
+  summary: 'fix: reference installed canon skill from scaffolds'
+closed: 2026-09-18
 ---
 
 # Scaffold references a stale repo-local canon copy
@@ -26,3 +30,9 @@ Do not change environment-specific wrapper skills. The generic scaffold remains 
 - Generated conformance guidance has no dangling repo-local canon reference.
 - The canonical document remains bundled for `project-canon skill install` and `skill print`.
 - Scaffold tests cover the absence and the skill-based guidance.
+
+## Resolution
+
+### 2026-09-18T06:34:18Z · @issuectl
+
+Fresh scaffolds now consume the installed canon skill and no longer generate a duplicate canon document; targeted and full workspace gates passed.
