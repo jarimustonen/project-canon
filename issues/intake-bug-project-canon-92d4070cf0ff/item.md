@@ -3,10 +3,12 @@ created: 2026-09-18
 updated: 2026-09-27
 type: bug
 reporter: jari
-status: in-progress
+status: fixed
 priority: normal
 provenance: agent:homebase-wrapup
 source_ref: agent:homebase-wrapup/reporter:jari/id:wrapup-native-agent-host-placeholder-issuectl-link
+closed: 2026-09-27
+closed_by: agent
 ---
 
 # Generated AGENTS.md links issuectl to example-org placeholder
