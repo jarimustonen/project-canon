@@ -1,0 +1,47 @@
+# Independent of shipshape-managed contribution CI and cargo-dist-generated release CI.
+# The release workflow's macOS local installer override must match pinned generation.
+name: Release workflow guard
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  isolation-and-generation:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Fetch pinned cargo-dist to runner temp (no global install)
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/cargo-dist-x86_64-unknown-linux-gnu.tar.xz"
+          curl --proto '=https' --tlsv1.2 -fsSL \
+            'https://github.com/axodotdev/cargo-dist/releases/download/v0.33.0/cargo-dist-x86_64-unknown-linux-gnu.tar.xz' \
+            -o "$archive"
+          echo '4b3f0a5f0ebbdb798f6db649d01b32ba1518376b6f7a0502b7d92b75cc2c8293  '"$archive" | sha256sum -c -
+          tar -xf "$archive" -C "$RUNNER_TEMP"
+      - name: Test isolation and generated workflow drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/release-guard-venv"
+          "$RUNNER_TEMP/release-guard-venv/bin/pip" install PyYAML==6.0.3
+          "$RUNNER_TEMP/release-guard-venv/bin/python" tests/release_workflow.py
+          dist="$RUNNER_TEMP/cargo-dist-x86_64-unknown-linux-gnu/dist"
+          python3 scripts/release_workflow.py --check --dist "$dist"
+          "$dist" plan --output-format=json > "$RUNNER_TEMP/release-plan.json"
+          python3 - "$RUNNER_TEMP/release-plan.json" <<'PY'
+          import json
+          import sys
+          matrix = json.load(open(sys.argv[1]))['ci']['github']['artifacts_matrix']['include']
+          assert [(row['runner'], row['targets']) for row in matrix] == [
+              ('self-hosted', ['aarch64-apple-darwin']),
+              ('ubuntu-22.04-arm', ['aarch64-unknown-linux-musl']),
+              ('ubuntu-22.04', ['x86_64-unknown-linux-musl']),
+          ], 'release runner topology changed; review the isolation predicate'
+          assert all('v0.33.0/cargo-dist-installer.sh' in row['install_dist']['run'] for row in matrix)
+          PY

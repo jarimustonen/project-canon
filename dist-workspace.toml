@@ -3,7 +3,9 @@
 # generate` emits engine-owned Homebrew configuration. Maintain this config
 # directly and regenerate only the workflow with `dist generate` (cargo-dist).
 # The tag-triggered `.github/workflows/release.yml` is produced from the
-# [dist] section below via `dist generate` — never hand-edit the workflow.
+# [dist] section below via `python3 scripts/release_workflow.py --write`.
+# The script regenerates outside this checkout and applies the reviewed macOS
+# installer override; `--check` detects drift even though cargo-dist ignores CI.
 [workspace]
 members = ["cargo:."]
 
@@ -33,6 +35,9 @@ targets = [
 hosting = "github"
 github-attestations = true
 pr-run-mode = "skip"
+# cargo-dist cannot express a pre-install hook for only the local macOS job.
+# The scoped, tested override is owned by scripts/release_workflow.py instead.
+allow-dirty = ["ci"]
 
 # NON-STANDARD runner override — load-bearing, do not "clean it up", and do not
 # generate this for other projects. GitHub-hosted macOS jobs are not picked up for this
