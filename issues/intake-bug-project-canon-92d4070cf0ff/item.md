@@ -3,7 +3,7 @@ created: 2026-09-18
 updated: 2026-09-27
 type: bug
 reporter: jari
-status: open
+status: in-progress
 priority: normal
 provenance: agent:homebase-wrapup
 source_ref: agent:homebase-wrapup/reporter:jari/id:wrapup-native-agent-host-placeholder-issuectl-link
@@ -45,3 +45,9 @@ Generated public artifacts should use issuectl's canonical repository URL or omi
 
 - project-canon 0.9.1 (`c50976c7a4c27a71bb5d8180d4badcbbce0c358f`)
 - generated profile: `service`
+
+## Decisions
+
+### 2026-09-27T05:48:37Z · @agent
+
+Use the published upstream issuectl URL already linked in this repository’s AGENTS.md for every scaffold profile. Reject deriving the tool URL from gh_account: it identifies the generated repository owner, not issuectl’s owner. Reject removing the link: the known official public URL is useful and needs no consumer-specific configuration.
