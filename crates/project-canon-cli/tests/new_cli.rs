@@ -96,6 +96,10 @@ fn generates_the_base_and_cli_scaffold() {
     let agents = std::fs::read_to_string(t.path.join("AGENTS.md")).unwrap();
     assert!(agents.contains("/ai-first-cli-canon"), "{agents}");
     assert!(agents.contains("project-canon skill install"), "{agents}");
+    assert!(
+        agents.contains("[`issuectl`](https://github.com/jarimustonen/issuectl)"),
+        "{agents}"
+    );
     let conformance = std::fs::read_to_string(t.path.join("CONFORMANCE.md")).unwrap();
     assert!(conformance.contains("/ai-first-cli-canon"), "{conformance}");
     assert!(
@@ -105,6 +109,32 @@ fn generates_the_base_and_cli_scaffold() {
     // `new` does NOT create .git or issues/ (those are hook products).
     assert!(!t.path.join(".git").exists());
     assert!(!t.path.join("issues").exists());
+}
+
+#[test]
+fn generated_agents_link_uses_issuectl_upstream_for_every_profile_and_account() {
+    // The scaffold consumer's GitHub account owns its own repository, not issuectl.
+    for profile in ["cli", "service", "library", "release"] {
+        let t = Tmp::new(profile);
+        let out = base_command()
+            .env("PROJECT_CANON_GH_ACCOUNT", "octocat")
+            .args(["new", "--profile", profile, t.str()])
+            .output()
+            .unwrap();
+        assert_eq!(
+            code(&out),
+            0,
+            "{profile}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let agents = std::fs::read_to_string(t.path.join("AGENTS.md")).unwrap();
+        assert!(
+            agents.contains("[`issuectl`](https://github.com/jarimustonen/issuectl)"),
+            "{profile}: {agents}"
+        );
+        assert!(!agents.contains("example-org"), "{profile}: {agents}");
+        assert!(!agents.contains("octocat/issuectl"), "{profile}: {agents}");
+    }
 }
 
 #[test]

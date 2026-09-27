@@ -745,7 +745,7 @@ Every directory follows this structure:\n\n\
 - `AGENTS.md` — all AI-relevant info (consolidated)\n\
 - `AGENTS-<TOPIC>.md` — complex topics split out (optional)\n\n\
 ## Issues & Planning\n\n\
-Issue tracking is managed by [`issuectl`](https://github.com/example-org/issuectl). Use the \
+Issue tracking is managed by [`issuectl`](https://github.com/jarimustonen/issuectl). Use the \
 `/issue` skill (installed by `issuectl init`) to create, search, update, and close issues.\n\n\
 - `issues/<slug>/item.md` — every issue and epic (flat layout — no numeric prefix, no `open/closed/` split)\n\
 - Status lives in the `status:` frontmatter field, not in the path\n\n\
