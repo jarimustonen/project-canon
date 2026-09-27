@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 <!-- oss-changelog:unreleased-end -->
 
+## [0.9.2] - 2026-09-27
+
+### Fixed
+
+- Generated AGENTS.md links issuectl to example-org placeholder (`intake-bug-project-canon-92d4070cf0ff`).
+- Isolate cargo-dist on self-hosted macOS release runner (`macos-dist-runner-isolation`).
+
 ## [0.9.1] - 2026-09-18
 
 ### Fixed
