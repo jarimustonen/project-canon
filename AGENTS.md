@@ -57,13 +57,14 @@ and not in this file. An issue is the durable, findable record of a decision, an
 written anywhere else gets lost. Open an issue before building a feature for the same reason.
 
 Two maintainer decisions to know about: there is deliberately no `CODE_OF_CONDUCT.md` (removed
-2026-08-23, and `/shipshape-contributing` will keep proposing one for the mvp tier), and the
+2026-08-22, and `/shipshape-contributing` will keep proposing one for the mvp tier), and the
 release engine is `shipshape` with its `/shipshape-*` skills. If shipshape is not installed on
 the host, that is a convergence gap to report, not a reason to cut with something else.
 
 ## Operating policy
 
-`/stint` reads this section for the facts it needs to run a round here.
+`/stint-start` and `/stint-handoff` read this section for the facts they need to run a round
+here.
 
 **Green gate.** A unit has landed when these pass:
 
@@ -106,19 +107,19 @@ macOS runner; raw `dist generate` would overwrite it, so regenerate the workflow
 [`docs/release-runner-isolation.md`](docs/release-runner-isolation.md) describes.
 
 Live-version check: `project-canon --version` for the installed binary, and
-`curl -s https://crates.io/api/v1/crates/project-canon-cli | jq .crate.max_version` for the
-registry.
+`curl -s -A project-canon https://crates.io/api/v1/crates/project-canon-cli | jq .crate.max_version`
+for the registry (crates.io answers 403 to curl's default user agent, so the `-A` is needed).
 
 **Git.** `main` is shared with CI and the release engine. Pulling with rebase and pushing a
 clean, green `main`, plus engine-made tags, needs no go. A red push or a force-push of a shared
 branch costs someone else their work.
 
 **Hot files.** `crates/project-canon-core` (`profile.rs`, `resolve.rs`, `canon.rs`,
-`questionnaire.rs`, `dimension.rs`, `routing.rs`, `scaffold.rs`, `lib.rs`) plus the workspace
-`Cargo.toml` form one serial lane: every verb reads the core model, so worktrees touching it
-collide. `crates/project-canon-cli/src/main.rs` is the thin binary. Give `doctor`, `new`, and
-`review` their own lanes only once their modules are provably disjoint, and re-check after each
-lands.
+`questionnaire.rs`, `dimension.rs`, `env.rs`, `routing.rs`, `scaffold.rs`, `lib.rs`) plus the
+workspace `Cargo.toml` form one serial lane: every verb reads the core model, so worktrees
+touching it collide. `crates/project-canon-cli/src/main.rs` is the thin binary. Give `doctor`,
+`new`, and `review` their own lanes only once their modules are provably disjoint, and re-check
+after each lands.
 
 **Worker briefs.** Every brief handed to a worktree asks the worker to append its design
 decisions and rejected alternatives as an `issuectl` comment on the issue before merging. The
