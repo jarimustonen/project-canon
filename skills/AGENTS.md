@@ -25,8 +25,9 @@ checked-in `SKILL.md` with a pasted canon body would be a second copy of the can
 second copy that goes stale is the problem this design exists to remove; a test asserts that
 the rendered skill contains the master bytes verbatim. The two skills stay separate because
 most adopters want the rules without the auditing apparatus. The forks and their reasons are
-in `issues/canon-installable-skill/design.md`; its Codex-format section predates 0.8.1, when
-Codex moved to native skill trees, so trust the code over it there.
+in `issues/canon-installable-skill/design.md`; its install formats and packaging details
+predate pi support (0.6.0), native Codex skill trees (0.8.1), and scaffolds that reference the
+skill instead of copying the canon (0.9.1), so trust the code over it there.
 
 ## Where the files physically live
 
@@ -52,9 +53,10 @@ Some tests in `skill.rs` pin the text. The `cli-canon` render is expected to con
 "check shipshape/issuectl/taskfleet" and not its `ossctl` predecessor, because that phrase
 names a real review use case and a rewrite once dropped it and broke CI. No shipped skill
 source or the canon may mention the retired product name that `taskfleet` replaced. The
-resource count is pinned at four, so adding or renaming a template means adding it to
-`CLI_CANON_RESOURCES` and updating that test; the same list is what `skill list --json` and
-`skill print --json` advertise as printable resources.
+resource count is pinned at four, so adding a template means adding it to
+`CLI_CANON_RESOURCES` and updating that test, and renaming one means updating its entry there;
+the same list is what `skill list --json` and `skill print --json` advertise as printable
+resources.
 
 `skill list` describes `cli-canon` from the catalog constant in `skill.rs`, not from the
 frontmatter, and the two wordings already differ. A description change worth making belongs
@@ -63,7 +65,9 @@ in both places, or the list will describe a skill that no longer reads that way.
 The skill's claims about the binary (`review --verbose`, the manual-verify rows,
 `config show --json`) are held to the source in reviews; `/fact-check-instructions` exists for
 that check. The canon only appends sections and is cited by number, so the `§1–§24` range in
-the description follows the canon version rather than the other way round.
+both descriptions (the `cli-canon` frontmatter and the `ai-first-cli-canon` constant in
+`skill.rs`, which also names canon `v4`) follows the canon version rather than the other way
+round.
 
 ## What stays out of the text
 
