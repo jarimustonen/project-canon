@@ -28,3 +28,9 @@ The generated native `cli-canon` skill content no longer contains the exact phra
 ## Quick Test
 
 Reproduce `cargo test --locked -p project-canon-cli cli_canon_native_forms_expose_every_resource`, reconcile the shipped native skill output and test with the intended set of CLI canon use cases, then run the full workspace tests and verify CI on main.
+
+## Decisions
+
+### 2026-09-28T05:44:51Z · @taskfleet:01m3k8mkbq4pxv7n91vq3q5gqj
+
+The pinned phrase names a real review use case (shipshape/issuectl/taskfleet), not obsolete wording. Restored it in the rewritten skill description rather than reverting the rewrite or relaxing the test. No alternative test edit needed. All five workspace green-gate commands passed locally.
