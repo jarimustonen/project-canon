@@ -12,10 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+### Fixed
+<!-- oss-changelog:unreleased-end -->
+
+## [0.9.3] - 2026-09-28
+
+### Changed
+
 - The bundled `/cli-canon` skill is rewritten to explain purpose, knowledge, and considerations instead of prescribing numbered steps, and its claims are checked against the source (homebase `rethink-all-instructions`).
 
 ### Fixed
-<!-- oss-changelog:unreleased-end -->
+
+- CI cli-canon native skill resource test fails (`ci-cli-canon-resource-test`).
 
 ## [0.9.2] - 2026-09-27
 
