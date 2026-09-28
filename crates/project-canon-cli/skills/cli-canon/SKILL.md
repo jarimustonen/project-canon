@@ -131,18 +131,18 @@ a call per section.
 Severity is the canon's own model, stated per section in the probe table: MUST,
 MUST-when-applies, SHOULD. A SHOULD is never a hard gate, an out-of-scope conditional is
 `n/a` rather than a failure, and `unknown` is a coverage note rather than a finding. Two
-things the table does not tell you: §8 `config path`/`config show` is the family's most
+things worth repeating from the templates: §8 `config path`/`config show` is the family's most
 consistent historical miss, so for any tool that resolves config or a data root treat its
-absence as a failure and not a gap to soften. And canon v4 is deliberately aspirational; some
-mandates make existing tools non-conformant by design, so a `fail` against one is correct.
-Such a failure recurs on every run, though, so keep it in the report and default it to
-report-only rather than staging it again.
+absence as a failure and not a gap to soften. And the canon calls its v2 mandates deliberately
+aspirational; some mandates make existing tools non-conformant by design, so a `fail` against
+one is correct. Such a failure recurs on every run, though, so keep it in the report and
+default it to report-only rather than staging it again.
 
 Findings are staged, never filed. Confirm the target repo with `git -C <repo> remote -v`
 first; a path that exists is not proof it is the repo you mean, and the family map can be
 stale. Reuse the binary's staged command form, `( cd -- <repo> && issuectl new … --slug
-cli-canon-sNN --label cli-canon )`: `issuectl` dedups on slug, so a re-run updates instead of
-duplicating, and the explicit `cd` matters because a bare `issuectl` files into whatever
+cli-canon-sNN --label cli-canon )`: `issuectl` refuses a slug that already exists, so a re-run
+cannot duplicate, and the explicit `cd` matters because a bare `issuectl` files into whatever
 repo you happen to be standing in. Check existing `cli-canon`-labelled issues in the target
 before staging, present the would-file list, and let the user run it.
 
