@@ -81,7 +81,7 @@ redundant link targets that nothing else catches, so run it for any unit that to
 or `//!` comments. A release build is not needed per unit.
 
 **Deploy.** None. This is a distributable CLI, not a hosted service, so there is no server
-step and `/stint-start` Phase 3 is skipped. Changes land on `main` and reach users through a
+step and `/stint-start` has nothing to deploy. Changes land on `main` and reach users through a
 release. Migration rules and test-account reset: not applicable.
 
 **Releases.** The contract is `OSS-RELEASE.md`. Publish targets are crates.io
