@@ -27,11 +27,13 @@ for: issues are where design lives, a feature gets an issue before it is
 built, plans and analyses go under the issue's directory, and a worktree
 worker appends its design decisions and rejected alternatives to the issue
 before merging because the run report does not survive the run. The generated
-block below is the field reference: which frontmatter fields exist, which are
-required, which values they accept, and the transition graph in force. After
-any change to `issues/.schema.yaml` or `.issuectl/transitions.yaml`, run
-`issuectl doctor --fix` and commit the block together with the change so the
-two do not diverge.
+block below is the field reference for the schema: which declared frontmatter
+fields exist, which are required, which values they accept, and the transition
+graph in force. `lane_seq` and `commits` are built into issuectl rather than
+declared, so they are absent from the block and written through `update`
+(`--lane-seq`, `--add-commit`). After any change to `issues/.schema.yaml` or
+`.issuectl/transitions.yaml`, run `issuectl doctor --fix` and commit the block
+together with the change so the two do not diverge.
 
 ## Why frontmatter is written through issuectl
 
@@ -63,7 +65,8 @@ dispositioned as `wontfix`, `duplicate`, `obsolete`, or `cannot-reproduce`
 rather than quietly marked finished. Independently of this file, issuectl
 refuses `fixed` and `cannot-reproduce` for anything but a bug and `done` for a
 bug; `close` picks the right default by type. A refused move comes back as
-`Error: transition: …` with the legal path spelled out. That message is the
+`Error: transition: …`, or under `--json` as the error code
+`transition-illegal`, with the legal path spelled out. That message is the
 rule talking, and the answer is a different move, not a retry.
 
 ## No backlog, and where scheduling lives
@@ -120,8 +123,10 @@ migration rather than per closure.
 
 The repository is public, so issue text is public. The test the top-level
 `AGENTS.md` applies to published artifacts, whose environment a fact
-describes, is worth applying to issue titles and bodies as well;
-`create --slug-random` exists for a title that would leak.
+describes, is worth applying to issue titles and bodies as well.
+`create --slug-random` keeps a title's words out of the slug only; the title
+itself still ships in `item.md` and in `issuectl changelog` output, so a title
+that would leak is reworded instead.
 
 <!-- issuectl-managed:start -->
 
