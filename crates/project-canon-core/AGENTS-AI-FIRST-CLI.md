@@ -647,12 +647,14 @@ the agent's *operating manual* for the tool — distinct from `--help`
 - `<tool> skill install [<name>]` — copies the skill(s) into the maintained
   agent runtimes. The installer **MUST** support all three native destinations:
   Claude at `.claude/skills/<name>/...`, pi at
-  `.pi/agent/skills/<name>/...`, and Codex at
+  `.pi/agent/skills/<name>/...` for user installs and
+  `.pi/skills/<name>/...` for repository installs, and Codex at
   `.codex/skills/<name>/...`. A no-runtime-selection/default invocation and an
   explicit `all` selection **MUST** both install all three. The canonical
   selector is `--agent claude|pi|codex|all`; an explicit single-runtime value
-  installs only that runtime. `--target <dir>` overrides the install base without
-  changing the selected layouts. Claude, pi, and Codex all receive native Agent
+  installs only that runtime. `--target <dir>` overrides the install base; the home directory uses user
+  scope and other targets use repository scope. Layout metadata may add
+  `project_path` alongside the user-scope `path` template. Claude, pi, and Codex all receive native Agent
   Skills resource trees containing `SKILL.md` plus every bundled support file;
   flattening a tree into a custom prompt is non-conformant. The capability `path`
   strings above, including `<name>`/`...`, are the exact machine-readable layout

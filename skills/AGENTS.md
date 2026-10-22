@@ -2,7 +2,7 @@
 
 This directory is the maintained home of the agent skills that `project-canon` ships with the
 AI-first CLI canon. Every copy anywhere else, under an operator's `~/.claude/skills/`,
-`.pi/agent/skills/`, or `.codex/skills/`, or inside an adopting repo, was written by
+`.pi/agent/skills/`, or `.codex/skills/`, or inside an adopting repo (Pi: `.pi/skills/`), was written by
 `project-canon skill install` from the sources described here and opens with a provenance
 comment saying so. Those installed copies are consumers: an edit made in one is overwritten by
 the next install and reaches nobody else. The older arrangement, in which homebase and other

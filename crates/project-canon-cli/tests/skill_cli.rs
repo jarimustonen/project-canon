@@ -40,7 +40,7 @@ impl Tmp {
     fn skill_resource(&self, agent: &str, name: &str, resource: &str) -> PathBuf {
         let root = match agent {
             "claude" => ".claude/skills",
-            "pi" => ".pi/agent/skills",
+            "pi" => ".pi/skills",
             "codex" => ".codex/skills",
             other => panic!("unsupported native skill agent {other}"),
         };
@@ -439,7 +439,7 @@ fn each_single_runtime_selection_stays_within_its_target_layout() {
         assert_eq!(t.path.join(".codex").exists(), agent == "codex");
         let expected = match agent {
             "claude" => ".claude/skills/ai-first-cli-canon/SKILL.md",
-            "pi" => ".pi/agent/skills/ai-first-cli-canon/SKILL.md",
+            "pi" => ".pi/skills/ai-first-cli-canon/SKILL.md",
             "codex" => ".codex/skills/ai-first-cli-canon/SKILL.md",
             _ => unreachable!(),
         };
@@ -871,8 +871,8 @@ fn an_intermediate_runtime_symlink_is_refused_without_writing_outside_target() {
 fn a_nested_runtime_symlink_is_refused_but_a_symlinked_target_is_allowed() {
     let t = Tmp::new("nested-parent-symlink");
     let external = Tmp::new("nested-parent-symlink-external");
-    std::fs::create_dir_all(t.path.join(".pi/agent")).unwrap();
-    std::os::unix::fs::symlink(&external.path, t.path.join(".pi/agent/skills")).unwrap();
+    std::fs::create_dir_all(t.path.join(".pi")).unwrap();
+    std::os::unix::fs::symlink(&external.path, t.path.join(".pi/skills")).unwrap();
 
     let out = run(&[
         "install",
@@ -931,4 +931,151 @@ fn install_never_touches_this_repos_real_dotclaude() {
         .path
         .join(".codex/skills/ai-first-cli-canon/SKILL.md")
         .is_file());
+}
+
+#[test]
+fn pi_home_layout_is_unchanged_for_default_and_explicit_home() {
+    for explicit in [false, true] {
+        let home = Tmp::new("pi-home");
+        let mut cmd = base_command();
+        cmd.env("HOME", &home.path)
+            .args(["skill", "install", "--agent", "pi"]);
+        if explicit {
+            cmd.args(["--target", home.str()]);
+        }
+        let out = cmd.output().unwrap();
+        assert_eq!(code(&out), 0, "{}", String::from_utf8_lossy(&out.stderr));
+        assert!(home
+            .path
+            .join(".pi/agent/skills/ai-first-cli-canon/SKILL.md")
+            .is_file());
+        assert!(home
+            .path
+            .join(".pi/agent/skills/cli-canon/templates/review-report.md")
+            .is_file());
+        assert!(!home.path.join(".pi/skills").exists());
+    }
+}
+
+fn seed_legacy_pi(t: &Tmp, name: &str, resource: &str, content: &[u8]) -> PathBuf {
+    let path = t.path.join(".pi/agent/skills").join(name).join(resource);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, content).unwrap();
+    path
+}
+
+#[test]
+fn pi_project_migrates_managed_resources_after_native_install_and_is_idempotent() {
+    let t = Tmp::new("pi-migrate");
+    for (name, resource) in [
+        ("ai-first-cli-canon", "SKILL.md"),
+        ("cli-canon", "SKILL.md"),
+        ("cli-canon", "templates/review-report.md"),
+    ] {
+        let content = run(&["print", name, "--resource", resource]);
+        assert_eq!(code(&content), 0);
+        seed_legacy_pi(&t, name, resource, &content.stdout);
+    }
+    let before = t.snapshot();
+    let plan = run(&[
+        "install",
+        "--target",
+        t.str(),
+        "--agent",
+        "pi",
+        "--dry-run",
+        "--json",
+    ]);
+    assert_eq!(code(&plan), 0);
+    assert!(String::from_utf8_lossy(&plan.stdout).contains("remove-managed-legacy"));
+    assert_eq!(before, t.snapshot());
+    let out = run(&["install", "--target", t.str(), "--agent", "pi"]);
+    assert_eq!(code(&out), 0, "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(!t.path.join(".pi/agent/skills/cli-canon/SKILL.md").exists());
+    assert!(!t
+        .path
+        .join(".pi/agent/skills/cli-canon/templates/review-report.md")
+        .exists());
+    assert!(t
+        .skill_resource("pi", "cli-canon", "templates/review-report.md")
+        .is_file());
+    let installed = t.snapshot();
+    assert_eq!(
+        code(&run(&["install", "--target", t.str(), "--agent", "pi"])),
+        0
+    );
+    assert_eq!(installed, t.snapshot());
+}
+
+#[test]
+fn pi_migration_preserves_unowned_newer_and_unselected_files_even_with_force() {
+    let t = Tmp::new("pi-preserve");
+    let content = run(&["print", "cli-canon"]);
+    let newer = String::from_utf8(content.stdout).unwrap().replace(
+        &format!("cli_version={}", env!("CARGO_PKG_VERSION")),
+        "cli_version=999.0.0",
+    );
+    let path = seed_legacy_pi(&t, "cli-canon", "SKILL.md", newer.as_bytes());
+    let foreign = seed_legacy_pi(&t, "cli-canon", "templates/review-report.md", b"foreign");
+    let unselected_content = run(&["print", "ai-first-cli-canon"]);
+    let unselected = seed_legacy_pi(
+        &t,
+        "ai-first-cli-canon",
+        "SKILL.md",
+        &unselected_content.stdout,
+    );
+    let unknown = seed_legacy_pi(&t, "cli-canon", "custom.txt", b"custom");
+    let out = run(&[
+        "install",
+        "cli-canon",
+        "--target",
+        t.str(),
+        "--agent",
+        "pi",
+        "--force",
+    ]);
+    assert_eq!(code(&out), 0);
+    assert_eq!(std::fs::read_to_string(path).unwrap(), newer);
+    assert_eq!(std::fs::read(foreign).unwrap(), b"foreign");
+    assert!(unselected.is_file());
+    assert!(unknown.is_file());
+}
+
+#[test]
+fn pi_migration_does_not_remove_anything_when_destination_is_blocked() {
+    let t = Tmp::new("pi-blocked");
+    let content = run(&["print", "ai-first-cli-canon"]);
+    let legacy = seed_legacy_pi(&t, "ai-first-cli-canon", "SKILL.md", &content.stdout);
+    let native = t.skill_resource("pi", "ai-first-cli-canon", "SKILL.md");
+    std::fs::create_dir_all(native.parent().unwrap()).unwrap();
+    std::fs::write(&native, "foreign").unwrap();
+    let before = t.snapshot();
+    let out = run(&["install", "--target", t.str(), "--agent", "pi"]);
+    assert_ne!(code(&out), 0);
+    assert_eq!(before, t.snapshot());
+    assert!(legacy.is_file());
+}
+
+#[cfg(unix)]
+#[test]
+fn pi_migration_preserves_symlinks_and_symlinked_legacy_parents() {
+    for parent in [false, true] {
+        let t = Tmp::new("pi-legacy-link");
+        let external = Tmp::new("pi-legacy-external");
+        let content = run(&["print", "ai-first-cli-canon"]);
+        let outside = external.path.join("SKILL.md");
+        std::fs::write(&outside, &content.stdout).unwrap();
+        let legacy = t.path.join(".pi/agent/skills/ai-first-cli-canon/SKILL.md");
+        std::fs::create_dir_all(legacy.parent().unwrap().parent().unwrap()).unwrap();
+        if parent {
+            std::os::unix::fs::symlink(&external.path, legacy.parent().unwrap()).unwrap();
+        } else {
+            std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+            std::os::unix::fs::symlink(&outside, &legacy).unwrap();
+        }
+        let out = run(&["install", "--target", t.str(), "--agent", "pi", "--force"]);
+        assert_eq!(code(&out), 0, "{}", String::from_utf8_lossy(&out.stderr));
+        assert_eq!(std::fs::read(&outside).unwrap(), content.stdout);
+        assert!(legacy.exists());
+    }
 }

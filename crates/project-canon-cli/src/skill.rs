@@ -25,7 +25,7 @@
 //! written **atomically** (temp file + rename over the target — which never follows a final-
 //! component symlink); this is per-file atomic, **not** cross-file transactional, so a mid-run
 //! I/O failure can still leave a subset of the files installed (reported, non-zero exit). Once
-//! all native writes succeed, managed legacy Codex prompts are removed; foreign files and
+//! all native writes succeed, managed legacy artifacts are removed; foreign files and
 //! symlinks are preserved.
 
 use std::io::Write as _;
@@ -195,7 +195,7 @@ resource trees.
 
 INSTALL FLAGS:
     --target <dir>          Install base (default: $HOME). Pass a repo root to install into
-                            that repo's native agent dirs.
+                            that repo's native agent dirs (Pi: .pi/skills; home: .pi/agent/skills).
     --agent <claude|pi|codex|all>   Which runtime layout(s) to write (default: all).
     --force                 Overwrite a newer on-disk skill or a non-managed file at the path.
     --dry-run               Print the per-file plan; write nothing.
@@ -210,7 +210,8 @@ SIDE EFFECTS:
     install writes skill files under <target> and never shells out or touches the network.
     When Codex is selected, it removes same-scope managed legacy .codex/prompts files from
     this or an older version. Foreign files, symlinks, and newer managed prompts are preserved,
-    including with --force. list/print are read-only. --dry-run writes nothing.
+    including with --force. Repo Pi installs similarly retire managed files from
+    .pi/agent/skills after writing .pi/skills. list/print are read-only. --dry-run writes nothing.
 
 EXIT CODES:
     0   success (installed/upgraded/unchanged, dry-run plan, list, or print)
@@ -225,7 +226,7 @@ EXIT CODES:
 enum Agent {
     /// The `claude` layout: `<base>/.claude/skills/<name>/<resource>`.
     Claude,
-    /// The `pi` layout: `<base>/.pi/agent/skills/<name>/<resource>`.
+    /// Pi uses `.pi/agent/skills` at home and `.pi/skills` in repositories.
     Pi,
     /// The `codex` layout: `<base>/.codex/skills/<name>/<resource>`.
     Codex,
@@ -260,8 +261,13 @@ impl Agent {
         "agent-skill-tree"
     }
 
-    fn path(self, base: &Path, name: &str, resource: &str) -> PathBuf {
-        base.join(self.root()).join(name).join(resource)
+    fn path(self, base: &Path, name: &str, resource: &str, project: bool) -> PathBuf {
+        let root = if self == Agent::Pi && project {
+            ".pi/skills"
+        } else {
+            self.root()
+        };
+        base.join(root).join(name).join(resource)
     }
 
     /// Resources materialized by this runtime. Every runtime preserves the complete relative
@@ -519,7 +525,13 @@ mod install {
 
         // Resolve every per-file action first (pure of writes), so a blocking conflict aborts the
         // whole run before any file is touched.
-        let rows = match resolve_rows(&skills, &parsed.agents, &base, parsed.force) {
+        let rows = match resolve_rows(
+            &skills,
+            &parsed.agents,
+            &base,
+            parsed.force,
+            is_project_target(&base),
+        ) {
             Ok(rows) => rows,
             Err(fault) => {
                 return fail(
@@ -566,7 +578,7 @@ mod install {
         }
 
         // Apply native writes first (skipped under --dry-run). Only after every write succeeds do
-        // we retire managed legacy Codex prompts, so a failed native install never removes the
+        // we retire managed legacy artifacts, so a failed native install never removes the
         // caller's last usable Project Canon artifact.
         if !parsed.dry_run {
             for r in &report.rows {
@@ -585,7 +597,16 @@ mod install {
             let mut actual_legacy_removed = 0;
             for r in &report.rows {
                 if r.action.removes_file() {
-                    match remove_managed_legacy(&base, Path::new(&r.path), r.name) {
+                    match remove_legacy_with(
+                        &base,
+                        Path::new(&r.path),
+                        r.name,
+                        if r.agent == Agent::Pi {
+                            pi_legacy_action
+                        } else {
+                            legacy_action
+                        },
+                    ) {
                         Ok(RemovalOutcome::Removed) => actual_legacy_removed += 1,
                         Ok(RemovalOutcome::AlreadyAbsent) => {}
                         Err(source) => {
@@ -633,6 +654,17 @@ mod install {
                     .to_string(),
             ),
         }
+    }
+
+    // An explicit home target (including a symlink alias) is still user scope.
+    // Every other base is project scope; no repository marker is required.
+    fn is_project_target(base: &Path) -> bool {
+        let Some(home) = std::env::var_os("HOME").filter(|h| !h.is_empty()) else {
+            return true;
+        };
+        let normalized =
+            |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(abs(path)));
+        normalized(base) != normalized(Path::new(&home))
     }
 
     fn parse(args: &[String]) -> Result<Command, String> {
@@ -716,7 +748,7 @@ mod install {
         Ok(())
     }
 
-    /// One planned native skill file or legacy Codex prompt: its target path, desired bytes, and
+    /// One planned native skill file or legacy artifact: its target path, desired bytes, and
     /// resolved action.
     #[derive(Debug)]
     pub(super) struct Row {
@@ -757,12 +789,13 @@ mod install {
         agents: &[Agent],
         base: &Path,
         force: bool,
+        project: bool,
     ) -> Result<Vec<Row>, Fault> {
         let mut rows = Vec::new();
         for skill in skills {
             for &agent in agents {
                 for resource in agent.resources(skill) {
-                    let path = agent.path(base, skill.name, resource);
+                    let path = agent.path(base, skill.name, resource, project);
                     validate_install_ancestors(base, &path).map_err(|source| Fault {
                         path: path.display().to_string(),
                         source,
@@ -824,6 +857,43 @@ mod install {
                             "preserve foreign, non-regular, or newer legacy prompt".to_string()
                         }),
                     });
+                }
+            }
+        }
+        if project && agents.contains(&Agent::Pi) {
+            for skill in skills {
+                for resource in Agent::Pi.resources(skill) {
+                    let path = base.join(Agent::Pi.root()).join(skill.name).join(resource);
+                    let existing = match validate_install_ancestors(base, &path) {
+                        Ok(()) => inspect_path(&path).map_err(|source| Fault {
+                            path: path.display().to_string(),
+                            source,
+                        })?,
+                        Err(error) if error.kind() == std::io::ErrorKind::InvalidInput => {
+                            Existing::NonRegular
+                        }
+                        Err(source) => {
+                            return Err(Fault {
+                                path: path.display().to_string(),
+                                source,
+                            })
+                        }
+                    };
+                    let action = pi_legacy_action(&existing, skill.name);
+                    if action != Action::LegacyAbsent {
+                        rows.push(Row {
+                            name: skill.name,
+                            resource,
+                            agent: Agent::Pi,
+                            path: path.display().to_string(),
+                            desired: None,
+                            action,
+                            note: (action == Action::PreserveLegacy).then(|| {
+                                "preserve foreign, non-regular, or newer legacy Pi resource"
+                                    .to_string()
+                            }),
+                        });
+                    }
                 }
             }
         }
@@ -965,6 +1035,30 @@ mod install {
                 }
                 _ => Action::PreserveLegacy,
             },
+        }
+    }
+
+    fn pi_legacy_action(existing: &Existing, expected_name: &str) -> Action {
+        match existing {
+            Existing::Absent => Action::LegacyAbsent,
+            Existing::NonRegular => Action::PreserveLegacy,
+            Existing::Regular(bytes) => {
+                let version = std::str::from_utf8(bytes).ok().and_then(|text| {
+                    // SKILL.md has frontmatter; support resources start with the marker.
+                    let body = if let Some(rest) = text.strip_prefix("---\n") {
+                        rest.split_once("\n---\n")?.1.strip_prefix('\n')?
+                    } else {
+                        text
+                    };
+                    managed_legacy_version(body.as_bytes(), expected_name)
+                });
+                match version {
+                    Some(v) if cmp_versions(&v, CLI_VERSION) != std::cmp::Ordering::Greater => {
+                        Action::RemoveLegacy
+                    }
+                    _ => Action::PreserveLegacy,
+                }
+            }
         }
     }
 
@@ -1118,20 +1212,30 @@ mod install {
         AlreadyAbsent,
     }
 
+    #[cfg(test)]
     fn remove_managed_legacy(
         base: &Path,
         path: &Path,
         expected_name: &str,
     ) -> std::io::Result<RemovalOutcome> {
+        remove_legacy_with(base, path, expected_name, legacy_action)
+    }
+
+    fn remove_legacy_with(
+        base: &Path,
+        path: &Path,
+        expected_name: &str,
+        classify: fn(&Existing, &str) -> Action,
+    ) -> std::io::Result<RemovalOutcome> {
         validate_install_ancestors(base, path)?;
         match inspect_path(path)? {
             Existing::Absent => Ok(RemovalOutcome::AlreadyAbsent),
-            existing if legacy_action(&existing, expected_name) == Action::RemoveLegacy => {
+            existing if classify(&existing, expected_name) == Action::RemoveLegacy => {
                 std::fs::remove_file(path)?;
                 Ok(RemovalOutcome::Removed)
             }
             _ => Err(std::io::Error::other(
-                "legacy prompt changed after planning; refusing removal",
+                "legacy artifact changed after planning; refusing removal",
             )),
         }
     }
@@ -1560,6 +1664,54 @@ mod install {
         }
 
         #[test]
+        fn pi_migration_requires_an_anchored_exact_name_non_newer_marker() {
+            let current = canon_bytes(Agent::Pi);
+            for removable in [&current, &current.replace(CLI_VERSION, "0.0.0")] {
+                assert_eq!(
+                    pi_legacy_action(&reg(removable.as_bytes()), "ai-first-cli-canon"),
+                    Action::RemoveLegacy
+                );
+            }
+            for preserved in [
+                current.replace(CLI_VERSION, "999.0.0"),
+                current.replace("cli_version=", "missing_version="),
+                current.replace("cli_version=", "cli_version=bad"),
+                current.replace("— ai-first-cli-canon ", "— cli-canon "),
+                format!("quoted\n{current}"),
+            ] {
+                assert_eq!(
+                    pi_legacy_action(&reg(preserved.as_bytes()), "ai-first-cli-canon"),
+                    Action::PreserveLegacy
+                );
+            }
+        }
+
+        #[test]
+        fn pi_removal_revalidates_a_file_that_became_foreign_after_planning() {
+            let base = std::env::temp_dir().join(format!(
+                "pc-pi-revalidate-{}-{:?}",
+                std::process::id(),
+                std::thread::current().id()
+            ));
+            let path = base.join(".pi/agent/skills/ai-first-cli-canon/SKILL.md");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let current = canon_bytes(Agent::Pi);
+            assert_eq!(
+                pi_legacy_action(&reg(current.as_bytes()), "ai-first-cli-canon"),
+                Action::RemoveLegacy
+            );
+            std::fs::write(&path, "foreign replacement").unwrap();
+            assert!(
+                remove_legacy_with(&base, &path, "ai-first-cli-canon", pi_legacy_action).is_err()
+            );
+            assert_eq!(
+                std::fs::read_to_string(&path).unwrap(),
+                "foreign replacement"
+            );
+            std::fs::remove_dir_all(base).unwrap();
+        }
+
+        #[test]
         fn removal_reports_an_already_absent_artifact_without_counting_an_unlink() {
             let base = std::env::temp_dir().join(format!(
                 "pc-legacy-absent-{}-{:?}",
@@ -1732,6 +1884,14 @@ mod list {
                                             Json::Object(vec![
                                                 ("agent".into(), Json::str(agent.slug())),
                                                 ("path".into(), Json::str(agent.layout_path())),
+                                                (
+                                                    "project_path".into(),
+                                                    Json::str(if agent == Agent::Pi {
+                                                        ".pi/skills/<name>/..."
+                                                    } else {
+                                                        agent.layout_path()
+                                                    }),
+                                                ),
                                                 ("form".into(), Json::str(agent.layout_form())),
                                             ])
                                         })
