@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 <!-- oss-changelog:unreleased-end -->
 
+## [0.9.4] - 2026-10-22
+
+### Fixed
+
+- Repository-targeted skill installs now put Pi skills in `.pi/skills`, where Pi discovers them, while user installs keep `.pi/agent/skills`. Reinstalling migrates only managed, non-newer resources from the old repository path; dry-run previews the migration without writing.
+
+- skill install --target <repo> writes Pi skills where Pi does not load project skills (`pi-repo-skill-path`).
+
 ## [0.9.3] - 2026-09-28
 
 ### Changed
