@@ -3,11 +3,16 @@ created: 2026-09-08
 updated: 2026-11-27
 type: feature
 reporter: jari
-status: open
+status: done
 priority: normal
 provenance: agent:homebase-wrapup
 source_ref: agent:homebase-wrapup/reporter:jari/id:homebase-wrapup-project-canon-separate-repo-cli-name-2026-09-08
 lane: unlaned
+closed: 2026-11-27
+closed_by: agent
+commits:
+- hash: 2fe5e13
+  summary: new --repo-name
 ---
 
 # Allow repository and CLI names to differ in project-canon new
@@ -81,3 +86,9 @@ Allow callers to independently specify the repository/GitHub slug and the canoni
 - The JSON report should surface both names so the caller can verify which value was used for which purpose.
 - The `--repo-name` flag is optional; when omitted the behaviour is identical to today (single-name model), so this is a strictly additive change with no breaking impact.
 - The tw registry line uses `name` for the display name (the project name as registered) and `repo_name` for the slug portion of the SSH URL — this is the correct split because the registry key should match the project name, not the GitHub slug.
+
+## Resolution
+
+### 2026-11-27T12:47:52Z · @agent
+
+Added new --repo-name: repository slug for github-create, git-remote-ssh and tw-register (registry key included); --name keeps package/crate/binary naming. Defaults to the project name, validated like --name, reported as repo_name.
