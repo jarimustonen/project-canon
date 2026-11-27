@@ -1,12 +1,17 @@
 ---
 created: 2026-10-22
-updated: 2026-10-22
+updated: 2026-11-27
 type: bug
 reporter: jari
-status: in-progress
+status: fixed
 priority: normal
 lane: unlaned
 preparation: ready
+closed: 2026-11-27
+closed_by: conductor
+commits:
+- hash: 158aca7
+  summary: 'fix(skill): install repository pi skills in the discovered layout'
 ---
 
 # skill install --target <repo> writes Pi skills where Pi does not load project skills
@@ -30,3 +35,9 @@ Use .pi/skills for non-home targets and preserve .pi/agent/skills for default or
 ### 2026-10-22T05:46:56Z · @agent
 
 Implementation and tests are ready. Full gate passed once; a later run hit an execution-runner cache mismatch in canon_master_is_a_regular_file_inside_the_crate: on-disk canon had only a prose rewrap while embedded CANON was the prior bytes. Reverted that cosmetic rewrap and reran the complete gate; confirmed-gate.log records the final run. This worker cannot both terminal-merge and then run required release/fleet steps because merge tears down its session; a separate operational continuation will salvage the preserved verified commit and perform release/rollout from main, then run the released-binary dry-run without writing to the adopting repository. No release or fleet apply has been attempted here. The development build dry-run reports 15 planned native rows, 11 would-write and zero writes; all five Pi resources target .pi/skills.
+
+## Resolution
+
+### 2026-11-27T12:59:39Z · @conductor
+
+Fixed in 158aca7, released in v0.9.4 and installed through the fleet (project-canon 0.9.4).
