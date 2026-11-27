@@ -3170,21 +3170,38 @@ mod tests {
         assert!(outcome.passed, "{}", outcome.message);
     }
 
+    /// Create an executable `#!/bin/sh` fixture without this process ever holding a writable
+    /// descriptor to it.
+    ///
+    /// Linux refuses to exec a file that any process has open for writing (ETXTBSY). Tests run
+    /// on parallel threads, so a write descriptor held here, even briefly and even with
+    /// `O_CLOEXEC`, is inherited by any child another thread forks in that window and stays open
+    /// until that child execs; exec'ing the fixture meanwhile fails with "Text file busy".
+    /// Writing the file from a short-lived helper process confines the write descriptor to that
+    /// helper, which has exited by the time this returns, so the fixture is deterministically
+    /// executable. Renaming a temp file would not help: the inherited descriptor names the inode.
     #[cfg(unix)]
     fn executable_script(tag: &str, body: &str) -> TmpRepo {
-        use std::os::unix::fs::PermissionsExt;
+        use std::io::Write as _;
         let repo = TmpRepo::new(tag);
-        repo.touch("probe-target");
-        std::fs::write(
-            repo.path.join("probe-target"),
-            format!("#!/bin/sh\n{body}\n"),
-        )
-        .unwrap();
-        std::fs::set_permissions(
-            repo.path.join("probe-target"),
-            std::fs::Permissions::from_mode(0o755),
-        )
-        .unwrap();
+        let target = repo.path.join("probe-target");
+        let mut writer = std::process::Command::new("/bin/sh")
+            .args(["-c", "cat > \"$1\" && chmod 755 \"$1\"", "sh"])
+            .arg(&target)
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("spawn fixture writer");
+        writer
+            .stdin
+            .take()
+            .expect("piped fixture writer stdin")
+            .write_all(format!("#!/bin/sh\n{body}\n").as_bytes())
+            .expect("write fixture script");
+        assert!(
+            writer.wait().expect("wait for fixture writer").success(),
+            "fixture writer failed for {}",
+            target.display()
+        );
         repo
     }
 
@@ -3249,8 +3266,43 @@ mod tests {
             Duration::from_millis(50),
         );
         assert!(started.elapsed() < Duration::from_secs(2));
-        assert_eq!(outcomes[0].status, RuntimeProbeStatus::CouldNotProbe);
-        assert!(outcomes[0].message.contains("timed out"));
+        assert_eq!(
+            outcomes[0].status,
+            RuntimeProbeStatus::CouldNotProbe,
+            "{}",
+            outcomes[0].message
+        );
+        assert!(
+            outcomes[0].message.contains("timed out"),
+            "{}",
+            outcomes[0].message
+        );
+    }
+
+    /// Assert that a descendant the runner SIGKILLed actually dies.
+    ///
+    /// The runner sends SIGKILL to the whole process group before `run` returns, but delivery
+    /// is asynchronous: on a loaded machine the target can still be listed as running for a
+    /// moment before the kernel tears it down. Poll for it to vanish or become a zombie within a
+    /// bounded deadline instead of sampling once; a process that survived the kill still fails.
+    #[cfg(unix)]
+    fn assert_descendant_terminates(pid: i32, what: &str) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let output = std::process::Command::new("ps")
+                .args(["-o", "state=", "-p", &pid.to_string()])
+                .output()
+                .unwrap();
+            let state = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if state.is_empty() || state.starts_with('Z') {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "{what} is still running with state {state:?}"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 
     #[cfg(unix)]
@@ -3269,22 +3321,15 @@ mod tests {
             current_dir: target.path.clone(),
         };
         let started = Instant::now();
-        assert!(matches!(runner.run(&[]), Err(RunFailure::Timeout)));
+        let result = runner.run(&[]).map(|_| ());
+        assert!(matches!(result, Err(RunFailure::Timeout)), "{result:?}");
         assert!(started.elapsed() < Duration::from_secs(3));
         let pid: i32 = std::fs::read_to_string(pid_file)
             .unwrap()
             .trim()
             .parse()
             .unwrap();
-        let state = std::process::Command::new("ps")
-            .args(["-o", "state=", "-p", &pid.to_string()])
-            .output()
-            .unwrap();
-        let state = String::from_utf8_lossy(&state.stdout);
-        assert!(
-            state.trim().is_empty() || state.trim_start().starts_with('Z'),
-            "timed-out descendant is still running with state {state:?}"
-        );
+        assert_descendant_terminates(pid, "timed-out descendant");
     }
 
     #[cfg(unix)]
@@ -3305,23 +3350,15 @@ mod tests {
             timeout: Duration::from_secs(2),
             current_dir: target.path.clone(),
         };
-        runner
-            .run(&[])
-            .expect("redirected descendant probe succeeds");
+        if let Err(failure) = runner.run(&[]) {
+            panic!("redirected descendant probe failed: {failure:?}");
+        }
         let pid: i32 = std::fs::read_to_string(pid_file)
             .unwrap()
             .trim()
             .parse()
             .unwrap();
-        let state = std::process::Command::new("ps")
-            .args(["-o", "state=", "-p", &pid.to_string()])
-            .output()
-            .unwrap();
-        let state = String::from_utf8_lossy(&state.stdout);
-        assert!(
-            state.trim().is_empty() || state.trim_start().starts_with('Z'),
-            "probe descendant is still running with state {state:?}"
-        );
+        assert_descendant_terminates(pid, "probe descendant");
     }
 
     #[cfg(unix)]
@@ -3348,9 +3385,14 @@ printf '{}\n'
             &target.path,
             Duration::from_secs(2),
         );
-        assert_eq!(outcomes[0].status, RuntimeProbeStatus::Pass);
-        assert_eq!(outcomes[1].status, RuntimeProbeStatus::CouldNotProbe);
-        assert_eq!(outcomes[2].status, RuntimeProbeStatus::Gap);
+        let summary = format!("{outcomes:?}");
+        assert_eq!(outcomes[0].status, RuntimeProbeStatus::Pass, "{summary}");
+        assert_eq!(
+            outcomes[1].status,
+            RuntimeProbeStatus::CouldNotProbe,
+            "{summary}"
+        );
+        assert_eq!(outcomes[2].status, RuntimeProbeStatus::Gap, "{summary}");
         assert!(!outcomes[2].message.contains("not attempted"));
     }
 
@@ -3466,8 +3508,17 @@ exit 1
             current_dir: claude_only.path.clone(),
         };
         let outcome = probe_runtime_section("canon.s15", &runner);
-        assert_eq!(outcome.status, RuntimeProbeStatus::Gap);
-        assert!(outcome.message.contains("claude, pi, and codex"));
+        assert_eq!(
+            outcome.status,
+            RuntimeProbeStatus::Gap,
+            "{}",
+            outcome.message
+        );
+        assert!(
+            outcome.message.contains("claude, pi, and codex"),
+            "{}",
+            outcome.message
+        );
 
         let complete = executable_script(
             "runtime-skill-all",
@@ -3505,7 +3556,10 @@ exit 1
         };
         let sentinel = target.path.join("shell-injection");
         let argument = format!("; touch {}", sentinel.display());
-        let capture = runner.run(&[&argument]).unwrap();
+        let capture = match runner.run(&[&argument]) {
+            Ok(capture) => capture,
+            Err(failure) => panic!("literal-argument probe failed: {failure:?}"),
+        };
         assert_eq!(capture.stdout, format!("{argument}\n").as_bytes());
         assert!(!sentinel.exists(), "argument was interpreted by a shell");
     }
