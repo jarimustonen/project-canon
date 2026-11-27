@@ -125,7 +125,9 @@ fn runtime_probes_with_timeout(
         } else {
             probe_runtime_section(id, &runner)
         };
-        if outcome.blocks_suite {
+        // Only the first failure is the reason; a blocked row's own message already carries
+        // the prefix, so re-capturing it would stack the prefix once per row.
+        if outcome.blocks_suite && blocked.is_none() {
             blocked = Some(outcome.message.clone());
         }
         outcomes.push(outcome);
@@ -3238,6 +3240,28 @@ mod tests {
             .iter()
             .all(|outcome| outcome.status == RuntimeProbeStatus::CouldNotProbe));
         assert!(outcomes[0].message.contains("could not start"));
+    }
+
+    #[test]
+    fn blocked_runtime_rows_carry_the_prefix_once_with_the_original_reason() {
+        let repo = TmpRepo::new("runtime-blocked-prefix");
+        let outcomes = runtime_probes_with_timeout(
+            &repo.path.join("missing-binary"),
+            &repo.path,
+            Duration::from_millis(50),
+        );
+        let prefix = "not attempted after target execution failure: ";
+        let original = &outcomes[0].message;
+        assert!(!original.contains(prefix), "{original}");
+        assert!(outcomes.len() > 2);
+        for outcome in &outcomes[1..] {
+            assert_eq!(
+                outcome.message,
+                format!("{prefix}{original}"),
+                "{}",
+                outcome.id
+            );
+        }
     }
 
     #[cfg(unix)]
