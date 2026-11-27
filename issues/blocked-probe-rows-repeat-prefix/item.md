@@ -2,13 +2,17 @@
 created: 2026-11-27
 updated: 2026-11-27
 type: bug
-status: untriaged
+status: fixed
 priority: normal
 provenance: other
 provenance_detail: observed by maintainer while fixing probe tests
 source_ref: taskfleet:01m8f62xq43zrrjp3k621ap6zg/blocked-probe-prefix
 originating_run: 01m8f62xq43zrrjp3k621ap6zg
 originating_run_kind: spinoff
+closed: 2026-11-27
+commits:
+- hash: c1ab161
+  summary: state the not-attempted prefix once on blocked probe rows
 ---
 
 # Blocked runtime-probe rows repeat the not-attempted prefix
