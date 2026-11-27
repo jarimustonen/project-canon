@@ -2,13 +2,14 @@
 created: 2026-11-27
 updated: 2026-11-27
 type: bug
-status: untriaged
+status: open
 priority: normal
 provenance: other
 provenance_detail: observed while running the green gate in a spinoff worker
 source_ref: taskfleet:01m8ehfmd4d448yx6thnzhwjew/observed:flaky-runtime-probe-tests
 originating_run: 01m8ehfmd4d448yx6thnzhwjew
 originating_run_kind: spinoff
+lane: unlaned
 ---
 
 # Runtime-probe unit tests fail intermittently under cargo test --workspace
