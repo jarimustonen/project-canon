@@ -3,9 +3,13 @@ created: 2026-11-27
 updated: 2026-11-27
 type: bug
 reporter: jari
-status: open
+status: fixed
 priority: normal
 lane: unlaned
+closed: 2026-11-27
+commits:
+- hash: 39e7229
+  summary: review resolves the declared profile like doctor
 ---
 
 # review ignores the profile a repository declares
