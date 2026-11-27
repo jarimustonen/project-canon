@@ -3,11 +3,16 @@ created: 2026-09-18
 updated: 2026-11-27
 type: bug
 reporter: jari
-status: open
+status: fixed
 priority: normal
 provenance: agent:homebase-wrapup
 source_ref: agent:homebase-wrapup/reporter:jari/id:wrapup-native-agent-host-doctor-profile
 lane: unlaned
+closed: 2026-11-27
+closed_by: agent
+commits:
+- hash: a6305ff
+  summary: doctor checks the declared profile
 ---
 
 # Doctor silently checks CLI profile in generated service repository
@@ -98,3 +103,9 @@ conformance report. An experienced human might catch the mismatch, but the whole
 generated scaffolding is that it *starts conformant* and the instructions are the authoritative
 guidance.
 <!-- intakectl:analysis:end job:c6b33dce-9f63-438c-95f4-6ef30311a3e0 generation:0 -->
+
+## Resolution
+
+### 2026-11-27T12:46:39Z · @agent
+
+doctor now reads the profile marker new writes into CONFORMANCE.md (legacy template sentence also recognised); --profile still wins, undeclared repos default to cli, JSON reports profile_source. Generated docs name --profile for non-CLI profiles.
