@@ -148,6 +148,11 @@ fn json_output_is_well_formed_and_matches_the_gate() {
     assert!(stdout.contains("\"schema_version\":1"));
     assert!(stdout.contains("\"verb\":\"doctor\""));
     assert!(stdout.contains("\"profile\":\"cli\""));
+    // No CONFORMANCE.md declaration and no --profile → the CLI default, reported as such.
+    assert!(
+        stdout.contains("\"profile_source\":\"default\""),
+        "{stdout}"
+    );
     assert!(stdout.contains("\"conformant\":true"));
     assert!(stdout.contains("\"exit_code\":0"));
     // Every §1–§24 canon check id is present in the matrix.

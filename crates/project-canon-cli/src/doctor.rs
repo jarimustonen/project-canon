@@ -17,6 +17,7 @@ use project_canon_core::{
     SurfaceShape,
 };
 
+use crate::declared_profile;
 use crate::error::{fail, json_requested, write_stdout, CliError};
 use crate::json::Json;
 use crate::probes::{mechanical_probe, ProbeContext};
@@ -81,10 +82,18 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     };
 
+    // Which profile to check: an explicit `--profile` wins, else the profile the repository
+    // declares (what `new` generated), else the CLI default. The source is reported so a caller
+    // can tell a declared profile from a silent default.
+    let (profile, profile_source) = match resolve_profile(parsed.profile, repo) {
+        Ok(resolved) => resolved,
+        Err(error) => return fail(parsed.json, error),
+    };
+
     // Resolve the model with the conservative questionnaire (all conditionals off — §3, doctor
     // never prompts). `--assume-defaults` names this explicitly; it is the only mode at v0.
     let model = Model::standard();
-    let questionnaire = Questionnaire::builder(parsed.profile).build();
+    let questionnaire = Questionnaire::builder(profile).build();
     let resolution = model.resolve(&questionnaire);
 
     // An operational I/O fault while probing (permission denied, transient error, target vanished)
@@ -95,7 +104,8 @@ pub fn run(args: &[String]) -> ExitCode {
     let report = match build_report(
         &model,
         &resolution,
-        parsed.profile,
+        profile,
+        profile_source,
         &target,
         repo,
         &probe_context,
@@ -127,13 +137,76 @@ pub fn run(args: &[String]) -> ExitCode {
     ExitCode::from(report.exit_code())
 }
 
+/// Where the checked profile came from (reported as `profile_source`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProfileSource {
+    /// An explicit `--profile`.
+    Flag,
+    /// The marker (or legacy template sentence) in the repository's `CONFORMANCE.md`.
+    Declared,
+    /// Nothing declared — the historical CLI default.
+    Default,
+}
+
+impl ProfileSource {
+    fn json(self) -> &'static str {
+        match self {
+            ProfileSource::Flag => "flag",
+            ProfileSource::Declared => "conformance-md",
+            ProfileSource::Default => "default",
+        }
+    }
+    fn human(self) -> &'static str {
+        match self {
+            ProfileSource::Flag => "from --profile",
+            ProfileSource::Declared => "declared in CONFORMANCE.md",
+            ProfileSource::Default => "default; CONFORMANCE.md declares none",
+        }
+    }
+}
+
+/// Pick the profile to check. A missing `CONFORMANCE.md` falls back to the CLI default; an
+/// unreadable one is operational (exit 2); a marker naming an unknown profile is caller-actionable
+/// rather than a silent fallback to the default.
+fn resolve_profile(
+    explicit: Option<Archetype>,
+    repo: &Path,
+) -> Result<(Archetype, ProfileSource), CliError> {
+    if let Some(profile) = explicit {
+        return Ok((profile, ProfileSource::Flag));
+    }
+    let path = repo.join(declared_profile::FILE);
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Ok((Archetype::Cli, ProfileSource::Default));
+        }
+        Err(err) => {
+            return Err(CliError::system(
+                "io_error",
+                format!("doctor: cannot read {}: {err}", path.display()),
+            ));
+        }
+    };
+    match declared_profile::parse(&String::from_utf8_lossy(&bytes)) {
+        Ok(Some(profile)) => Ok((profile, ProfileSource::Declared)),
+        Ok(None) => Ok((Archetype::Cli, ProfileSource::Default)),
+        Err(err) => Err(CliError::actionable(
+            "invalid_profile_declaration",
+            format!("doctor: {err}"),
+        )),
+    }
+}
+
 // ===== argument parsing =============================================================
 
 /// A parsed doctor invocation.
 #[derive(Debug, PartialEq, Eq)]
 struct DoctorArgs {
     repo: String,
-    profile: Archetype,
+    /// `None` when `--profile` is omitted: the repository's declaration (or the CLI default)
+    /// decides, see [`resolve_profile`].
+    profile: Option<Archetype>,
     json: bool,
     verbose: bool,
     #[allow(dead_code)] // Accepted & validated; a no-op affirmation of the v0 default mode.
@@ -222,7 +295,7 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
 
     Ok(Command::Run(DoctorArgs {
         repo: repo.unwrap_or_else(|| ".".to_string()),
-        profile: profile.unwrap_or(Archetype::Cli),
+        profile,
         json,
         verbose,
         assume_defaults,
@@ -280,7 +353,8 @@ ARGS:
     <repo>                  Target repo to probe (default: current directory). Read-only.
 
 FLAGS:
-    --profile <archetype>   cli | service | library | release  (default: cli)
+    --profile <archetype>   cli | service | library | release  (default: the profile the repo's
+                            CONFORMANCE.md declares, as written by `project-canon new`; else cli)
     --assume-defaults       Characterize non-interactively with conservative defaults (v0 default).
     --json                  Emit the structured §10 report on stdout.
     --verbose               Also list skipped (n/a + deferred) checks in the human matrix.
@@ -352,6 +426,7 @@ struct Report {
     tool: &'static str,
     target: String,
     profile: Archetype,
+    profile_source: ProfileSource,
     surface_shape: Option<SurfaceShape>,
     checks: Vec<Check>,
 }
@@ -439,6 +514,10 @@ impl Report {
             ("target".into(), Json::str(self.target.clone())),
             ("profile".into(), Json::str(self.profile.slug())),
             (
+                "profile_source".into(),
+                Json::str(self.profile_source.json()),
+            ),
+            (
                 "surface_shape".into(),
                 Json::opt_str(self.surface_shape.map(surface_shape_str)),
             ),
@@ -453,9 +532,10 @@ impl Report {
     fn render_human(&self, verbose: bool) -> String {
         let mut out = String::new();
         out.push_str(&format!(
-            "project-canon doctor: {} (profile: {})\n",
+            "project-canon doctor: {} (profile: {}, {})\n",
             self.target,
-            self.profile.slug()
+            self.profile.slug(),
+            self.profile_source.human()
         ));
         for c in &self.checks {
             if c.status == CheckStatus::Skipped && !verbose {
@@ -537,6 +617,7 @@ fn build_report(
     model: &Model,
     resolution: &Resolution,
     profile: Archetype,
+    profile_source: ProfileSource,
     target: &str,
     repo: &Path,
     probe_context: &ProbeContext<'_>,
@@ -553,6 +634,7 @@ fn build_report(
         tool: "project-canon",
         target: target.to_string(),
         profile,
+        profile_source,
         surface_shape: resolution.surface_shape(),
         checks,
     })
@@ -633,13 +715,13 @@ mod tests {
     }
 
     #[test]
-    fn defaults_are_cli_profile_and_cwd() {
+    fn defaults_leave_profile_to_the_repo_and_use_cwd() {
         let cmd = parse(&[]).unwrap();
         assert_eq!(
             cmd,
             Command::Run(DoctorArgs {
                 repo: ".".to_string(),
-                profile: Archetype::Cli,
+                profile: None,
                 json: false,
                 verbose: false,
                 assume_defaults: false,
@@ -662,7 +744,7 @@ mod tests {
             cmd,
             Command::Run(DoctorArgs {
                 repo: "/some/repo".to_string(),
-                profile: Archetype::Service,
+                profile: Some(Archetype::Service),
                 json: true,
                 verbose: true,
                 assume_defaults: true,
@@ -675,7 +757,7 @@ mod tests {
         let Command::Run(a) = parse(&["--profile=library"]).unwrap() else {
             panic!("expected Run");
         };
-        assert_eq!(a.profile, Archetype::Library);
+        assert_eq!(a.profile, Some(Archetype::Library));
     }
 
     #[test]
@@ -773,7 +855,16 @@ mod tests {
         let context = ProbeContext {
             user_specific_deny_list: &deny_list,
         };
-        build_report(&model, &resolution, profile, "target", repo, &context).expect("no I/O fault")
+        build_report(
+            &model,
+            &resolution,
+            profile,
+            ProfileSource::Flag,
+            "target",
+            repo,
+            &context,
+        )
+        .expect("no I/O fault")
     }
 
     #[test]
@@ -856,6 +947,47 @@ mod tests {
         assert!(json.contains("\"conformant\":true"));
         assert!(json.contains("\"exit_code\":0"));
         assert!(json.contains("\"surface_shape\":\"flat-verb\""));
+    }
+
+    #[test]
+    fn resolve_profile_prefers_flag_then_declaration_then_default() {
+        let repo = TmpRepo::new("resolve");
+        // Nothing declared → the CLI default, reported as such.
+        assert_eq!(
+            resolve_profile(None, &repo.path).unwrap(),
+            (Archetype::Cli, ProfileSource::Default)
+        );
+        std::fs::write(
+            repo.path.join("CONFORMANCE.md"),
+            format!(
+                "{}\n# x\n",
+                declared_profile::marker_line(Archetype::Service)
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_profile(None, &repo.path).unwrap(),
+            (Archetype::Service, ProfileSource::Declared)
+        );
+        // An explicit --profile still wins over the declaration.
+        assert_eq!(
+            resolve_profile(Some(Archetype::Cli), &repo.path).unwrap(),
+            (Archetype::Cli, ProfileSource::Flag)
+        );
+        // A marker naming an unknown profile is an error, not a silent default.
+        std::fs::write(
+            repo.path.join("CONFORMANCE.md"),
+            "<!-- project-canon profile: webapp -->\n",
+        )
+        .unwrap();
+        assert!(resolve_profile(None, &repo.path).is_err());
+    }
+
+    #[test]
+    fn json_report_names_the_profile_source() {
+        let repo = conformant_repo("src");
+        let json = report_for(&repo.path, Archetype::Cli).to_json().to_string();
+        assert!(json.contains("\"profile_source\":\"flag\""), "{json}");
     }
 
     #[test]

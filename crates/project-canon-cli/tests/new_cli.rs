@@ -396,3 +396,63 @@ fn new_then_doctor_is_conformant() {
     );
     assert!(String::from_utf8_lossy(&doctor.stdout).contains("conformant"));
 }
+
+/// Generate `profile`, simulate the two local hooks, and run a bare `doctor --json` on the result.
+fn generated_then_doctor(profile: &str) -> (serde_json::Value, String) {
+    let t = Tmp::new(&format!("declared-{profile}"));
+    let out = run_new(&["--profile", profile, t.str()]);
+    assert_eq!(
+        code(&out),
+        0,
+        "{profile}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    std::fs::create_dir_all(t.path.join(".git")).unwrap();
+    std::fs::create_dir_all(t.path.join("issues")).unwrap();
+    let agents = std::fs::read_to_string(t.path.join("AGENTS.md")).unwrap();
+    let doctor = base_command()
+        .args(["doctor", "--json", t.str()])
+        .output()
+        .expect("run project-canon doctor");
+    assert_eq!(
+        code(&doctor),
+        0,
+        "{profile}: stdout: {} stderr: {}",
+        String::from_utf8_lossy(&doctor.stdout),
+        String::from_utf8_lossy(&doctor.stderr)
+    );
+    (serde_json::from_slice(&doctor.stdout).unwrap(), agents)
+}
+
+#[test]
+fn doctor_checks_the_profile_a_service_repo_was_generated_with() {
+    let (report, agents) = generated_then_doctor("service");
+    assert_eq!(report["profile"], "service", "{report}");
+    assert_eq!(report["profile_source"], "conformance-md", "{report}");
+    assert!(report["surface_shape"].is_null(), "{report}");
+    assert!(
+        agents.contains("`project-canon doctor --profile service`"),
+        "{agents}"
+    );
+}
+
+#[test]
+fn doctor_checks_the_profile_a_cli_repo_was_generated_with() {
+    let (report, agents) = generated_then_doctor("cli");
+    assert_eq!(report["profile"], "cli", "{report}");
+    assert_eq!(report["profile_source"], "conformance-md", "{report}");
+    assert!(agents.contains("`project-canon doctor`"), "{agents}");
+}
+
+#[test]
+fn explicit_profile_overrides_the_declared_one() {
+    let t = Tmp::new("override");
+    assert_eq!(code(&run_new(&["--profile", "service", t.str()])), 0);
+    let doctor = base_command()
+        .args(["doctor", "--json", "--profile", "library", t.str()])
+        .output()
+        .unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&doctor.stdout).unwrap();
+    assert_eq!(report["profile"], "library", "{report}");
+    assert_eq!(report["profile_source"], "flag", "{report}");
+}

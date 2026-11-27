@@ -206,9 +206,9 @@ const DOCTOR: Command = Command {
     flags: &[
         Flag {
             name: "--profile",
-            summary: "Archetype used for conformance resolution.",
+            summary: "Archetype used for conformance resolution; overrides the profile declared in the repository's CONFORMANCE.md.",
             value_name: Some("archetype"),
-            default: Some("cli"),
+            default: Some("declared in CONFORMANCE.md, else cli"),
             accepted_values: VALUES_ARCHETYPE,
             env_var: None,
             deprecated: false,

@@ -58,7 +58,7 @@ Gate a repo in CI (exit code 1 on any mechanically-decided MUST gap):
 
 ```sh
 $ project-canon doctor .
-project-canon doctor: /work/my-tool (profile: cli)
+project-canon doctor: /work/my-tool (profile: cli, declared in CONFORMANCE.md)
 OK    base.doc-pattern     AGENTS.md and CLAUDE.md present
 OK    base.git-hygiene     .git present
 OK    base.gitignore       .gitignore present
@@ -69,6 +69,10 @@ OK    canon.s23            no user-specific markers configured; set user_specifi
 OK    canon.s24            all 0 detected deferral issue reference(s) resolve to open local issues; 0 binary/oversized/non-UTF-8 tracked file(s) skipped
 summary: 8 ok, 0 warn, 0 fail, 21 skipped  →  mechanically conformant
 ```
+
+Without `--profile`, doctor checks the profile declared on the first line of the
+repository's `CONFORMANCE.md` (which `new` writes), and falls back to `cli` when there
+is none; `--json` reports the choice as `profile_source`.
 
 Audit the same repo with recommendations instead of a gate — including read-only
 runtime probes of your built binary:

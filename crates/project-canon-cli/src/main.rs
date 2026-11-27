@@ -5,6 +5,7 @@
 //! no-verb smoke summary proving the core + configuration layer are wired.
 
 mod config;
+mod declared_profile;
 mod doctor;
 mod error;
 mod help;
