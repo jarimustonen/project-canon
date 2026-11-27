@@ -1,12 +1,13 @@
 ---
 created: 2026-09-18
-updated: 2026-09-18
+updated: 2026-11-27
 type: bug
 reporter: jari
-status: untriaged
+status: open
 priority: normal
 provenance: agent:homebase-wrapup
 source_ref: agent:homebase-wrapup/reporter:jari/id:wrapup-native-agent-host-doctor-profile
+lane: unlaned
 ---
 
 # Doctor silently checks CLI profile in generated service repository

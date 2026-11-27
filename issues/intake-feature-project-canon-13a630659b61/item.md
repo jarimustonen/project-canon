@@ -1,12 +1,13 @@
 ---
 created: 2026-09-08
-updated: 2026-09-08
+updated: 2026-11-27
 type: feature
 reporter: jari
-status: untriaged
+status: open
 priority: normal
 provenance: agent:homebase-wrapup
 source_ref: agent:homebase-wrapup/reporter:jari/id:homebase-wrapup-project-canon-separate-repo-cli-name-2026-09-08
+lane: unlaned
 ---
 
 # Allow repository and CLI names to differ in project-canon new
