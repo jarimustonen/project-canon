@@ -37,12 +37,12 @@ docs_site: none
 
 - **maturity: mvp** — the mechanical inference is `spike` (no CI, no SemVer tag, single
   committer), but every one of those signals is a thing a first release *creates*: the repo is
-  v0 **feature-complete** (all three verbs + skill-install shipped, 214 tests, green gate green
-  per `TODO.md`) and explicitly intended for distribution (family "never-source-build" policy →
-  Homebrew tap + release installer). `spike` would forbid a `distribution` block and CI — the
-  exact things this release must add — so `mvp` is the honest tier. **Not `production`**: that
-  needs ≥2 recent committers + existing CI + a release gate, none of which hold yet. *← the
-  single most important field to confirm.*
+  v0 **feature-complete** (all three verbs + skill-install shipped, 214 tests, green gate green)
+  and explicitly intended for distribution (family "never-source-build" policy → Homebrew
+  tap + release installer). `spike` would forbid a `distribution` block and CI — the exact things
+  this release must add — so `mvp` is the honest tier. **Not `production`**: that needs ≥2
+  recent committers + existing CI + a release gate, none of which hold yet. *← the single
+  most important field to confirm.*
 - **ecosystems: [rust, binary]** — one Cargo workspace supplies the two crates; the `binary`
   facet identifies the cargo-dist Homebrew formula, whose public name is `project-canon` rather
   than the Rust package name `project-canon-cli`.
@@ -90,6 +90,6 @@ docs_site: none
 - **Irreversibility (if crates.io targets are kept):** a crates.io publish of a
   `name@version` is **permanent** — the name is claimed forever and that exact version can
   never be re-published. Confirm the crate names and the `0.1.0` number before the cut.
-- **Rollout gate (owner decision, per `TODO.md`):** cutting this **first release** is the gate
+- **Rollout gate (owner decision):** cutting this **first release** is the gate
   that unblocks `homebase-canon-cutover` and the cross-repo go-wide. When the cut lands, the
   owner is to be told explicitly.

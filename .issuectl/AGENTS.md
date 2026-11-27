@@ -79,7 +79,11 @@ sweeps the tracker. That is why `/wrap-up` and `/triage-unlaned-issues` keep
 re-presenting anything outside the DAG, and why `deferred` is not a resting
 place: something worth doing later is laned and blocked, and something not
 worth doing is closed with the reason recorded. The hot-file clusters named in
-the top-level `AGENTS.md` are what `collision:` tokens are for.
+the top-level `AGENTS.md` are what `collision:` tokens are for. Read the plan with
+`issuectl dag` (or `--json`) and `issuectl ls --status <status>`, and keep no
+markdown DAG or backlog list beside it: a hand-kept copy goes stale as soon as
+a session updates the frontmatter, and the next agent then schedules from the
+wrong one.
 
 Labels classify content. Lifecycle and scheduling are never encoded in a
 label, because a `deferred` or `blocked` label falls outside every status

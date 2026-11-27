@@ -64,7 +64,10 @@ the host, that is a convergence gap to report, not a reason to cut with somethin
 ## Operating policy
 
 `/stint-start` and `/stint-handoff` read this section for the facts they need to run a round
-here.
+here. The session narrative (handoffs, round history, open decisions) is kept outside this
+repository, and the `issuectl` DAG is the schedule. There is no `TODO.md` here, and adding one
+would recreate a second, drifting copy of state that already has an owner; in a public repo it
+would also publish working notes about the maintainer's environment.
 
 **Green gate.** A unit has landed when these pass:
 
