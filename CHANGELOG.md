@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 <!-- oss-changelog:unreleased-end -->
 
+## [0.10.1] - 2026-11-27
+
+### Fixed
+
+- `review --runtime-probes`: after a target execution failure, each later `could-not-probe` row
+  now says "not attempted after target execution failure:" once, followed by the original
+  failure reason, instead of repeating the prefix once per earlier row.
+
 ## [0.10.0] - 2026-11-27
 
 ### Added
