@@ -124,7 +124,7 @@ project-canon-core`) for embedding the conformance model in your own tooling.
 ```sh
 project-canon --help                    # all verbs and flags
 project-canon doctor [--profile <p>] [--json] [<repo>]
-project-canon new [--profile <p>] [--dry-run] <dir>
+project-canon new [--profile <p>] [--name <n>] [--repo-name <r>] [--dry-run] <dir>
 project-canon review [--run <binary>] [--json] [<repo>]
 project-canon skill install [<name>] [--agent <agent>] [--dry-run]
 project-canon config show --json

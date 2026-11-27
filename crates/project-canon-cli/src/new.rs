@@ -76,6 +76,16 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     };
 
+    // The repository slug (GitHub repo, remote URL, tw registry) defaults to the project name and
+    // is held to the same slug bar, since it is interpolated into the same printed hook commands.
+    let repo_name = parsed.repo_name.clone().unwrap_or_else(|| name.clone());
+    if let Err(err) = validate_repo_name(&repo_name) {
+        return fail(
+            parsed.json,
+            CliError::actionable("validation_error", format!("new: {err}")),
+        );
+    }
+
     // A stable, absolute (lexical, un-canonicalized) target path — independent of whether the dir
     // exists yet, so the `--json` `target` and the hook `cwd`/`tw` line are the same in dry-run and
     // real runs. The hooks are rendered against the *actual* target the caller named, never a
@@ -105,6 +115,7 @@ pub fn run(args: &[String]) -> ExitCode {
         &model,
         &resolution,
         &name,
+        &repo_name,
         parsed.description.as_deref(),
         emoji.as_deref(),
         &cfg,
@@ -173,6 +184,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let report = Report {
         target,
         name,
+        repo_name,
         profile: parsed.profile,
         surface_shape: resolution.surface_shape(),
         dry_run: parsed.dry_run,
@@ -239,6 +251,15 @@ fn validate_name(name: &str) -> Result<(), String> {
     }
 }
 
+/// [`validate_name`] for `--repo-name`, with an error that names the flag the caller passed.
+fn validate_repo_name(repo_name: &str) -> Result<(), String> {
+    validate_name(repo_name).map_err(|_| {
+        format!(
+            "invalid repository name {repo_name:?}: use ≤64 chars of ASCII letters/digits/'-'/'_', starting with a letter (it defaults to the project name; pass --repo-name to set it)"
+        )
+    })
+}
+
 use crate::shell::shell_quote;
 
 // ===== argument parsing =============================================================
@@ -248,6 +269,7 @@ use crate::shell::shell_quote;
 struct NewArgs {
     dir: String,
     name: Option<String>,
+    repo_name: Option<String>,
     description: Option<String>,
     emoji: Option<String>,
     profile: Archetype,
@@ -271,6 +293,7 @@ enum Command {
 fn parse_args(args: &[String]) -> Result<Command, String> {
     let mut dir: Option<String> = None;
     let mut name: Option<String> = None;
+    let mut repo_name: Option<String> = None;
     let mut description: Option<String> = None;
     let mut emoji: Option<String> = None;
     let mut profile: Option<Archetype> = None;
@@ -333,6 +356,9 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             "--name" => {
                 set_value(&mut name, "--name", inline, &mut iter)?;
             }
+            "--repo-name" => {
+                set_value(&mut repo_name, "--repo-name", inline, &mut iter)?;
+            }
             "--description" => {
                 set_value(&mut description, "--description", inline, &mut iter)?;
             }
@@ -353,6 +379,7 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
     Ok(Command::Run(NewArgs {
         dir,
         name,
+        repo_name,
         description,
         emoji,
         profile: profile.unwrap_or(Archetype::Cli),
@@ -465,7 +492,10 @@ ARGS:
 
 FLAGS:
     --profile <archetype>   cli | service | library | release  (default: cli)
-    --name <name>           Project name (default: final component of <dir>).
+    --name <name>           Project name (default: final component of <dir>). Names the
+                            package, crates, and binary.
+    --repo-name <name>      Repository slug for the GitHub repo, origin remote, and tw
+                            registration hooks (default: the project name).
     --description <text>    One-line description for AGENTS.md / README.md.
     --emoji <glyph>         .workmux.yaml / tw window prefix (default: from env config).
     --assume-defaults       Characterize non-interactively with conservative defaults (v0 default).
@@ -559,6 +589,7 @@ fn build_plan(
     model: &Model,
     resolution: &Resolution,
     name: &str,
+    repo_name: &str,
     description: Option<&str>,
     emoji: Option<&str>,
     cfg: &EnvConfig,
@@ -581,7 +612,7 @@ fn build_plan(
 
     ScaffoldPlan {
         files,
-        hooks: bootstrap_hooks(name, emoji, cfg, home, target),
+        hooks: bootstrap_hooks(name, repo_name, emoji, cfg, home, target),
         conformance_sections: resolution.canon_section_set(model),
     }
 }
@@ -635,11 +666,14 @@ fn cli_surface_files(name: &str) -> Vec<PlannedFile> {
 }
 
 /// The bootstrap hook plan, filled from the env layer. Emitted, never executed (see module docs).
-/// Every interpolated value is POSIX-`shell_quote`d; `name` is a validated slug and `target` is the
-/// directory actually generated into (not a configured default location). Each hook records its
-/// `cwd` (the scaffolded repo) so a caller running the plan does so in the right directory.
+/// Every interpolated value is POSIX-`shell_quote`d; `name` and `repo_name` are validated slugs and
+/// `target` is the directory actually generated into (not a configured default location). Each
+/// hook records its `cwd` (the scaffolded repo) so a caller running the plan does so in the right
+/// directory. `repo_name` names the repository everywhere it is addressed (GitHub, the origin
+/// remote, the tw registry); `name` only appears in the scaffold commit message.
 fn bootstrap_hooks(
     name: &str,
+    repo_name: &str,
     emoji: Option<&str>,
     cfg: &EnvConfig,
     home: &str,
@@ -649,11 +683,11 @@ fn bootstrap_hooks(
         .gh_account
         .as_deref()
         .expect("new validates gh_account before building hooks");
-    let ssh_url = format!("git@github.com:{account}/{name}.git");
+    let ssh_url = format!("git@github.com:{account}/{repo_name}.git");
     // The tw registry records where the repo actually lives — the caller's target — not
     // `cfg.repo_location(name)` (that convention only supplies the *default* location).
     let repo_location = target;
-    let repo_slug = shell_quote(&format!("{account}/{name}"));
+    let repo_slug = shell_quote(&format!("{account}/{repo_name}"));
 
     let mut hooks = vec![
         PlannedHook {
@@ -688,7 +722,7 @@ fn bootstrap_hooks(
             class: HookClass::External,
             // Fully-qualify the repo with the configured account so the repo is created *there*,
             // not under whatever `gh` happens to default to.
-            description: format!("Create the private GitHub repo {account}/{name} and push."),
+            description: format!("Create the private GitHub repo {account}/{repo_name} and push."),
             cwd: target.to_string(),
             command: format!(
                 "gh repo create {repo_slug} --private --source=. --remote=origin --push"
@@ -709,7 +743,7 @@ fn bootstrap_hooks(
         let emoji_field = emoji.map(|e| format!("  emoji:{e}")).unwrap_or_default();
         // Append the full registry line (name  directory  clone_url  [emoji:X]); the command is
         // runnable as-is. `>>` never clobbers the file.
-        let line = format!("{name}  {repo_location}  {ssh_url}{emoji_field}");
+        let line = format!("{repo_name}  {repo_location}  {ssh_url}{emoji_field}");
         hooks.push(PlannedHook {
             id: "tw-register",
             class: HookClass::External,
@@ -1125,6 +1159,7 @@ fn write_symlink(target: &str, root: &Path, full: &Path) -> std::io::Result<()> 
 struct Report {
     target: String,
     name: String,
+    repo_name: String,
     profile: Archetype,
     surface_shape: Option<SurfaceShape>,
     dry_run: bool,
@@ -1198,6 +1233,7 @@ impl Report {
             ("verb".into(), Json::str("new")),
             ("target".into(), Json::str(self.target.clone())),
             ("name".into(), Json::str(self.name.clone())),
+            ("repo_name".into(), Json::str(self.repo_name.clone())),
             ("profile".into(), Json::str(self.profile.slug())),
             (
                 "surface_shape".into(),
@@ -1218,9 +1254,10 @@ impl Report {
         let mut out = String::new();
         let mode = if self.dry_run { "  (dry-run)" } else { "" };
         out.push_str(&format!(
-            "project-canon new: {} (name: {}, profile: {}){mode}\n",
+            "project-canon new: {} (name: {}, repo: {}, profile: {}){mode}\n",
             self.target,
             self.name,
+            self.repo_name,
             self.profile.slug()
         ));
 
@@ -1427,6 +1464,7 @@ mod tests {
             &model,
             &resolution,
             name,
+            name,
             Some("test desc"),
             emoji,
             &cfg,
@@ -1592,6 +1630,7 @@ mod tests {
             &model,
             &resolution,
             "foo",
+            "foo",
             Some("a neat tool"),
             None,
             &cfg,
@@ -1648,6 +1687,7 @@ mod tests {
             &model,
             &resolution,
             "foo",
+            "foo",
             None,
             None,
             &cfg,
@@ -1657,6 +1697,76 @@ mod tests {
         let gh = plan.hooks.iter().find(|h| h.id == "github-create").unwrap();
         // The value is wrapped in single quotes, so the `$` never expands.
         assert!(gh.command.contains("'ev$il/foo'"), "{}", gh.command);
+    }
+
+    #[test]
+    fn repo_name_addresses_the_repository_while_name_shapes_the_scaffold() {
+        let model = Model::standard();
+        let resolution = model.resolve(&Questionnaire::builder(Archetype::Cli).build());
+        let layer = EnvConfigLayer {
+            gh_account: Some("example-user".to_string()),
+            tw_enabled: Some(true),
+            ..EnvConfigLayer::empty()
+        };
+        let cfg = EnvConfig::resolve(&[&layer]);
+        let plan = build_plan(
+            &model,
+            &resolution,
+            "widget",
+            "widget-cli",
+            None,
+            None,
+            &cfg,
+            "/home/j",
+            "/tmp/widget-cli",
+        );
+        // Package, crates, and binary keep the project name.
+        assert!(has_file(&plan, "crates/widget-cli/Cargo.toml")
+            .unwrap()
+            .content
+            .contains("name = \"widget\"\npath"));
+        assert!(has_file(&plan, "crates/widget-cli-cli/Cargo.toml").is_none());
+        // Every hook that addresses the repository uses the repo slug.
+        let hook = |id: &str| plan.hooks.iter().find(|h| h.id == id).unwrap();
+        assert!(
+            hook("github-create")
+                .command
+                .contains("'example-user/widget-cli'"),
+            "{}",
+            hook("github-create").command
+        );
+        assert!(hook("git-remote-ssh")
+            .command
+            .contains("git@github.com:example-user/widget-cli.git"));
+        assert!(
+            hook("tw-register").command.contains(
+                "'widget-cli  /tmp/widget-cli  git@github.com:example-user/widget-cli.git'"
+            ),
+            "{}",
+            hook("tw-register").command
+        );
+    }
+
+    #[test]
+    fn repo_name_flag_parses_and_defaults_to_absent() {
+        assert_eq!(run_args(&["d"]).repo_name, None);
+        assert_eq!(
+            run_args(&["--repo-name", "widget-cli", "d"])
+                .repo_name
+                .as_deref(),
+            Some("widget-cli")
+        );
+        assert_eq!(
+            run_args(&["--repo-name=widget-cli", "d"])
+                .repo_name
+                .as_deref(),
+            Some("widget-cli")
+        );
+        assert!(parse(&["--repo-name", "a", "--repo-name", "b", "d"]).is_err());
+        assert!(parse(&["--repo-name=", "d"]).is_err());
+        assert!(parse(&["--repo-name"]).is_err());
+        let err = validate_repo_name("../evil").unwrap_err();
+        assert!(err.contains("--repo-name"), "{err}");
     }
 
     #[test]
@@ -1706,6 +1816,7 @@ mod tests {
             &model,
             &resolution,
             "foo",
+            "foo",
             None,
             None,
             &cfg,
@@ -1727,6 +1838,7 @@ mod tests {
         let plan = build_plan(
             &model,
             &resolution,
+            "foo",
             "foo",
             None,
             None,

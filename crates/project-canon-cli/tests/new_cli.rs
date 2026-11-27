@@ -456,3 +456,77 @@ fn explicit_profile_overrides_the_declared_one() {
     assert_eq!(report["profile"], "library", "{report}");
     assert_eq!(report["profile_source"], "flag", "{report}");
 }
+
+/// The dry-run JSON plan, parsed.
+fn dry_run_plan(args: &[&str]) -> serde_json::Value {
+    let out = run_new(args);
+    assert_eq!(code(&out), 0, "{}", String::from_utf8_lossy(&out.stderr));
+    serde_json::from_slice(&out.stdout).unwrap()
+}
+
+fn hook_command<'a>(plan: &'a serde_json::Value, id: &str) -> &'a str {
+    plan["hooks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|h| h["id"] == id)
+        .unwrap_or_else(|| panic!("hook {id} in {plan}"))["command"]
+        .as_str()
+        .unwrap()
+}
+
+#[test]
+fn repo_name_splits_the_repository_slug_from_the_package_name() {
+    let t = Tmp::new("split");
+    let plan = dry_run_plan(&[
+        "--name",
+        "widget",
+        "--repo-name",
+        "widget-cli",
+        "--json",
+        "--dry-run",
+        t.str(),
+    ]);
+    assert_eq!(plan["name"], "widget");
+    assert_eq!(plan["repo_name"], "widget-cli");
+    let paths: Vec<&str> = plan["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["path"].as_str().unwrap())
+        .collect();
+    assert!(
+        paths.contains(&"crates/widget-cli/src/main.rs"),
+        "{paths:?}"
+    );
+    assert!(
+        !paths.iter().any(|p| p.contains("widget-cli-cli")),
+        "{paths:?}"
+    );
+    assert!(hook_command(&plan, "github-create").contains("'example-user/widget-cli'"));
+    assert!(hook_command(&plan, "git-remote-ssh")
+        .contains("git@github.com:example-user/widget-cli.git"));
+}
+
+#[test]
+fn repo_name_defaults_to_the_project_name() {
+    let t = Tmp::new("fallback");
+    let plan = dry_run_plan(&["--name", "widget", "--json", "--dry-run", t.str()]);
+    assert_eq!(plan["repo_name"], "widget");
+    assert!(hook_command(&plan, "github-create").contains("'example-user/widget'"));
+}
+
+#[test]
+fn unsafe_repo_name_is_rejected() {
+    let t = Tmp::new("badrepo");
+    for bad in ["../escape", "-flag", "foo;rm"] {
+        let out = run_new(&[&format!("--repo-name={bad}"), t.str()]);
+        assert_eq!(code(&out), 1, "repo name {bad:?} should be rejected");
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("--repo-name"),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    assert!(!t.path.exists(), "no scaffold on a rejected repo name");
+}

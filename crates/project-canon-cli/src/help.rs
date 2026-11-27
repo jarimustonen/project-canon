@@ -284,9 +284,19 @@ const NEW: Command = Command {
         },
         Flag {
             name: "--name",
-            summary: "Project name.",
+            summary: "Project name; names the package, crates, and binary.",
             value_name: Some("name"),
             default: Some("final component of dir"),
+            accepted_values: &[],
+            env_var: None,
+            deprecated: false,
+        },
+        Flag {
+            name: "--repo-name",
+            summary:
+                "Repository slug used by the GitHub, origin remote, and tw registration hooks.",
+            value_name: Some("name"),
+            default: Some("the project name"),
             accepted_values: &[],
             env_var: None,
             deprecated: false,
