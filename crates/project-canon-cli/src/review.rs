@@ -24,6 +24,7 @@ use project_canon_core::{
     Severity, SurfaceShape,
 };
 
+use crate::declared_profile::{self, ProfileSource};
 use crate::error::{fail, json_requested, write_stdout, CliError};
 use crate::json::Json;
 use crate::probes::{
@@ -90,10 +91,33 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     };
 
+    // Which profile to audit, resolved exactly as doctor does: an explicit `--profile` wins, else
+    // the profile the repository declares in CONFORMANCE.md, else the CLI default.
+    let (profile, profile_source) = match declared_profile::resolve("review", parsed.profile, repo)
+    {
+        Ok(resolved) => resolved,
+        Err(error) => return fail(parsed.json, error),
+    };
+    // An explicit non-cli `--profile` with `--run` is rejected while parsing; a declared one only
+    // becomes known here.
+    if parsed.run.is_some() && profile != Archetype::Cli {
+        return fail(
+            parsed.json,
+            CliError::actionable(
+                "usage_error",
+                format!(
+                    "review: --run probes CLI surfaces, but {} declares the {:?} profile; pass --profile cli to probe it anyway",
+                    declared_profile::FILE,
+                    profile.slug()
+                ),
+            ),
+        );
+    }
+
     // Resolve the model with the conservative questionnaire (all conditionals off — §3, review
     // never prompts). `--assume-defaults` names this explicitly; it is the only mode at v0.
     let model = Model::standard();
-    let questionnaire = Questionnaire::builder(parsed.profile).build();
+    let questionnaire = Questionnaire::builder(profile).build();
     let resolution = model.resolve(&questionnaire);
 
     // An operational I/O fault while probing (permission denied, transient error, target vanished)
@@ -128,7 +152,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let report = match build_report(
         &model,
         &resolution,
-        parsed.profile,
+        (profile, profile_source),
         &target,
         &probe_context,
         runtime_binary.as_deref(),
@@ -169,7 +193,9 @@ pub fn run(args: &[String]) -> ExitCode {
 #[derive(Debug, PartialEq, Eq)]
 struct ReviewArgs {
     repo: String,
-    profile: Archetype,
+    /// `None` when `--profile` is omitted: the repository's declaration (or the CLI default)
+    /// decides, see [`declared_profile::resolve`].
+    profile: Option<Archetype>,
     json: bool,
     verbose: bool,
     #[allow(dead_code)] // Accepted & validated; a no-op affirmation of the static default mode.
@@ -282,12 +308,13 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
         );
     }
 
-    let profile = profile.unwrap_or(Archetype::Cli);
-    if run.is_some() && profile != Archetype::Cli {
-        return Err(format!(
-            "--run probes CLI surfaces and requires --profile cli (got {:?})",
-            profile.slug()
-        ));
+    if let Some(explicit) = profile.filter(|p| *p != Archetype::Cli) {
+        if run.is_some() {
+            return Err(format!(
+                "--run probes CLI surfaces and requires --profile cli (got {:?})",
+                explicit.slug()
+            ));
+        }
     }
 
     Ok(Command::Run(ReviewArgs {
@@ -351,7 +378,8 @@ ARGS:
     <repo>                  Target repo to audit (default: current directory). Read-only.
 
 FLAGS:
-    --profile <archetype>   cli | service | library | release  (default: cli)
+    --profile <archetype>   cli | service | library | release  (default: the profile declared in
+                            <repo>/CONFORMANCE.md, else cli; --json reports it as profile_source)
     --assume-defaults       Static-only conservative characterization; never executes a target.
     --run <binary>          Opt in to read-only runtime probes of this explicitly named binary.
     --json                  Emit the structured §10 report on stdout.
@@ -462,6 +490,7 @@ struct Report {
     tool: &'static str,
     target: String,
     profile: Archetype,
+    profile_source: ProfileSource,
     surface_shape: Option<SurfaceShape>,
     runtime_binary: Option<String>,
     runtime_probes: Vec<RuntimeProbeOutcome>,
@@ -577,6 +606,10 @@ impl Report {
             ("target".into(), Json::str(self.target.clone())),
             ("profile".into(), Json::str(self.profile.slug())),
             (
+                "profile_source".into(),
+                Json::str(self.profile_source.json()),
+            ),
+            (
                 "surface_shape".into(),
                 Json::opt_str(self.surface_shape.map(surface_shape_str)),
             ),
@@ -619,9 +652,10 @@ impl Report {
     fn render_human(&self, verbose: bool) -> String {
         let mut out = String::new();
         out.push_str(&format!(
-            "project-canon review: {} (profile: {})  [advisory — recommends & stages, never acts]\n",
+            "project-canon review: {} (profile: {}, {})  [advisory — recommends & stages, never acts]\n",
             self.target,
-            self.profile.slug()
+            self.profile.slug(),
+            self.profile_source.human()
         ));
 
         out.push_str("findings (severity-triaged; most severe first):\n");
@@ -785,7 +819,7 @@ struct ProbeFault {
 fn build_report(
     model: &Model,
     resolution: &Resolution,
-    profile: Archetype,
+    (profile, profile_source): (Archetype, ProfileSource),
     target: &str,
     probe_context: &ProbeContext<'_>,
     runtime_binary: Option<&Path>,
@@ -812,6 +846,7 @@ fn build_report(
         tool: "project-canon",
         target: target.to_string(),
         profile,
+        profile_source,
         surface_shape: resolution.surface_shape(),
         runtime_binary: runtime_binary.map(|path| path.display().to_string()),
         runtime_probes: runtime.to_vec(),
@@ -999,12 +1034,12 @@ mod tests {
     }
 
     #[test]
-    fn defaults_are_cli_profile_and_cwd() {
+    fn defaults_leave_profile_unresolved_and_cwd() {
         assert_eq!(
             parse(&[]).unwrap(),
             Command::Run(ReviewArgs {
                 repo: ".".to_string(),
-                profile: Archetype::Cli,
+                profile: None,
                 json: false,
                 verbose: false,
                 assume_defaults: false,
@@ -1028,7 +1063,7 @@ mod tests {
             cmd,
             Command::Run(ReviewArgs {
                 repo: "/some/repo".to_string(),
-                profile: Archetype::Service,
+                profile: Some(Archetype::Service),
                 json: true,
                 verbose: true,
                 assume_defaults: true,
@@ -1141,7 +1176,7 @@ mod tests {
         build_report(
             &model,
             &resolution,
-            profile,
+            (profile, ProfileSource::Flag),
             &repo.target(),
             &context,
             None,
@@ -1275,7 +1310,7 @@ mod tests {
         let report = build_report(
             &model,
             &resolution,
-            Archetype::Cli,
+            (Archetype::Cli, ProfileSource::Flag),
             &repo.target(),
             &context,
             None,

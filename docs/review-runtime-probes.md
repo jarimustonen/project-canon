@@ -8,7 +8,8 @@ project-canon review --run ./target/debug/example-tool --json .
 ```
 
 `--assume-defaults` remains the explicit static-only mode and cannot be combined with
-`--run`. Runtime probes inspect CLI surfaces, so `--run` requires `--profile cli`.
+`--run`. Runtime probes inspect CLI surfaces, so `--run` requires the `cli` profile: in a repository
+whose `CONFORMANCE.md` declares another profile, pass `--profile cli` explicitly.
 
 ## Safety contract
 

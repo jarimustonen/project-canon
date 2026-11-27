@@ -1,14 +1,19 @@
-//! The profile a repository declares for itself, so `doctor` checks what `new` generated.
+//! The profile a repository declares for itself, so `doctor` and `review` check what `new`
+//! generated.
 //!
 //! `new` writes a one-line HTML comment at the top of the generated `CONFORMANCE.md`
-//! ([`marker_line`]); `doctor` reads it back ([`parse`]) when `--profile` is omitted. The marker
-//! lives in `CONFORMANCE.md` rather than in a new dot-file because that file already is the
-//! repository's per-profile conformance record, and it renders invisibly on GitHub.
+//! ([`marker_line`]); `doctor` and `review` read it back ([`resolve`]) when `--profile` is
+//! omitted. The marker lives in `CONFORMANCE.md` rather than in a new dot-file because that file
+//! already is the repository's per-profile conformance record, and it renders invisibly on GitHub.
 //!
 //! Repositories generated before the marker existed are recognised by the fixed sentence their
 //! `CONFORMANCE.md` template carried, so the fix reaches them without regeneration.
 
+use std::path::Path;
+
 use project_canon_core::Archetype;
+
+use crate::error::CliError;
 
 /// The repo-relative file that carries the declaration.
 pub(crate) const FILE: &str = "CONFORMANCE.md";
@@ -55,6 +60,69 @@ pub(crate) fn parse(content: &str) -> Result<Option<Archetype>, String> {
         }
     }
     Ok(None)
+}
+
+/// Where the checked profile came from (reported as `profile_source` by `doctor` and `review`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProfileSource {
+    /// An explicit `--profile`.
+    Flag,
+    /// The marker (or legacy template sentence) in the repository's `CONFORMANCE.md`.
+    Declared,
+    /// Nothing declared — the historical CLI default.
+    Default,
+}
+
+impl ProfileSource {
+    pub(crate) fn json(self) -> &'static str {
+        match self {
+            ProfileSource::Flag => "flag",
+            ProfileSource::Declared => "conformance-md",
+            ProfileSource::Default => "default",
+        }
+    }
+    pub(crate) fn human(self) -> &'static str {
+        match self {
+            ProfileSource::Flag => "from --profile",
+            ProfileSource::Declared => "declared in CONFORMANCE.md",
+            ProfileSource::Default => "default; CONFORMANCE.md declares none",
+        }
+    }
+}
+
+/// Pick the profile a verb checks: an explicit `--profile` wins, else the profile `repo` declares,
+/// else the CLI default. A missing `CONFORMANCE.md` falls back to the default; an unreadable one
+/// is operational (exit 2); a marker naming an unknown profile is caller-actionable rather than a
+/// silent fallback to the default. `verb` prefixes error messages.
+pub(crate) fn resolve(
+    verb: &str,
+    explicit: Option<Archetype>,
+    repo: &Path,
+) -> Result<(Archetype, ProfileSource), CliError> {
+    if let Some(profile) = explicit {
+        return Ok((profile, ProfileSource::Flag));
+    }
+    let path = repo.join(FILE);
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Ok((Archetype::Cli, ProfileSource::Default));
+        }
+        Err(err) => {
+            return Err(CliError::system(
+                "io_error",
+                format!("{verb}: cannot read {}: {err}", path.display()),
+            ));
+        }
+    };
+    match parse(&String::from_utf8_lossy(&bytes)) {
+        Ok(Some(profile)) => Ok((profile, ProfileSource::Declared)),
+        Ok(None) => Ok((Archetype::Cli, ProfileSource::Default)),
+        Err(err) => Err(CliError::actionable(
+            "invalid_profile_declaration",
+            format!("{verb}: {err}"),
+        )),
+    }
 }
 
 fn from_slug(slug: &str) -> Option<Archetype> {

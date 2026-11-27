@@ -17,7 +17,7 @@ use project_canon_core::{
     SurfaceShape,
 };
 
-use crate::declared_profile;
+use crate::declared_profile::{self, ProfileSource};
 use crate::error::{fail, json_requested, write_stdout, CliError};
 use crate::json::Json;
 use crate::probes::{mechanical_probe, ProbeContext};
@@ -85,7 +85,8 @@ pub fn run(args: &[String]) -> ExitCode {
     // Which profile to check: an explicit `--profile` wins, else the profile the repository
     // declares (what `new` generated), else the CLI default. The source is reported so a caller
     // can tell a declared profile from a silent default.
-    let (profile, profile_source) = match resolve_profile(parsed.profile, repo) {
+    let (profile, profile_source) = match declared_profile::resolve("doctor", parsed.profile, repo)
+    {
         Ok(resolved) => resolved,
         Err(error) => return fail(parsed.json, error),
     };
@@ -137,67 +138,6 @@ pub fn run(args: &[String]) -> ExitCode {
     ExitCode::from(report.exit_code())
 }
 
-/// Where the checked profile came from (reported as `profile_source`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ProfileSource {
-    /// An explicit `--profile`.
-    Flag,
-    /// The marker (or legacy template sentence) in the repository's `CONFORMANCE.md`.
-    Declared,
-    /// Nothing declared — the historical CLI default.
-    Default,
-}
-
-impl ProfileSource {
-    fn json(self) -> &'static str {
-        match self {
-            ProfileSource::Flag => "flag",
-            ProfileSource::Declared => "conformance-md",
-            ProfileSource::Default => "default",
-        }
-    }
-    fn human(self) -> &'static str {
-        match self {
-            ProfileSource::Flag => "from --profile",
-            ProfileSource::Declared => "declared in CONFORMANCE.md",
-            ProfileSource::Default => "default; CONFORMANCE.md declares none",
-        }
-    }
-}
-
-/// Pick the profile to check. A missing `CONFORMANCE.md` falls back to the CLI default; an
-/// unreadable one is operational (exit 2); a marker naming an unknown profile is caller-actionable
-/// rather than a silent fallback to the default.
-fn resolve_profile(
-    explicit: Option<Archetype>,
-    repo: &Path,
-) -> Result<(Archetype, ProfileSource), CliError> {
-    if let Some(profile) = explicit {
-        return Ok((profile, ProfileSource::Flag));
-    }
-    let path = repo.join(declared_profile::FILE);
-    let bytes = match std::fs::read(&path) {
-        Ok(bytes) => bytes,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            return Ok((Archetype::Cli, ProfileSource::Default));
-        }
-        Err(err) => {
-            return Err(CliError::system(
-                "io_error",
-                format!("doctor: cannot read {}: {err}", path.display()),
-            ));
-        }
-    };
-    match declared_profile::parse(&String::from_utf8_lossy(&bytes)) {
-        Ok(Some(profile)) => Ok((profile, ProfileSource::Declared)),
-        Ok(None) => Ok((Archetype::Cli, ProfileSource::Default)),
-        Err(err) => Err(CliError::actionable(
-            "invalid_profile_declaration",
-            format!("doctor: {err}"),
-        )),
-    }
-}
-
 // ===== argument parsing =============================================================
 
 /// A parsed doctor invocation.
@@ -205,7 +145,7 @@ fn resolve_profile(
 struct DoctorArgs {
     repo: String,
     /// `None` when `--profile` is omitted: the repository's declaration (or the CLI default)
-    /// decides, see [`resolve_profile`].
+    /// decides, see [`declared_profile::resolve`].
     profile: Option<Archetype>,
     json: bool,
     verbose: bool,
@@ -954,7 +894,7 @@ mod tests {
         let repo = TmpRepo::new("resolve");
         // Nothing declared → the CLI default, reported as such.
         assert_eq!(
-            resolve_profile(None, &repo.path).unwrap(),
+            declared_profile::resolve("doctor", None, &repo.path).unwrap(),
             (Archetype::Cli, ProfileSource::Default)
         );
         std::fs::write(
@@ -966,12 +906,12 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            resolve_profile(None, &repo.path).unwrap(),
+            declared_profile::resolve("doctor", None, &repo.path).unwrap(),
             (Archetype::Service, ProfileSource::Declared)
         );
         // An explicit --profile still wins over the declaration.
         assert_eq!(
-            resolve_profile(Some(Archetype::Cli), &repo.path).unwrap(),
+            declared_profile::resolve("doctor", Some(Archetype::Cli), &repo.path).unwrap(),
             (Archetype::Cli, ProfileSource::Flag)
         );
         // A marker naming an unknown profile is an error, not a silent default.
@@ -980,7 +920,7 @@ mod tests {
             "<!-- project-canon profile: webapp -->\n",
         )
         .unwrap();
-        assert!(resolve_profile(None, &repo.path).is_err());
+        assert!(declared_profile::resolve("doctor", None, &repo.path).is_err());
     }
 
     #[test]

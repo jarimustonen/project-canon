@@ -422,3 +422,84 @@ fn assume_defaults_cannot_be_combined_with_run_and_executes_nothing() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("static-only"));
     assert!(!sentinel.exists());
 }
+
+// ===== profile resolution (shared with doctor) ======================================
+
+fn declare(f: &Fixture, profile: &str) {
+    std::fs::write(
+        f.path.join("CONFORMANCE.md"),
+        format!("<!-- project-canon profile: {profile} -->\n# svc — canon conformance TODO\n"),
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_declared_service_repo_is_reviewed_against_the_service_profile() {
+    let f = Fixture::conformant("declared-service");
+    declare(&f, "service");
+    let out = run_review(&["--json", f.path.to_str().unwrap()]);
+    assert_eq!(code(&out), 0, "{}", String::from_utf8_lossy(&out.stderr));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"profile\":\"service\""), "{stdout}");
+    assert!(
+        stdout.contains("\"profile_source\":\"conformance-md\""),
+        "{stdout}"
+    );
+    // No CLI surface is characterised for a service repository.
+    assert!(stdout.contains("\"surface_shape\":null"), "{stdout}");
+
+    let human = run_review(&[f.path.to_str().unwrap()]);
+    assert!(String::from_utf8_lossy(&human.stdout)
+        .contains("(profile: service, declared in CONFORMANCE.md)"));
+}
+
+#[test]
+fn an_explicit_profile_overrides_the_declaration() {
+    let f = Fixture::conformant("declared-override");
+    declare(&f, "service");
+    let out = run_review(&["--json", "--profile", "cli", f.path.to_str().unwrap()]);
+    assert_eq!(code(&out), 0, "{}", String::from_utf8_lossy(&out.stderr));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"profile\":\"cli\""), "{stdout}");
+    assert!(stdout.contains("\"profile_source\":\"flag\""), "{stdout}");
+}
+
+#[test]
+fn an_undeclared_repo_defaults_to_the_cli_profile() {
+    let f = Fixture::conformant("undeclared");
+    let out = run_review(&["--json", f.path.to_str().unwrap()]);
+    assert_eq!(code(&out), 0, "{}", String::from_utf8_lossy(&out.stderr));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"profile\":\"cli\""), "{stdout}");
+    assert!(
+        stdout.contains("\"profile_source\":\"default\""),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn an_unknown_declared_profile_is_an_error_not_a_silent_default() {
+    let f = Fixture::conformant("declared-unknown");
+    declare(&f, "webapp");
+    let out = run_review(&[f.path.to_str().unwrap()]);
+    assert_ne!(code(&out), 0);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("webapp"));
+}
+
+#[test]
+fn run_in_a_declared_non_cli_repo_asks_for_an_explicit_cli_profile() {
+    let f = Fixture::conformant("declared-run");
+    declare(&f, "library");
+    let sentinel = f.path.join("never-run");
+    let out = run_review(&[
+        "--run",
+        sentinel.to_str().unwrap(),
+        f.path.to_str().unwrap(),
+    ]);
+    assert_ne!(code(&out), 0);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("--profile cli") && stderr.contains("library"),
+        "{stderr}"
+    );
+}

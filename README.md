@@ -70,8 +70,8 @@ OK    canon.s24            all 0 detected deferral issue reference(s) resolve to
 summary: 8 ok, 0 warn, 0 fail, 21 skipped  →  mechanically conformant
 ```
 
-Without `--profile`, doctor checks the profile declared on the first line of the
-repository's `CONFORMANCE.md` (which `new` writes), and falls back to `cli` when there
+Without `--profile`, doctor and review check the profile declared on the first line of
+the repository's `CONFORMANCE.md` (which `new` writes), and fall back to `cli` when there
 is none; `--json` reports the choice as `profile_source`.
 
 Audit the same repo with recommendations instead of a gate — including read-only
@@ -125,7 +125,7 @@ project-canon-core`) for embedding the conformance model in your own tooling.
 project-canon --help                    # all verbs and flags
 project-canon doctor [--profile <p>] [--json] [<repo>]
 project-canon new [--profile <p>] [--name <n>] [--repo-name <r>] [--dry-run] <dir>
-project-canon review [--run <binary>] [--json] [<repo>]
+project-canon review [--profile <p>] [--run <binary>] [--json] [<repo>]
 project-canon skill install [<name>] [--agent <agent>] [--dry-run]
 project-canon config show --json
 ```
